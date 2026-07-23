@@ -81,6 +81,8 @@ PYTHONPATH=source/anymal_locomotion \
 - deterministic canonical-to-runtime joint mapping
 - 完整 runtime smoke test 通過
 - 官方 ±1.0 baseline 已完成 300 iterations
+- High-Speed v0.2.0 已由 baseline checkpoint 接續完成 1,000 iterations
+  （最終 timeout 92.55%、XY velocity error 0.376 m/s）
 
 ## 訓練
 
@@ -95,8 +97,9 @@ PYTHONPATH=source/anymal_locomotion \
   --seed 42
 ```
 
-目前 High-Speed v0.2.0 預設訓練 1,000 iterations。Command range 與官方
-Spot example 相同；實體機部署仍必須另外套用經安全審查的速度限制。
+High-Speed v0.2.0 預設訓練 1,000 iterations，command range 與官方 Spot
+example 相同。訓練範圍不等於已驗證的最高速度，也不等於實體機安全速度；
+後續須用固定速度 evaluation 驗證，實體機部署另套經安全審查的限制。
 
 訓練產物會寫入：
 
