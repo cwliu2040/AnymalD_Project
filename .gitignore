@@ -27,6 +27,7 @@ exported/*
 **/videos/
 **/wandb/
 **/.neptune/
+outputs/
 
 # Local editable-install and environment state
 .python.env
