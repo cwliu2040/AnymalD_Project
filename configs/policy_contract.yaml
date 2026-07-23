@@ -1,4 +1,4 @@
-schema_version: 1.0.0
+schema_version: 1.1.0
 
 robot:
   name: ANYmal-D
@@ -47,9 +47,9 @@ command:
   components: [vx, vy, wz]
   ros_source: geometry_msgs/msg/Twist
   limits:
-    vx: [-1.0, 1.0]
-    vy: [-1.0, 1.0]
-    wz: [-1.0, 1.0]
+    vx: [-2.0, 3.0]
+    vy: [-1.5, 1.5]
+    wz: [-2.0, 2.0]
 
 frames:
   base_linear_velocity: base

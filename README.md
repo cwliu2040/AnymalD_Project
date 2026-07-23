@@ -28,7 +28,8 @@ Isaac Lab 必須固定在支援的 tag，不以持續變動的 `origin/main` 作
 - Physics 頻率：200 Hz
 - Action scale：0.5
 - Command：body-frame `[vx, vy, wz]`
-- Command 範圍：`vx/vy/wz = [-1.0, 1.0]`
+- Command 範圍：`vx = [-2.0, 3.0]`、`vy = [-1.5, 1.5]`、
+  `wz = [-2.0, 2.0]`
 - Joint order：依 `configs/policy_contract.yaml` 固定，runtime 與 ROS array
   一律依 joint name remap
 - Terrain：flat plane
@@ -79,6 +80,7 @@ PYTHONPATH=source/anymal_locomotion \
 - 無 height scanner
 - deterministic canonical-to-runtime joint mapping
 - 完整 runtime smoke test 通過
+- 官方 ±1.0 baseline 已完成 300 iterations
 
 ## 訓練
 
@@ -92,6 +94,9 @@ PYTHONPATH=source/anymal_locomotion \
   --headless \
   --seed 42
 ```
+
+目前 High-Speed v0.2.0 預設訓練 1,000 iterations。Command range 與官方
+Spot example 相同；實體機部署仍必須另外套用經安全審查的速度限制。
 
 訓練產物會寫入：
 

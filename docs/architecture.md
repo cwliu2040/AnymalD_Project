@@ -60,7 +60,8 @@ low-level control interface 尚未確認。
 - Action 轉換：
   `target_position = default_position + 0.5 * policy_action`。
 - Policy period：0.02 秒。
-- Command limits：x/y 為 ±1.0 m/s，yaw 為 ±1.0 rad/s。
+- High-Speed command limits：x 為 -2.0～3.0 m/s、y 為 ±1.5 m/s、
+  yaw 為 ±2.0 rad/s。
 - Actor/critic observation normalization：關閉。
 
 Action、joint position observation 與 joint velocity observation 使用相同的
@@ -82,6 +83,9 @@ Isaac Lab Python module 不可 import `rclpy`，也不可直接修改 command ma
 
 Low-level command message type 必須等實體 ANYmal-D control interface 確認後
 才能決定。
+
+訓練 command range 不等於實體機允許範圍。Hardware adapter 必須另行實作
+經安全審查的 clamp、rate limit 與 emergency stop。
 
 ## State Estimation
 

@@ -14,3 +14,4 @@ class AnymalDLocomotionFlatPPORunnerCfg(AnymalDFlatPPORunnerCfg):
     def __post_init__(self) -> None:
         super().__post_init__()
         self.experiment_name = "anymal_d_locomotion_v1"
+        self.max_iterations = 1000

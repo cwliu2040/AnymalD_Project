@@ -653,7 +653,10 @@ baseline 的一部分。
 - 不追蹤 `origin/main` 作為開發 baseline。
 - Command semantics：direct body velocity `[vx, vy, wz]`，
   `heading_command=False`。
-- v1 training ranges：`vx/vy/wz = [-1.0, 1.0]`。
+- v0.1.0 baseline training ranges：`vx/vy/wz = [-1.0, 1.0]`，已完成
+  300 iterations 重現。
+- v0.2.0 High-Speed ranges：`vx=[-2.0, 3.0]`、`vy=[-1.5, 1.5]`、
+  `wz=[-2.0, 2.0]`；預設訓練預算提高為 1,000 iterations。
 - 第一個 implementation target：官方 Isaac Sim 5.1 ANYmal-D USD。
 - Custom USD：尚未整合，也不猜測其 joint names。
 - Physical ANYmal-D low-level control interface：尚未確認。

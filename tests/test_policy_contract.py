@@ -62,6 +62,12 @@ def test_policy_io_dimensions_and_offsets() -> None:
     assert sum(term["dimension"] for term in observation["terms"]) == 48
     assert POLICY_CONTRACT["action"]["dimension"] == 12
     assert POLICY_CONTRACT["action"]["control_period_s"] == pytest.approx(0.02)
+    assert POLICY_CONTRACT["schema_version"] == "1.1.0"
+    assert POLICY_CONTRACT["command"]["limits"] == {
+        "vx": [-2.0, 3.0],
+        "vy": [-1.5, 1.5],
+        "wz": [-2.0, 2.0],
+    }
 
 
 def test_metadata_schema_and_example_have_required_fields() -> None:

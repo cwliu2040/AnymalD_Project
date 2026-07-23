@@ -36,9 +36,10 @@ class AnymalDLocomotionFlatEnvCfg(AnymalDFlatEnvCfg):
         command = self.commands.base_velocity
         command.heading_command = False
         command.rel_heading_envs = 0.0
-        command.ranges.lin_vel_x = (-1.0, 1.0)
-        command.ranges.lin_vel_y = (-1.0, 1.0)
-        command.ranges.ang_vel_z = (-1.0, 1.0)
+        # High-Speed v0.2.0: match the official Spot command envelope.
+        command.ranges.lin_vel_x = (-2.0, 3.0)
+        command.ranges.lin_vel_y = (-1.5, 1.5)
+        command.ranges.ang_vel_z = (-2.0, 2.0)
         command.ranges.heading = None
 
         # Deterministic actions and proprioception, independent of USD/runtime array ordering.

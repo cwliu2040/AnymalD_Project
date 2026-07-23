@@ -13,7 +13,7 @@ from anymal_locomotion.policy_contract import CANONICAL_JOINT_ORDER, POLICY_CONT
 
 
 def test_extension_package_import() -> None:
-    assert anymal_locomotion.__version__ == "0.1.0"
+    assert anymal_locomotion.__version__ == "0.2.0"
 
 
 try:
@@ -83,9 +83,9 @@ def test_resolved_environment_contract() -> None:
     command = cfg.commands.base_velocity
     assert command.heading_command is False
     assert command.rel_heading_envs == 0.0
-    assert command.ranges.lin_vel_x == (-1.0, 1.0)
-    assert command.ranges.lin_vel_y == (-1.0, 1.0)
-    assert command.ranges.ang_vel_z == (-1.0, 1.0)
+    assert command.ranges.lin_vel_x == (-2.0, 3.0)
+    assert command.ranges.lin_vel_y == (-1.5, 1.5)
+    assert command.ranges.ang_vel_z == (-2.0, 2.0)
 
 
 @requires_isaac_runtime
@@ -112,7 +112,7 @@ def test_official_reward_and_ppo_baseline_are_retained() -> None:
 
     assert agent_cfg.experiment_name == "anymal_d_locomotion_v1"
     assert agent_cfg.num_steps_per_env == 24
-    assert agent_cfg.max_iterations == 300
+    assert agent_cfg.max_iterations == 1000
     assert agent_cfg.policy.actor_hidden_dims == [128, 128, 128]
     assert agent_cfg.policy.critic_hidden_dims == [128, 128, 128]
     assert agent_cfg.policy.actor_obs_normalization is False

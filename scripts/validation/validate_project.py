@@ -46,13 +46,18 @@ def main() -> None:
         observation_dim = policy_shape[-1]
         action_dim = base_env.action_manager.total_action_dim
         policy_rate_hz = 1.0 / base_env.step_dt
+        command_ranges = env_cfg.commands.base_velocity.ranges
+        contract_limits = POLICY_CONTRACT["command"]["limits"]
 
         assert observation_dim == POLICY_CONTRACT["observation"]["dimension"] == 48
         assert action_dim == POLICY_CONTRACT["action"]["dimension"] == 12
         assert env_cfg.scene.height_scanner is None
         assert env_cfg.observations.policy.height_scan is None
         assert policy_rate_hz == 50.0
-        assert agent_cfg.max_iterations == 300
+        assert agent_cfg.max_iterations == 1000
+        assert command_ranges.lin_vel_x == tuple(contract_limits["vx"])
+        assert command_ranges.lin_vel_y == tuple(contract_limits["vy"])
+        assert command_ranges.ang_vel_z == tuple(contract_limits["wz"])
 
         print(f"PASS task={TASK_ID}", flush=True)
         print(
@@ -62,6 +67,11 @@ def main() -> None:
         print(f"PASS runtime_joints={robot.joint_names}", flush=True)
         print(f"PASS canonical_joints={list(CANONICAL_JOINT_ORDER)}", flush=True)
         print(f"PASS canonical_to_runtime={list(canonical_to_runtime)}", flush=True)
+        print(
+            "PASS command_ranges="
+            f"vx={command_ranges.lin_vel_x} vy={command_ranges.lin_vel_y} wz={command_ranges.ang_vel_z}",
+            flush=True,
+        )
     finally:
         env.close()
 

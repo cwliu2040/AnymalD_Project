@@ -1,4 +1,4 @@
-schema_version: 1.0.0
+schema_version: 1.1.0
 robot:
   name: ANYmal-D
   custom_usd_integrated: false
@@ -17,7 +17,7 @@ action:
 command:
   semantics: direct_body_velocity
   components: [vx, vy, wz]
-  limits: {vx: [-1.0, 1.0], vy: [-1.0, 1.0], wz: [-1.0, 1.0]}
+  limits: {vx: [-2.0, 3.0], vy: [-1.5, 1.5], wz: [-2.0, 2.0]}
 frames:
   base_linear_velocity: base
   base_angular_velocity: base
@@ -30,7 +30,7 @@ versions:
   isaac_sim: 5.1.0
   isaac_lab: v2.3.2
 checkpoint:
-  path: /home/ros/anymal_locomotion/logs/rsl_rl/anymal_d_locomotion_v1/<run>/model_299.pt
+  path: /home/ros/anymal_locomotion/logs/rsl_rl/anymal_d_locomotion_v1/<run>/model_999.pt
   sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 config_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 project_git_commit: cccccccccccccccccccccccccccccccccccccccc
