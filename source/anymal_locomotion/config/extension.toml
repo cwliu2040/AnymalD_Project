@@ -1,0 +1,19 @@
+[package]
+version = "0.1.0"
+category = "isaaclab"
+title = "ANYmal-D Locomotion"
+author = "ANYmal Locomotion Project"
+maintainer = "ANYmal Locomotion Project"
+description = "Project-owned ANYmal-D locomotion tasks and policy contracts."
+repository = ""
+keywords = ["isaaclab", "locomotion", "anymal-d", "rsl-rl"]
+readme = "README.md"
+
+[dependencies]
+"isaaclab" = {}
+"isaaclab_assets" = {}
+"isaaclab_rl" = {}
+"isaaclab_tasks" = {}
+
+[[python.module]]
+name = "anymal_locomotion"

@@ -1,0 +1,16 @@
+schema_version: 1
+project_root: /home/ros/anymal_locomotion
+logs_root: /home/ros/anymal_locomotion/logs
+checkpoints_root: /home/ros/anymal_locomotion/checkpoints
+exports_root: /home/ros/anymal_locomotion/exported
+forbidden_roots:
+  - /home/ros/IsaacLab/logs
+run_contents:
+  - params/env.yaml
+  - params/agent.yaml
+  - params/run_manifest.yaml
+  - TensorBoard event logs
+  - RSL-RL model checkpoints
+promotion:
+  checkpoints_root: curated checkpoints selected from completed runs
+  exports_root: policy artifacts plus policy_metadata.yaml

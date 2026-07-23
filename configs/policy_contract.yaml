@@ -1,0 +1,74 @@
+schema_version: 1.0.0
+
+robot:
+  name: ANYmal-D
+  reference: official_isaac_sim_5_1_usd
+  usd_uri: https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1/Isaac/IsaacLab/Robots/ANYbotics/ANYmal-D/anymal_d.usd
+  custom_usd_integrated: false
+
+# Canonical order obtained from the official Isaac Sim 5.1 ANYmal-D USD.
+# Runtime arrays and ROS JointState arrays must be remapped by name.
+joints:
+  - {policy_index: 0, name: LF_HAA, default_position: 0.0}
+  - {policy_index: 1, name: LH_HAA, default_position: 0.0}
+  - {policy_index: 2, name: RF_HAA, default_position: 0.0}
+  - {policy_index: 3, name: RH_HAA, default_position: 0.0}
+  - {policy_index: 4, name: LF_HFE, default_position: 0.4}
+  - {policy_index: 5, name: LF_KFE, default_position: -0.8}
+  - {policy_index: 6, name: LH_HFE, default_position: -0.4}
+  - {policy_index: 7, name: LH_KFE, default_position: 0.8}
+  - {policy_index: 8, name: RF_HFE, default_position: 0.4}
+  - {policy_index: 9, name: RF_KFE, default_position: -0.8}
+  - {policy_index: 10, name: RH_HFE, default_position: -0.4}
+  - {policy_index: 11, name: RH_KFE, default_position: 0.8}
+
+observation:
+  dimension: 48
+  concatenation_order: preserved
+  terms:
+    - {name: base_linear_velocity, offset: 0, dimension: 3, frame: base}
+    - {name: base_angular_velocity, offset: 3, dimension: 3, frame: base}
+    - {name: projected_gravity, offset: 6, dimension: 3, frame: base}
+    - {name: velocity_command, offset: 9, dimension: 3, frame: base, components: [vx, vy, wz]}
+    - {name: relative_joint_position, offset: 12, dimension: 12, order: canonical_joint_order}
+    - {name: relative_joint_velocity, offset: 24, dimension: 12, order: canonical_joint_order}
+    - {name: previous_action, offset: 36, dimension: 12, order: canonical_joint_order}
+
+action:
+  dimension: 12
+  type: joint_position
+  order: canonical_joint_order
+  scale: 0.5
+  offset: default_joint_position
+  control_period_s: 0.02
+
+command:
+  semantics: direct_body_velocity
+  components: [vx, vy, wz]
+  ros_source: geometry_msgs/msg/Twist
+  limits:
+    vx: [-1.0, 1.0]
+    vy: [-1.0, 1.0]
+    wz: [-1.0, 1.0]
+
+frames:
+  base_linear_velocity: base
+  base_angular_velocity: base
+  projected_gravity: base
+  velocity_command: base
+  ros_convention: REP-103
+
+normalization:
+  actor_observation: false
+  critic_observation: false
+
+versions:
+  isaac_sim: 5.1.0
+  isaac_lab: v2.3.2
+  isaac_lab_commit: 37ddf626871758333d6ed89cf64ad702aef127d0
+  historical_rollback_commit: cbf51abb5e98d1b3d497c8c73dc989e9f3628b89
+
+export_fields:
+  checkpoint_sha256: required
+  config_sha256: required
+  project_git_commit: required

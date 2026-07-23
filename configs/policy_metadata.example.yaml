@@ -1,0 +1,36 @@
+schema_version: 1.0.0
+robot:
+  name: ANYmal-D
+  custom_usd_integrated: false
+joint_order:
+  [LF_HAA, LH_HAA, RF_HAA, RH_HAA, LF_HFE, LF_KFE, LH_HFE, LH_KFE, RF_HFE, RF_KFE, RH_HFE, RH_KFE]
+observation:
+  dimension: 48
+  terms:
+    [base_linear_velocity, base_angular_velocity, projected_gravity, velocity_command,
+     relative_joint_position, relative_joint_velocity, previous_action]
+action:
+  dimension: 12
+  scale: 0.5
+  offset: default_joint_position
+  control_period_s: 0.02
+command:
+  semantics: direct_body_velocity
+  components: [vx, vy, wz]
+  limits: {vx: [-1.0, 1.0], vy: [-1.0, 1.0], wz: [-1.0, 1.0]}
+frames:
+  base_linear_velocity: base
+  base_angular_velocity: base
+  projected_gravity: base
+  velocity_command: base
+normalization:
+  actor_observation: false
+  critic_observation: false
+versions:
+  isaac_sim: 5.1.0
+  isaac_lab: v2.3.2
+checkpoint:
+  path: /home/ros/anymal_locomotion/logs/rsl_rl/anymal_d_locomotion_v1/<run>/model_299.pt
+  sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+config_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+project_git_commit: cccccccccccccccccccccccccccccccccccccccc

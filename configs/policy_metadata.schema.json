@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.anymal-locomotion/policy-metadata.schema.json",
+  "title": "ANYmal-D Locomotion Policy Metadata",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "robot",
+    "joint_order",
+    "observation",
+    "action",
+    "command",
+    "frames",
+    "normalization",
+    "versions",
+    "checkpoint",
+    "config_sha256",
+    "project_git_commit"
+  ],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "robot": {"type": "object"},
+    "joint_order": {
+      "type": "array",
+      "minItems": 12,
+      "maxItems": 12,
+      "uniqueItems": true,
+      "items": {"type": "string"}
+    },
+    "observation": {
+      "type": "object",
+      "required": ["dimension", "terms"],
+      "properties": {
+        "dimension": {"const": 48},
+        "terms": {"type": "array", "minItems": 7, "maxItems": 7}
+      }
+    },
+    "action": {
+      "type": "object",
+      "required": ["dimension", "scale", "offset", "control_period_s"],
+      "properties": {
+        "dimension": {"const": 12},
+        "scale": {"const": 0.5},
+        "offset": {"const": "default_joint_position"},
+        "control_period_s": {"const": 0.02}
+      }
+    },
+    "command": {"type": "object"},
+    "frames": {"type": "object"},
+    "normalization": {"type": "object"},
+    "versions": {"type": "object"},
+    "checkpoint": {
+      "type": "object",
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "config_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "project_git_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+  },
+  "additionalProperties": true
+}

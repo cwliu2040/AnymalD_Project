@@ -1,0 +1,33 @@
+# Python
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
+**/.pytest_cache/
+.coverage
+
+# Isaac Sim / native crash artifacts
+core
+core.*
+*.dmp
+*.log
+
+# IDE
+.idea/
+.vscode/
+
+# Generated training artifacts (retain directory placeholders)
+logs/*
+!logs/.gitkeep
+checkpoints/*
+!checkpoints/.gitkeep
+exported/*
+!exported/.gitkeep
+
+# Generated videos and external tool state
+**/videos/
+**/wandb/
+**/.neptune/
+
+# Local editable-install and environment state
+.python.env
+*.tmp
