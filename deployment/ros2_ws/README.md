@@ -1,20 +1,20 @@
 # ROS 2 Deployment Workspace
 
-Reserved for the future external ROS 2 policy node, hardware/simulation
-adapters, bringup, and interface tests.
+此目錄保留給未來外部 ROS 2 policy node、hardware/simulation adapter、
+bringup 與 interface test。
 
-The node will run outside Isaac Sim. It may use `rclpy` or `rclcpp`; the
-Isaac Lab training extension may not.
+ROS 2 node 必須在 Isaac Sim process 外執行，可使用 `rclpy` 或 `rclcpp`；
+Isaac Lab training extension 則不可使用。
 
-Planned inputs:
+預計輸入：
 
-- `/cmd_vel` (`geometry_msgs/msg/Twist`)
+- `/cmd_vel`（`geometry_msgs/msg/Twist`）
 - IMU
-- joint states, remapped by name
-- odometry/state estimate
+- 依 joint name remap 的 joint states
+- odometry / state estimate
 
-The low-level output interface is intentionally unspecified until the physical
-ANYmal-D controller/SDK and safety requirements are confirmed.
+Low-level output interface 必須等實體 ANYmal-D controller/SDK 與 safety
+requirements 確認後才能決定。
 
-Do not copy the legacy workspace or the old in-simulator `rclpy` prototype into
-this directory.
+不可將 legacy workspace 或舊版在 simulator 內執行的 `rclpy` prototype
+複製到此目錄。

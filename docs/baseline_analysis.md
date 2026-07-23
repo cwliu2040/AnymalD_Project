@@ -1,9 +1,9 @@
-# ANYmal-D Locomotion Baseline Analysis
+# ANYmal-D Locomotion 基準分析
 
 分析日期：2026-07-23
 
-> Implementation update（2026-07-23）：本文件第 3 節記錄的是實作前的
-> workspace 狀態。External Project baseline 現已建立。已確認版本與架構
+> 實作更新（2026-07-23）：本文件第 3 節記錄的是實作前的
+> workspace 狀態。External Project baseline 現已建立。已確認的版本與架構
 > 決策整理在第 12 節，並優先於較早的待確認項目。
 
 ## 1. 結論摘要
@@ -156,34 +156,34 @@ Run directory：
 
 ### 5.1 核心比較
 
-| 項目 | Official ANYmal-D Flat | Official Spot Flat | Old ANYmal-D run |
+| 項目 | 官方 ANYmal-D Flat | 官方 Spot Flat | 舊 ANYmal-D run |
 |---|---|---|---|
 | Workflow | Manager-Based | Manager-Based | Manager-Based |
-| Algorithm | RSL-RL PPO | RSL-RL PPO | RSL-RL PPO |
-| Environments | 4096 | 4096（繼承） | 4096 |
-| Episode | 20 s | 20 s | 20 s |
-| Physics / policy rate | 200 Hz / 50 Hz (`dt=0.005`, decimation 4) | 500 Hz / 50 Hz (`dt=0.002`, decimation 10) | 200 Hz / 50 Hz |
-| Observation | 48 proprioceptive | 48 proprioceptive | 48，checkpoint 已確認 |
-| Action | 12 joint position targets | 12 joint position targets | 12，checkpoint 已確認 |
+| 演算法 | RSL-RL PPO | RSL-RL PPO | RSL-RL PPO |
+| 環境數量 | 4096 | 4096（繼承） | 4096 |
+| Episode 長度 | 20 s | 20 s | 20 s |
+| Physics / policy 頻率 | 200 Hz / 50 Hz（`dt=0.005`、decimation 4） | 500 Hz / 50 Hz（`dt=0.002`、decimation 10） | 200 Hz / 50 Hz |
+| Observation | 48 維 proprioception | 48 維 proprioception | 48 維，checkpoint 已確認 |
+| Action | 12 維 joint-position target | 12 維 joint-position target | 12 維，checkpoint 已確認 |
 | Action scale | 0.5 | 0.2 | 0.5 |
-| Height scan in policy | No | No | No |
-| Terrain | Plane | Cobblestone generator：flat + random rough | Plane |
-| Terrain curriculum term | Disabled | Inherited term remains configured | Disabled |
-| Training observation corruption | Enabled | Disabled | Enabled |
-| Max iterations | 300 | 20,000 | 300，完成至 299 |
+| Policy 是否包含 height scan | 否 | 否 | 否 |
+| Terrain | 平面 | Cobblestone generator：flat + random rough | 平面 |
+| Terrain curriculum term | 關閉 | 保留繼承設定 | 關閉 |
+| 訓練 observation corruption | 開啟 | 關閉 | 開啟 |
+| 最大 iterations | 300 | 20,000 | 300，完成至 299 |
 
-### 5.2 Velocity commands
+### 5.2 速度命令
 
-| Command setting | Official ANYmal-D Flat | Official Spot Flat | Old ANYmal-D run |
+| Command 設定 | 官方 ANYmal-D Flat | 官方 Spot Flat | 舊 ANYmal-D run |
 |---|---:|---:|---:|
 | `lin_vel_x` | `[-1.0, 1.0]` m/s | `[-2.0, 3.0]` m/s | `[-1.0, 1.0]` m/s |
 | `lin_vel_y` | `[-1.0, 1.0]` m/s | `[-1.5, 1.5]` m/s | `[-1.0, 1.0]` m/s |
 | `ang_vel_z` | `[-1.0, 1.0]` rad/s | `[-2.0, 2.0]` rad/s | `[-1.0, 1.0]` rad/s |
-| Heading range | `[-pi, pi]` | None | `[-pi, pi]` |
-| Heading command | Enabled | Disabled; direct yaw-rate command | Enabled |
+| Heading 範圍 | `[-pi, pi]` | 無 | `[-pi, pi]` |
+| Heading command | 開啟 | 關閉；直接 yaw-rate command | 開啟 |
 | Heading environments | 100% | 0% | 100% |
 | Standing environments | 2% | 10% | 2% |
-| Resample interval | 10 s | 10 s | 10 s |
+| 重新取樣間隔 | 10 s | 10 s | 10 s |
 
 ANYmal-D 的 policy observation 最後仍收到三維
 `[vx_command, vy_command, wz_command]`；heading mode 會由 command term 根據
@@ -195,7 +195,7 @@ heading error 產生 `wz_command`。要讓 `/cmd_vel.angular.z` 成為直接 yaw
 
 兩個官方 task 的 observation categories 相同，且都是 48 維：
 
-| 順序 | Term | Dimension |
+| 順序 | Term | 維度 |
 |---:|---|---:|
 | 1 | base linear velocity | 3 |
 | 2 | base angular velocity | 3 |
@@ -204,11 +204,11 @@ heading error 產生 `wz_command`。要讓 `/cmd_vel.angular.z` 成為直接 yaw
 | 5 | relative joint position | 12 |
 | 6 | relative joint velocity | 12 |
 | 7 | previous action | 12 |
-|  | Total | 48 |
+|  | 總計 | 48 |
 
 差異在 noise：
 
-| Term | ANYmal-D noise | Spot configured noise |
+| Term | ANYmal-D noise | Spot 設定的 noise |
 |---|---:|---:|
 | base linear velocity | ±0.1 | ±0.1 |
 | base angular velocity | ±0.2 | ±0.1 |
@@ -235,7 +235,7 @@ normalization。
 
 Official ANYmal-D Flat 與舊 run 相同：
 
-| Reward term | Weight |
+| Reward term | 權重 |
 |---|---:|
 | `track_lin_vel_xy_exp` | +1.0 |
 | `track_ang_vel_z_exp` | +0.5 |
@@ -254,7 +254,7 @@ Official ANYmal-D Flat 與舊 run 相同：
 
 Spot 使用不同的 robot-specific reward formulation：
 
-| Reward term | Weight |
+| Reward term | 權重 |
 |---|---:|
 | air time | +5.0 |
 | base angular velocity tracking | +5.0 |
@@ -276,7 +276,7 @@ weight 的數值不能直接與 ANYmal-D weight 比大小。尤其 gait、foot c
 remotized knee dynamics 都是 Spot task 的整體設計，不能只複製幾個 weight
 到 ANYmal-D。
 
-### 5.5 Actions and actuators
+### 5.5 Actions 與 actuators
 
 #### ANYmal-D
 
@@ -305,22 +305,22 @@ scale 單獨替換 ANYmal-D 的 0.5。
 
 ### 5.6 PPO
 
-| Parameter | Official ANYmal-D Flat | Official Spot Flat | Old ANYmal-D run |
+| 參數 | 官方 ANYmal-D Flat | 官方 Spot Flat | 舊 ANYmal-D run |
 |---|---:|---:|---:|
-| steps per env | 24 | 24 | 24 |
-| max iterations | 300 | 20,000 | 300 |
+| 每個環境的 steps | 24 | 24 | 24 |
+| 最大 iterations | 300 | 20,000 | 300 |
 | actor/critic MLP | 128, 128, 128 | 512, 256, 128 | 128, 128, 128 |
-| initial noise std | 1.0 | 1.0 | 1.0 |
-| learning rate | 1.0e-3 | 1.0e-3 | 1.0e-3 configured |
+| 初始 noise std | 1.0 | 1.0 | 1.0 |
+| learning rate | 1.0e-3 | 1.0e-3 | 設定為 1.0e-3 |
 | schedule | adaptive | adaptive | adaptive |
 | desired KL | 0.01 | 0.01 | 0.01 |
-| max gradient norm | 1.0 | 1.0 | 1.0 |
+| 最大 gradient norm | 1.0 | 1.0 | 1.0 |
 | epochs / mini-batches | 5 / 4 | 5 / 4 | 5 / 4 |
 | gamma / lambda | 0.99 / 0.95 | 0.99 / 0.95 | 0.99 / 0.95 |
 | PPO clip | 0.2 | 0.2 | 0.2 |
 | value loss coefficient | 1.0 | 0.5 | 1.0 |
 | entropy coefficient | 0.005 | 0.0025 | 0.005 |
-| observation normalization | Off | Off | Off |
+| observation normalization | 關閉 | 關閉 | 關閉 |
 
 舊 run 的 TensorBoard 沒有記錄 actual KL scalar，只能確認
 `desired_kl=0.01`。同樣地，gradient norm 沒有 scalar；只能確認
@@ -335,7 +335,7 @@ adaptive schedule 使舊 run 的實際 learning rate 不固定：
 
 因此 `learning_rate=1e-3` 是起始設定，不是整段 run 的固定值。
 
-### 5.7 Terrain and training setup
+### 5.7 Terrain 與訓練設定
 
 Official ANYmal-D Flat：
 
@@ -364,22 +364,22 @@ Official Spot Flat：
   參考此機制，應以 resolved config/runtime behavior 再確認，不能只由 class
   inheritance 推定。
 
-## 6. 舊 ANYmal-D training 實際結果
+## 6. 舊 ANYmal-D 訓練實際結果
 
 舊 run 完整執行 300 TensorBoard steps，checkpoint iteration 為 299。
 
 重要 final metrics：
 
-| Metric | Final | Best / range |
+| 指標 | 最終值 | 最佳值／範圍 |
 |---|---:|---:|
-| mean reward | 21.5068 | max 21.7607 |
-| mean episode length | 991.7 steps | max 1000 |
+| mean reward | 21.5068 | 最大 21.7607 |
+| mean episode length | 991.7 steps | 最大 1000 |
 | XY velocity error | 0.2115 | — |
 | yaw velocity error | 0.2064 | — |
-| timeout fraction | 0.9677 | max 0.9734 |
+| timeout fraction | 0.9677 | 最大 0.9734 |
 | base-contact termination | 0.0323 | — |
-| policy mean noise std | 0.2866 | start 0.9908 |
-| value loss | 0.00301 | min 0.00228 |
+| policy mean noise std | 0.2866 | 起始 0.9908 |
+| value loss | 0.00301 | 最小 0.00228 |
 
 在 50 Hz policy rate 與 20 s episode 下，1000 steps 是完整 episode。
 因此最後約 96.8% termination 為 timeout、mean length 991.7，顯示 baseline
@@ -498,14 +498,14 @@ contract，避免 policy node 對 simulator ground truth 形成隱藏依賴。
 
 ## 8. 建議實作階段
 
-### Phase 0 — 決策與版本固定
+### 階段 0 — 決策與版本固定
 
 - 確認實際 project root。
 - 確認 Isaac Lab commit/tag、Isaac Sim 5.1、RSL-RL version 的支援組合。
 - 確認 custom USD 與實體 ANYmal-D control interface。
 - 決定 v1 command mode 與 velocity limits。
 
-### Phase 1 — Minimal External Project scaffold
+### 階段 1 — 最小 External Project scaffold
 
 - 使用目前 Isaac Lab external template 建立專案 package。
 - 建立自己的 Gym task ID，避免覆蓋官方 ID。
@@ -515,7 +515,7 @@ contract，避免 policy node 對 simulator ground truth 形成隱藏依賴。
   48 observations、12 actions、no height scan、50 Hz、預期 rewards/PPO。
 - 加入 source check，禁止 training package import `rclpy`。
 
-### Phase 2 — Baseline reproduction
+### 階段 2 — 重現 baseline
 
 - 先用 official USD 做 zero/random action smoke test。
 - 以固定 seed 重現 300-iteration baseline。
@@ -525,7 +525,7 @@ contract，避免 policy node 對 simulator ground truth 形成隱藏依賴。
 
 此階段需在使用者確認後才開始 training。
 
-### Phase 3 — Custom ANYmal-D USD
+### 階段 3 — Custom ANYmal-D USD
 
 - 新增 local `ArticulationCfg`，不改 `isaaclab_assets`。
 - 驗證 joint/link names、axes/signs、default pose、limits、inertials、
@@ -534,14 +534,14 @@ contract，避免 policy node 對 simulator ground truth 形成隱藏依賴。
 - 評估 ANYmal-C actuator network approximation 是否仍可接受；若沒有
   實機識別資料，先保留為已知限制。
 
-### Phase 4 — Policy export and contract validation
+### 階段 4 — Policy 匯出與 contract 驗證
 
 - Export TorchScript/ONNX 及 metadata。
 - 建立 Python-independent golden observation/action vectors。
 - 測試 checkpoint、TorchScript、ONNX 在相同 input 下的 output tolerance。
 - 測試 command clamp、timeout、NaN/Inf 與 stale state fail-safe。
 
-### Phase 5 — ROS 2 simulation deployment
+### 階段 5 — ROS 2 模擬部署
 
 - 在 Isaac Sim 建立 ROS 2 Bridge / Action Graph。
 - 外部 ROS 2 policy node 接收 IMU、joint states、state estimate 與
@@ -550,14 +550,14 @@ contract，避免 policy node 對 simulator ground truth 形成隱藏依賴。
 - 先做 topic rate、timestamp、frame、latency與joint remapping tests。
 - UDP prototype 不進 final architecture。
 
-### Phase 6 — Perception and navigation
+### 階段 6 — 感知與導航
 
 - Action Graph/Bridge 發佈 LiDAR、RGB-D、TF、odometry。
 - ROS 2 外部執行 SLAM/Nav2。
 - Nav2 只透過 `/cmd_vel` 驅動 locomotion command。
 - 感知資料不加入 v1 locomotion observation。
 
-### Phase 7 — Rough/perceptive and sim-to-real
+### 階段 7 — Rough/perceptive locomotion 與 sim-to-real
 
 - Flat v1 穩定後另開 Rough task。
 - Perceptive locomotion 作為獨立 policy/version，不改變 Flat v1 contract。
@@ -628,7 +628,7 @@ contract，避免 policy node 對 simulator ground truth 形成隱藏依賴。
    scaffold 完成後，是否先只做 config/simulation smoke tests，待再次確認才
    啟動 300-iteration reproduction training？建議如此。
 
-## 11. 已知舊 prototype 風險
+## 11. 已知舊版 prototype 風險
 
 `/home/ros/IsaacLab/scripts/anymal_d_test/` 與
 `/home/ros/IsaacLab/bringup/` 是目前 checkout 中的未追蹤內容，不是上述官方

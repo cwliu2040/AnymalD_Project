@@ -1,110 +1,88 @@
 # ANYmal-D Locomotion
 
-Clean Isaac Lab External Project for a maintainable ANYmal-D locomotion stack
-with a future sim-to-real deployment path.
+這是一個基於 Isaac Sim 5.1、Isaac Lab v2.3.2 與 RSL-RL PPO 的
+ANYmal-D locomotion External Project。目標是建立乾淨、可維護，並能逐步
+延伸至實體 ANYmal-D 的 sim-to-real 系統。
 
-The v1 task is a project-owned, Manager-Based RSL-RL PPO baseline derived from
-the official Isaac Lab ANYmal-D Flat task. LiDAR, RGB-D, SLAM, and navigation
-remain outside the Flat locomotion policy observation.
+Flat Locomotion v1 以官方 ANYmal-D Flat task 為基準，採用
+Manager-Based workflow 與 48 維 proprioceptive observation。LiDAR、
+RGB-D、SLAM 與 navigation 不放入 v1 policy observation。
 
-## Supported baseline
+## 目前基準
 
-- Project root: `/home/ros/anymal_locomotion`
-- Isaac Sim: `5.1.0`
-- Isaac Lab: `v2.3.2`
-- Isaac Lab tag commit: `37ddf626871758333d6ed89cf64ad702aef127d0`
-- Historical rollback reference:
-  `cbf51abb5e98d1b3d497c8c73dc989e9f3628b89`
-- RL workflow: Manager-Based, single-agent
-- RL library: RSL-RL PPO
+- 專案根目錄：`/home/ros/anymal_locomotion`
+- Isaac Sim：`5.1.0`
+- Isaac Lab：`v2.3.2`
+- Isaac Lab commit：`37ddf626871758333d6ed89cf64ad702aef127d0`
+- RL：Manager-Based、single-agent、RSL-RL PPO
+- Train task：`Isaac-Velocity-Flat-Anymal-D-Locomotion-v0`
+- Play task：`Isaac-Velocity-Flat-Anymal-D-Locomotion-Play-v0`
 
-Do not develop against `origin/main`. Pin the supported Isaac Lab tag.
+Isaac Lab 必須固定在支援的 tag，不以持續變動的 `origin/main` 作為基準。
 
-## Task IDs
+## v1 Policy 契約
 
-- Train: `Isaac-Velocity-Flat-Anymal-D-Locomotion-v0`
-- Play: `Isaac-Velocity-Flat-Anymal-D-Locomotion-Play-v0`
+- Observation：48 維
+- Action：12 維 joint-position action
+- Policy 頻率：50 Hz
+- Physics 頻率：200 Hz
+- Action scale：0.5
+- Command：body-frame `[vx, vy, wz]`
+- Command 範圍：`vx/vy/wz = [-1.0, 1.0]`
+- Joint order：依 `configs/policy_contract.yaml` 固定，runtime 與 ROS array
+  一律依 joint name remap
+- Terrain：flat plane
+- Policy 不包含 height scan、LiDAR 或 camera
 
-The project task keeps the official Flat rewards, PPO parameters, environment
-count, timing, action scale, and official ANYmal-D asset. Documented deviations
-are:
-
-- direct `[vx, vy, wz]` commands (`heading_command=False`);
-- deterministic canonical joint ordering for actions and joint observations;
-- fail-fast runtime joint-contract validation;
-- project-local experiment/artifact paths.
-
-## Directory structure
+## 目錄
 
 ```text
 anymal_locomotion/
-├── source/anymal_locomotion/   # Isaac Lab extension; never imports rclpy
-├── scripts/
-│   ├── rsl_rl/                 # v2.3.2-based train/play entry points
-│   └── validation/
-├── deployment/ros2_ws/         # future external ROS 2 policy/runtime
-├── action_graph/                # future ROS 2 Bridge / Action Graph assets
-├── configs/                     # policy, metadata, and artifact contracts
-├── logs/                        # generated RSL-RL runs
-├── checkpoints/                 # curated/promoted checkpoints
-├── exported/                    # policies plus metadata
+├── source/anymal_locomotion/   # Isaac Lab extension，不 import rclpy
+├── scripts/rsl_rl/             # train / play
+├── scripts/validation/         # runtime 與契約驗證
+├── configs/                    # policy 與 artifact 契約
+├── deployment/ros2_ws/         # 未來外部 ROS 2 policy/runtime
+├── action_graph/               # 未來 ROS 2 Bridge / Action Graph
+├── logs/                       # RSL-RL run 與 TensorBoard
+├── checkpoints/                # 挑選後保留的 checkpoint
+├── exported/                   # TorchScript / ONNX 與 metadata
 ├── tests/
 └── docs/
 ```
 
-Isaac Lab and RSL-RL remain dependencies. Their source is not vendored here.
+Isaac Lab 與 RSL-RL 都是 dependency，不會複製進本專案。
 
-## Installation assumptions
+## 驗證
 
-1. `/home/ros/IsaacLab` is checked out at `v2.3.2`.
-2. Isaac Sim 5.1.0 is linked/installed for that checkout.
-3. The NVIDIA driver and GPU are available.
-4. Commands are run from this project root unless stated otherwise.
-
-Install this extension in editable mode:
-
-```bash
-cd /home/ros/anymal_locomotion
-/home/ros/IsaacLab/isaaclab.sh -p -m pip install -e source/anymal_locomotion
-```
-
-This install command has not been run in the current workspace. Tests use
-`PYTHONPATH` so the Isaac Sim environment is not mutated.
-
-## Validation
-
-Static contract and dependency tests:
+靜態測試：
 
 ```bash
 cd /home/ros/anymal_locomotion
 PYTHONPATH=source/anymal_locomotion python3 -m pytest -q tests
 ```
 
-One-environment Isaac Sim runtime smoke test:
+Isaac Sim runtime smoke test：
 
 ```bash
 cd /home/ros/anymal_locomotion
 PYTHONPATH=source/anymal_locomotion \
-  /home/ros/IsaacLab/isaaclab.sh -p scripts/validation/validate_project.py --headless
+  /home/ros/IsaacLab/isaaclab.sh -p \
+  scripts/validation/validate_project.py --headless
 ```
 
-The runtime test instantiates one environment and validates registration,
-48 observations, 12 actions, no height scanner, 50 Hz policy rate, and runtime
-joint-name remapping. It does not start PPO training.
+目前已在 RTX 5080 主機完成驗證：
 
-Current validation status:
+- 48 observations
+- 12 actions
+- 50 Hz policy
+- 無 height scanner
+- deterministic canonical-to-runtime joint mapping
+- 完整 runtime smoke test 通過
 
-- static suite: verified;
-- Python compilation and YAML/JSON syntax: verified;
-- official USD joint-name extraction: verified;
-- Isaac Sim runtime initialization: verified on the project host with an
-  RTX 5080; manager dimensions are 48 observations and 12 actions at 50 Hz;
-- complete Isaac Sim smoke test: verified, including deterministic
-  canonical-to-runtime joint remapping.
+## 訓練
 
-## Future training
-
-After runtime smoke passes and training is explicitly approved:
+訓練入口：
 
 ```bash
 cd /home/ros/anymal_locomotion
@@ -115,38 +93,37 @@ PYTHONPATH=source/anymal_locomotion \
   --seed 42
 ```
 
-This command is prepared but has not been executed. It targets the project-local
-`logs/rsl_rl/anymal_d_locomotion_v1/` directory and saves resolved environment,
-agent, seed/version manifest, TensorBoard events, and RSL-RL checkpoints.
-Training intentionally fails before environment creation if the project has no
-committed Git revision, so create/review an initial commit before running it.
+訓練產物會寫入：
 
-## Future play and export
+`logs/rsl_rl/anymal_d_locomotion_v1/`
 
-After a project-owned checkpoint exists:
+每個 run 會保存 resolved environment/agent config、版本與 seed manifest、
+TensorBoard events 以及 RSL-RL checkpoint。Checkpoint 是可續訓或匯出
+policy 的模型存檔，不會提交到 GitHub。
+
+## Play 與匯出
+
+有 checkpoint 後，可用 play task 載入：
 
 ```bash
-cd /home/ros/anymal_locomotion
 PYTHONPATH=source/anymal_locomotion \
   /home/ros/IsaacLab/isaaclab.sh -p scripts/rsl_rl/play.py \
   --task Isaac-Velocity-Flat-Anymal-D-Locomotion-Play-v0 \
-  --checkpoint /home/ros/anymal_locomotion/logs/rsl_rl/anymal_d_locomotion_v1/<run>/model_299.pt
+  --checkpoint <checkpoint-path>
 ```
 
-The v2.3.2 play flow exports TorchScript and ONNX into
-`exported/anymal_d_locomotion_v1/<run>/` and writes
-`policy_metadata.yaml`. This flow is implemented but remains unverified until a
-new project checkpoint and a working Isaac Sim runtime are available.
+匯出產物放在 `exported/anymal_d_locomotion_v1/`，包含 TorchScript、ONNX
+與 `policy_metadata.yaml`。
 
-## Architecture boundaries
+## 架構限制
 
-- Training and Isaac Sim Python never import `rclpy`.
-- The future ROS 2 policy node runs outside the Isaac Sim process.
-- Isaac Sim ROS communication uses ROS 2 Bridge / Action Graph.
-- UDP is not a final architecture.
-- ROS `JointState` arrays are remapped by joint name.
-- A future custom USD must pass the canonical joint contract or introduce a
-  reviewed, versioned schema update.
+- Training 與 Isaac Sim Python 不 import `rclpy`。
+- ROS 2 policy node 必須在 Isaac Sim process 外執行。
+- Isaac Sim 通訊使用 ROS 2 Bridge / Action Graph。
+- UDP 不作為最終架構。
+- 未來 custom USD 必須通過 joint contract 驗證。
 
-See [architecture](docs/architecture.md) and
-[baseline analysis](docs/baseline_analysis.md).
+詳細內容請見：
+
+- [系統架構](docs/architecture.md)
+- [Baseline 分析](docs/baseline_analysis.md)

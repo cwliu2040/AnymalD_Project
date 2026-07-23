@@ -1,99 +1,101 @@
-# ANYmal-D Locomotion Architecture
+# ANYmal-D Locomotion 系統架構
 
-## Scope
+## 範圍
 
-Flat Locomotion v1 is a 50 Hz proprioceptive policy. Its inputs are base
-velocity, angular velocity, projected gravity, direct velocity command, joint
-position/velocity, and previous action. LiDAR, RGB-D, terrain perception, SLAM,
-and navigation are intentionally outside this policy.
+Flat Locomotion v1 是 50 Hz 的 proprioceptive policy。輸入包含 base linear
+velocity、base angular velocity、projected gravity、直接 velocity command、
+joint position/velocity 與 previous action。
 
-## Lifecycle
+LiDAR、RGB-D、terrain perception、SLAM 與 navigation 不屬於 Flat v1
+policy observation。
+
+## 系統生命週期
 
 ```text
-Isaac Lab v2.3.2 training
-  (Manager-Based, RSL-RL PPO, no rclpy)
-            |
-            v
-Project-local checkpoint and resolved configs
-            |
-            v
-Policy export (TorchScript / ONNX + policy_metadata.yaml)
-            |
-            v
-External ROS 2 policy node
+Isaac Lab v2.3.2 訓練
+  （Manager-Based、RSL-RL PPO、不使用 rclpy）
+              |
+              v
+專案內的 checkpoint 與 resolved configs
+              |
+              v
+Policy 匯出（TorchScript / ONNX + policy_metadata.yaml）
+              |
+              v
+外部 ROS 2 policy node
   /cmd_vel + estimated state -> 48-D observation -> 12-D action
-            |
-            +---------------- simulation ----------------+
-            |                                             |
-            v                                             |
+              |
+              +--------------- 模擬分支 ----------------+
+              |                                         |
+              v                                         |
 ROS 2 messages <-> ROS 2 Bridge / Action Graph <-> Isaac Sim
-            |
-            +---------------- hardware ------------------+
-            |
-            v
-Reviewed hardware adapter / safety controller -> physical ANYmal-D
+              |
+              +--------------- 實體分支 ----------------+
+              |
+              v
+通過審查的 hardware adapter / safety controller -> 實體 ANYmal-D
 ```
 
-The physical branch does not use Isaac Sim Action Graph. It reuses the same
-versioned policy contract through a robot-specific, safety-reviewed hardware
-adapter. The physical low-level control interface is not yet confirmed.
+實體機分支不使用 Isaac Sim Action Graph。它透過 robot-specific、經安全審查
+的 hardware adapter 重用同一份版本化 policy contract。實體 ANYmal-D 的
+low-level control interface 尚未確認。
 
-## Training layer
+## 訓練層
 
-Owned by `source/anymal_locomotion` and `scripts/rsl_rl`.
+訓練層由 `source/anymal_locomotion` 與 `scripts/rsl_rl` 管理。
 
-- Depends on Isaac Lab v2.3.2 and RSL-RL; it does not vendor either source tree.
-- Does not import `rclpy`.
-- Uses official ANYmal-D USD for the first smoke/regression baseline.
-- Uses direct body-frame `[vx, vy, wz]` command semantics.
-- Writes all runs under this repository.
-- Exports a policy only together with a committed Git revision and metadata.
+- 依賴 Isaac Lab v2.3.2 與 RSL-RL，不複製其 source tree。
+- 不 import `rclpy`。
+- 第一個 smoke/regression baseline 使用官方 ANYmal-D USD。
+- Command 採用 body-frame `[vx, vy, wz]`。
+- 所有 run 都寫入本 repository。
+- Policy 匯出時必須同時記錄已 commit 的 Git revision 與 metadata。
 
-## Policy contract
+## Policy Contract
 
-The source of truth is `configs/policy_contract.yaml`.
+唯一資料來源是 `configs/policy_contract.yaml`。
 
-- Observation: 48 values in a fixed seven-term concatenation order.
-- Action: 12 joint-position actions.
-- Action transformation:
-  `target_position = default_position + 0.5 * policy_action`.
-- Policy period: 0.02 s.
-- Command limits: ±1.0 m/s for x/y and ±1.0 rad/s for yaw.
-- Actor/critic observation normalization: disabled.
+- Observation：固定七個 term，共 48 維。
+- Action：12 個 joint-position action。
+- Action 轉換：
+  `target_position = default_position + 0.5 * policy_action`。
+- Policy period：0.02 秒。
+- Command limits：x/y 為 ±1.0 m/s，yaw 為 ±1.0 rad/s。
+- Actor/critic observation normalization：關閉。
 
-Actions, joint position observations, and joint velocity observations use the
-same canonical name order. Runtime and ROS arrays must be remapped by name.
+Action、joint position observation 與 joint velocity observation 使用相同的
+canonical joint-name order。Runtime 與 ROS array 必須依 joint name remap。
 
-## Simulation deployment boundary
+## 模擬部署邊界
 
-The future external ROS 2 policy node will:
+未來外部 ROS 2 policy node 將：
 
-1. receive `/cmd_vel` as `geometry_msgs/msg/Twist`;
-2. receive timestamped IMU, joint state, and state-estimation data;
-3. assemble the 48-D observation according to the exported metadata;
-4. run inference outside Isaac Sim;
-5. publish the reviewed low-level command interface.
+1. 接收 `/cmd_vel`（`geometry_msgs/msg/Twist`）。
+2. 接收具有 timestamp 的 IMU、joint state 與 state-estimation data。
+3. 依照匯出的 metadata 組合 48 維 observation。
+4. 在 Isaac Sim 外執行 inference。
+5. 發布經確認的 low-level command interface。
 
-Isaac Sim will use built-in ROS 2 Bridge / Action Graph nodes for message
-transport. No Isaac Sim or Isaac Lab Python module may import `rclpy`, and no
-private command-manager tensor mutation is part of the architecture.
+Isaac Sim 使用內建 ROS 2 Bridge / Action Graph nodes 傳輸訊息。Isaac Sim 與
+Isaac Lab Python module 不可 import `rclpy`，也不可直接修改 command manager
+的 private tensor。
 
-Exact low-level command message types remain open until the physical ANYmal-D
-control interface is confirmed.
+Low-level command message type 必須等實體 ANYmal-D control interface 確認後
+才能決定。
 
-## State estimation
+## State Estimation
 
-The official task observes simulator ground-truth base linear velocity. A real
-deployment requires an estimator with an explicit frame and timestamp contract.
-Before ROS 2 policy implementation, the project must confirm:
+官方 task 可直接使用 simulator ground-truth base linear velocity；實體機則
+需要明確定義 estimator、frame 與 timestamp contract。開始 ROS 2 policy
+實作前必須確認：
 
-- base velocity estimator and body/world frame;
-- IMU orientation/angular-velocity conventions;
-- odometry source, update rate, and covariance handling;
-- synchronization and stale-data timeouts;
-- safety clamp, rate limit, and emergency stop behavior.
+- base velocity estimator 與 body/world frame；
+- IMU orientation 與 angular-velocity convention；
+- odometry source、update rate 與 covariance；
+- synchronization 與 stale-data timeout；
+- safety clamp、rate limit 與 emergency stop。
 
-## Perception and navigation
+## 感知與導航
 
 ```text
 LiDAR / RGB-D
@@ -108,23 +110,22 @@ SLAM / terrain perception / Nav2
 /cmd_vel
       |
       v
-External locomotion policy node
+外部 locomotion policy node
 ```
 
-LiDAR and camera tensors are not part of Flat Locomotion v1 observation. Rough
-and perceptive locomotion will be separate tasks and policy versions.
+LiDAR 與 camera tensor 不進入 Flat v1 observation。Rough locomotion 與
+perceptive locomotion 將使用獨立 task 與 policy version。
 
-## Future custom USD
+## 未來 Custom USD
 
-The official Isaac Sim 5.1 ANYmal-D USD is the current canonical reference.
-Custom USD integration requires a reviewed project-owned `ArticulationCfg` and
-validation of:
+目前以官方 Isaac Sim 5.1 ANYmal-D USD 作為 reference。Custom USD 必須使用
+專案擁有的 `ArticulationCfg`，並驗證：
 
-- joint names, axes, signs, limits, and default positions;
-- base, foot, IMU, LiDAR, and camera frames;
-- inertial and collision properties;
-- contact body names;
-- actuator model compatibility.
+- joint name、axis、sign、limit 與 default position；
+- base、foot、IMU、LiDAR 與 camera frame；
+- inertial 與 collision property；
+- contact body name；
+- actuator model compatibility。
 
-Custom joint names will not be guessed. Any required mapping change must update
-the versioned contract and associated tests.
+系統不會猜測 custom joint name。任何 mapping 變更都必須更新版本化 contract
+與相關測試。
