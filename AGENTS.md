@@ -31,6 +31,11 @@ repository 內。
 - 設定、訓練產物、checkpoint、log 與匯出 policy 都必須保存在
   `~/anymal_locomotion`。
 
+## Git 提交
+
+- 後續 Git commit 訊息使用清楚、簡潔的繁體中文。
+- 不為翻譯既有 commit 訊息而重寫已推送的 Git 歷史。
+
 ## 部署方向
 
 - 所有介面與 policy 整合都必須考慮未來部署到實體 ANYmal-D 的
