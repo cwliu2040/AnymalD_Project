@@ -9,7 +9,11 @@ import rclpy
 from geometry_msgs.msg import Twist
 from rclpy.node import Node
 
-from anymal_locomotion_ros2.teleop_core import TeleopLimits, TeleopState
+from anymal_locomotion_ros2.teleop_core import (
+    TeleopLimits,
+    TeleopState,
+    normalize_tk_key,
+)
 
 
 class KeyboardTeleopNode(Node):
@@ -98,14 +102,11 @@ class KeyboardTeleopWindow:
 
     @staticmethod
     def _normalized_key(event: tk.Event) -> str:
-        keysym = str(event.keysym).lower()
-        if keysym in ("plus", "equal", "kp_add"):
-            return "+"
-        if keysym in ("minus", "underscore", "kp_subtract"):
-            return "-"
-        if keysym == "space":
-            return "space"
-        return keysym
+        return normalize_tk_key(
+            event.keysym,
+            char=getattr(event, "char", ""),
+            keysym_num=getattr(event, "keysym_num", None),
+        )
 
     def _cancel_release(self, key: str) -> None:
         job = self._release_jobs.pop(key, None)

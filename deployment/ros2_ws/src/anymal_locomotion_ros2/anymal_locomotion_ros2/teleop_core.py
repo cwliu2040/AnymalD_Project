@@ -7,6 +7,46 @@ from dataclasses import dataclass, field
 import numpy as np
 
 
+def normalize_tk_key(
+    keysym: object,
+    *,
+    char: object = "",
+    keysym_num: object = None,
+) -> str:
+    """Normalize main-keyboard and numeric-keypad Tk key events."""
+    normalized_keysym = str(keysym).lower()
+    normalized_char = str(char)
+    try:
+        normalized_keysym_num = int(keysym_num)
+    except (TypeError, ValueError):
+        normalized_keysym_num = -1
+
+    # X11 keysyms are stable even when Tk/desktop combinations report an
+    # unexpected localized keysym string. 0xFFAB and 0xFFAD are KP_Add and
+    # KP_Subtract; 0x002B and 0x002D are the regular + and - keys.
+    if normalized_keysym_num in (0x002B, 0x003D, 0xFFAB):
+        return "+"
+    if normalized_keysym_num in (0x002D, 0x005F, 0xFFAD):
+        return "-"
+    if normalized_char in ("+", "="):
+        return "+"
+    if normalized_char in ("-", "_"):
+        return "-"
+    if normalized_keysym in ("plus", "equal", "kp_add", "kp_plus", "add"):
+        return "+"
+    if normalized_keysym in (
+        "minus",
+        "underscore",
+        "kp_subtract",
+        "kp_minus",
+        "subtract",
+    ):
+        return "-"
+    if normalized_keysym == "space" or normalized_char == " ":
+        return "space"
+    return normalized_keysym
+
+
 @dataclass(frozen=True)
 class TeleopLimits:
     """Base speeds and policy command limits."""

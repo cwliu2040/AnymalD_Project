@@ -4,7 +4,20 @@ from __future__ import annotations
 
 import numpy as np
 
-from anymal_locomotion_ros2.teleop_core import TeleopLimits, TeleopState
+from anymal_locomotion_ros2.teleop_core import (
+    TeleopLimits,
+    TeleopState,
+    normalize_tk_key,
+)
+
+
+def test_tk_key_normalization_supports_numeric_keypad_speed_controls() -> None:
+    assert normalize_tk_key("KP_Add") == "+"
+    assert normalize_tk_key("KP_Subtract") == "-"
+    assert normalize_tk_key("unknown", keysym_num=0xFFAB) == "+"
+    assert normalize_tk_key("unknown", keysym_num=0xFFAD) == "-"
+    assert normalize_tk_key("unknown", char="+") == "+"
+    assert normalize_tk_key("unknown", char="-") == "-"
 
 
 def test_motion_keys_use_ros_body_frame_conventions() -> None:
