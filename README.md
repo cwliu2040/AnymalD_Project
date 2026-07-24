@@ -120,6 +120,18 @@ PYTHONPATH=source/anymal_locomotion \
   --checkpoint <checkpoint-path>
 ```
 
+固定速度量測使用 `evaluate.py`，例如以 128 個環境測試 3 m/s、20 秒：
+
+```bash
+PYTHONPATH=source/anymal_locomotion \
+  /home/ros/IsaacLab/isaaclab.sh -p scripts/rsl_rl/evaluate.py \
+  --headless --num_envs 128 --steps 1000 --warmup_steps 100 \
+  --vx 3.0 --vy 0.0 --wz 0.0 --checkpoint <checkpoint-path>
+```
+
+結果寫入 `logs/evaluation/`；目前量測結果見
+[High-Speed v0.2.0 Evaluation](docs/high_speed_evaluation.md)。
+
 匯出產物放在 `exported/anymal_d_locomotion_v1/`，包含 TorchScript、ONNX
 與 `policy_metadata.yaml`。
 

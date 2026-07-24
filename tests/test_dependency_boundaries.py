@@ -9,6 +9,7 @@ import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TRAINING_PACKAGE = PROJECT_ROOT / "source" / "anymal_locomotion"
+EVALUATION_SCRIPT = PROJECT_ROOT / "scripts" / "rsl_rl" / "evaluate.py"
 
 
 def test_training_package_does_not_import_rclpy() -> None:
@@ -31,3 +32,13 @@ def test_artifact_configuration_is_project_local() -> None:
         path = Path(config[key]).resolve()
         assert root in path.parents
         assert not str(path).startswith("/home/ros/IsaacLab/logs")
+
+
+def test_evaluation_uses_public_fixed_command_configuration() -> None:
+    source = EVALUATION_SCRIPT.read_text(encoding="utf-8")
+    assert "command_cfg.ranges.lin_vel_x" in source
+    assert "command_cfg.ranges.lin_vel_y" in source
+    assert "command_cfg.ranges.ang_vel_z" in source
+    assert "command_manager._" not in source
+    assert "rclpy" not in source
+    assert 'LOG_ROOT / "evaluation"' in source
