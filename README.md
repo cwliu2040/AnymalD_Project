@@ -135,6 +135,10 @@ PYTHONPATH=source/anymal_locomotion \
 匯出產物放在 `exported/anymal_d_locomotion_v1/`，包含 TorchScript、ONNX
 與 `policy_metadata.yaml`。
 
+目前提升為 deployment candidate 的 High-Speed v0.2.0 checkpoint、artifact
+hash 與 checkpoint／JIT／ONNX output parity 結果見
+[High-Speed Policy v0.2.0](docs/policy_release_v0.2.0.md)。
+
 ## 架構限制
 
 - Training 與 Isaac Sim Python 不 import `rclpy`。

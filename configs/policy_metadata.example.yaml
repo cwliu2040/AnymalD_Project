@@ -32,5 +32,14 @@ versions:
 checkpoint:
   path: /home/ros/anymal_locomotion/logs/rsl_rl/anymal_d_locomotion_v1/<run>/model_999.pt
   sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+artifacts:
+  torchscript:
+    path: policy.pt
+    sha256: dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+    size_bytes: 174248
+  onnx:
+    path: policy.onnx
+    sha256: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+    size_bytes: 164629
 config_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 project_git_commit: cccccccccccccccccccccccccccccccccccccccc

@@ -70,5 +70,7 @@ versions:
 
 export_fields:
   checkpoint_sha256: required
+  torchscript_sha256: required
+  onnx_sha256: required
   config_sha256: required
   project_git_commit: required

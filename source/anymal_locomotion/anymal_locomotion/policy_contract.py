@@ -9,7 +9,7 @@ from typing import Any, Sequence
 
 import yaml
 
-from anymal_locomotion.artifacts import PROJECT_ROOT, git_revision
+from anymal_locomotion.artifacts import PROJECT_ROOT, assert_project_local_path, git_revision
 
 POLICY_CONTRACT_PATH = PROJECT_ROOT / "configs" / "policy_contract.yaml"
 
@@ -72,13 +72,20 @@ def _sha256(path: Path) -> str:
 
 
 def write_export_metadata(export_dir: str | Path, checkpoint_path: str | Path) -> Path:
-    """Write versioned deployment metadata beside a future policy export."""
-    export_path = Path(export_dir).resolve()
-    checkpoint = Path(checkpoint_path).resolve()
+    """Write versioned deployment metadata beside a policy export."""
+    export_path = assert_project_local_path(export_dir)
+    checkpoint = assert_project_local_path(checkpoint_path)
     project_revision = git_revision(PROJECT_ROOT)
     if project_revision is None:
         raise RuntimeError("Policy export requires a committed project Git revision")
     export_path.mkdir(parents=True, exist_ok=True)
+    artifact_paths = {
+        "torchscript": export_path / "policy.pt",
+        "onnx": export_path / "policy.onnx",
+    }
+    missing = [str(path) for path in artifact_paths.values() if not path.is_file()]
+    if missing:
+        raise FileNotFoundError(f"Policy export artifacts are missing: {missing}")
     metadata = {
         "schema_version": POLICY_CONTRACT["schema_version"],
         "robot": POLICY_CONTRACT["robot"],
@@ -90,6 +97,14 @@ def write_export_metadata(export_dir: str | Path, checkpoint_path: str | Path) -
         "normalization": POLICY_CONTRACT["normalization"],
         "versions": POLICY_CONTRACT["versions"],
         "checkpoint": {"path": str(checkpoint), "sha256": _sha256(checkpoint)},
+        "artifacts": {
+            name: {
+                "path": path.name,
+                "sha256": _sha256(path),
+                "size_bytes": path.stat().st_size,
+            }
+            for name, path in artifact_paths.items()
+        },
         "config_sha256": _sha256(POLICY_CONTRACT_PATH),
         "project_git_commit": project_revision,
     }
