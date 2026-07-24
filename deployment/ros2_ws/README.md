@@ -29,10 +29,16 @@ IMU 量到角速度、方向與加速度，但加速度積分成速度會快速�
 - `/joint_states`：依 joint name 重排 position／velocity
 - `/cmd_vel`：body-frame `[vx, vy, wz]`
 
-Isaac Sim Action Graph 的 ROS 2 Publish Odometry node 必須使用
-`publishRawVelocities=false`，把 world velocity 投影到 robot frame，並將
-`child_frame_id` 設為 `base_link`。實體機則必須由 robot state estimator
-提供同一語意的 `/odom`。
+Isaac Compute Odometry 提供的 local linear velocity 直接接到
+ROS 2 Publish Odometry，並使用 `publishRawVelocities=true` 避免 publisher
+再次轉換。World angular velocity則先依每一幀的 base orientation 轉成
+body frame。`child_frame_id` 固定為 `base_link`。實體機必須由 robot state
+estimator 提供同一語意的 `/odom`。
+
+目前官方 Play 場景沒有獨立 IMU prim。模擬 v0.1 的 `/imu` 先由 base 的
+simulator state 產生；這足以驗證 48 維 observation 資料流，但不模擬實體
+IMU 的 noise、bias 或安裝角度。加入真正的模擬 IMU 是後續的 sensor realism
+工作，不會改變「速度由 `/odom` 提供」的介面。
 
 ## Policy observation
 
@@ -65,22 +71,96 @@ colcon build --symlink-install --packages-select anymal_locomotion_ros2
 source install/setup.bash
 ```
 
+## ONNX 是什麼
+
+可以把三個檔案這樣理解：
+
+- `model_1298.pt`：完整訓練存檔，可續訓，也包含 optimizer 等訓練資料。
+- `policy.onnx`：只留下「48 個數字輸入、12 個 action 輸出」的推論模型。
+- `policy_metadata.yaml`：關節順序、預設角度、scale、command limits 等接線
+  說明。
+
+ONNX 不會重新訓練，也不會改變權重；它只是讓外部 ROS 2 Python 不必安裝
+完整 PyTorch。這個專案的 checkpoint／TorchScript／ONNX parity 已通過。
+
 ## 推論 runtime
 
-目前 ROS 2 系統 Python 已有 `rclpy` 與 NumPy，但沒有 PyTorch；Isaac Sim
-Python 有 PyTorch，但不可拿來執行 ROS 2 node。這是兩個不同的 runtime。
-
-在外部 ROS 2 Python 環境安裝相容的 PyTorch 後，才可啟動：
+ROS 2 系統 Python 已有 `rclpy` 與 NumPy。預設使用 `policy.onnx` 與 ONNX
+reference evaluator；實測單次推論低於 0.1 ms，低於 50 Hz 的 20 ms 預算。
+依賴安裝在 repository 內、colcon workspace 外：
 
 ```bash
+cd /home/ros/anymal_locomotion
+python3 -m pip install \
+  --target deployment/python_vendor \
+  -r deployment/ros2_ws/requirements-inference.txt
+```
+
+建置後可啟動：
+
+```bash
+cd /home/ros/anymal_locomotion
+source /opt/ros/humble/setup.bash
+source deployment/ros2_ws/install/setup.bash
+export PYTHONPATH=/home/ros/anymal_locomotion/deployment/python_vendor:${PYTHONPATH}
+
 ros2 run anymal_locomotion_ros2 policy_node --ros-args \
   -p use_sim_time:=true \
-  -p policy_path:=/home/ros/anymal_locomotion/exported/anymal_d_locomotion_v1/high_speed_v0.2.0/policy.pt \
+  -p backend:=onnx \
+  -p policy_path:=/home/ros/anymal_locomotion/exported/anymal_d_locomotion_v1/high_speed_v0.2.0/policy.onnx \
   -p metadata_path:=/home/ros/anymal_locomotion/exported/anymal_d_locomotion_v1/high_speed_v0.2.0/policy_metadata.yaml
 ```
 
-未安裝 PyTorch時，node 會明確停止並說明缺少 dependency，不會退回 Isaac Sim
-Python 或把 `rclpy` 塞進 training process。
+也保留 `backend:=torchscript`，但必須在外部 ROS 2 Python 另裝 PyTorch，並
+把 `policy_path` 改成 `policy.pt`。兩種方式都不會把 `rclpy` 塞進 Isaac Sim。
+
+## GPU 模擬與鍵盤控制
+
+ROS 2 workspace 位於：
+
+`/home/ros/anymal_locomotion/deployment/ros2_ws`
+
+先在 Terminal 1 啟動上面的 policy node，再於 Terminal 2 啟動鍵盤控制：
+
+```bash
+cd /home/ros/anymal_locomotion
+source /opt/ros/humble/setup.bash
+source deployment/ros2_ws/install/setup.bash
+ros2 run anymal_locomotion_ros2 keyboard_teleop
+```
+
+鍵盤視窗必須保持焦點。按住按鍵才持續送命令，放開後會在 0.1 秒內停止：
+
+- `W/S`：前進／後退
+- `Q/E`：向左／向右側移
+- `A/D`：向左／向右旋轉
+- `Space`：立即停止
+- `+/-`：調整速度倍率
+
+Terminal 3 啟動 GPU simulation host；不要加 `--headless` 才能看到視窗：
+
+```bash
+cd /home/ros/anymal_locomotion
+TERM=xterm-256color PYTHONPATH=source/anymal_locomotion \
+  /home/ros/IsaacLab/isaaclab.sh -p \
+  scripts/validation/validate_ros2_bridge.py \
+  --device cuda:0 --steps 1000000 --real-time --external-control \
+  --disable-episode-timeout
+```
+
+另開終端可檢查 topic 與實際接收頻率：
+
+```bash
+source /opt/ros/humble/setup.bash
+ros2 topic list
+ros2 topic hz /joint_states
+ros2 topic hz /odom
+ros2 topic hz /imu
+ros2 topic hz /joint_command
+```
+
+若有設定 `ROS_DOMAIN_ID` 或 `RMW_IMPLEMENTATION`，所有終端必須使用相同值。
+綠色箭頭是收到的 body-frame `/cmd_vel` 目標；藍色箭頭是機器人的實際速度。
 
 ## 第一版安全行為
 
@@ -90,18 +170,19 @@ Python 或把 `rclpy` 塞進 training process。
 - command 會 clamp 到 policy 的訓練範圍。
 - observation 或 policy output 出現 NaN／Inf 時不發布 command。
 - raw action 絕對值超過 10 時由 simulation guard 拒絕。
+- simulation adapter 連續 0.1 秒沒有新 `/joint_command` 時退回零 raw action。
 
 這些只是模擬端 guard，不是實體 ANYmal-D 的 safety controller。
 
 ## 尚未完成
 
-- 尚未在 Isaac Sim stage 建立實際 Action Graph，因為 robot prim path、IMU
-  prim 與 simulation host 尚未固定。
-- 尚未安裝外部 PyTorch 或選定 ONNX Runtime。
 - 第一版使用 latest-sample，不做多 topic 精確時間同步。
 - `/joint_command` 只用於 Isaac Sim；實體 ANYmal-D low-level interface
   尚未確認。
-- 尚未完成 ROS 2 closed-loop walking test。
+- 尚未加入獨立 IMU noise/bias model。
+- 固定 `[0.5, 0, 0]` 的 10 秒測試可前進 4.88 m、偏航 6.04°，但橫向偏移
+  0.61 m，未達原訂 0.30 m；原生 checkpoint 評估也有同方向的小幅
+  `vy/wz` bias，因此這是目前 policy 的低速 tracking 限制，不是 ROS 軸向錯接。
 
-Action Graph 的必要節點與接線見
+專案內的 Action Graph builder、已驗證 topic 與 headless host 注意事項見
 [Action Graph v0.1 contract](../../action_graph/README.md)。

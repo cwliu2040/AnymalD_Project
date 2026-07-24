@@ -1,0 +1,2 @@
+# Matches the version used for policy.onnx parity validation.
+onnx==1.20.1

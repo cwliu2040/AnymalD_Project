@@ -1,5 +1,8 @@
 # ANYmal-D Locomotion 系統架構
 
+ROS 2 模擬部署的決策理由、驗收標準與目前未通過項目，另見
+[ROS 2 模擬部署對齊紀錄](ros2_deployment_decisions.md)。
+
 ## 範圍
 
 Flat Locomotion v1 是 50 Hz 的 proprioceptive policy。輸入包含 base linear
@@ -82,6 +85,35 @@ Isaac Sim 使用內建 ROS 2 Bridge / Action Graph nodes 傳輸訊息。Isaac Si
 Isaac Lab Python module 不可 import `rclpy`，也不可直接修改 command manager
 的 private tensor。
 
+專案內的 graph builder 已在 Play task 驗證：
+
+- `/joint_states`、`/odom`、`/imu`、`/clock` 可由外部 ROS 2 process 接收；
+- `/joint_command` 使用 JointState joint names 進行 deterministic remap，
+  不依賴 USD 內部關節陣列順序；
+- ROS2 Context 明確使用目前的 `ROS_DOMAIN_ID`；
+- headless 與 GUI host 都在 50 Hz 物理／policy step 後觸發 Action Graph
+  impulse，不額外更新整個 Kit rendering frame。
+
+官方 ANYmal-D task 使用 LSTM actuator model，所以 Play host 不把 command
+直接接到 USD Articulation Controller。它從 OmniGraph subscriber 取出具名
+position targets，還原成 raw policy action，再交給 Isaac Lab action manager。
+這能保留訓練時相同的 actuator dynamics，且 Isaac Sim Python 仍不 import
+`rclpy`。
+
+Bridge host 使用 GPU PhysX。Isaac Sim 5.1 專用的 ROS2 Publish Joint State
+node 在 GPU 場景有 tensor device mismatch，因此 `/joint_states` 改由
+ROS 2 Bridge Generic Publisher 發布。每個 50 Hz tick 只將 12 個 joint
+position 與 12 個 joint velocity 依 canonical order 從 GPU 複製到 CPU，
+供 DDS 序列化；物理、actuator 與 policy tensor 不因此改成 CPU。
+
+ROS 端重建的 48 維 observation 已逐項和 Isaac Lab observation 比對：
+base linear/angular velocity、projected gravity、command、joint
+position/velocity 與 previous action 均通過 `1e-4` tolerance。固定
+`[0.5, 0, 0]` 的 10 秒 closed-loop 測試沒有 termination，但目前 policy
+仍有低速側漂；這項限制會保留在驗收結果中，不歸因為 ROS frame 錯接。
+RTX 5080 即時整合測試達到 RTF 0.975、48.74 Hz loop rate，
+`/joint_states` 穩態約 49.5 Hz。
+
 `/joint_command` 只作為 Isaac Sim adapter interface。實體 ANYmal-D 的
 low-level command message type 仍須等 controller/SDK 與 safety requirements
 確認後才能決定。
@@ -94,7 +126,11 @@ low-level command message type 仍須等 controller/SDK 與 safety requirements
 官方 task 可直接使用 simulator ground-truth base linear velocity；IMU 無法
 單獨提供無 drift 的 base linear velocity。第一版模擬 deployment 明確使用
 body-frame `/odom.twist.twist.linear`，並使用 IMU angular velocity 與
-orientation。實體機仍需要明確定義 estimator、frame 與 timestamp contract：
+orientation。
+
+官方 Play 場景目前沒有獨立 IMU prim，所以第一版 `/imu` 由 base simulator
+state 產生。這是通訊與 observation 整合版本，不是 sensor-noise 模型。實體機
+仍需要明確定義 estimator、frame 與 timestamp contract：
 
 - base velocity estimator 與 body/world frame；
 - IMU orientation 與 angular-velocity convention；

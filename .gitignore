@@ -33,6 +33,8 @@ outputs/
 deployment/ros2_ws/build/
 deployment/ros2_ws/install/
 deployment/ros2_ws/log/
+deployment/ros2_ws/.venv/
+deployment/python_vendor/
 
 # Local editable-install and environment state
 .python.env

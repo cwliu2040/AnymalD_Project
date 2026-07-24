@@ -18,6 +18,7 @@ setup(
     license="BSD-3-Clause",
     entry_points={
         "console_scripts": [
+            "keyboard_teleop = anymal_locomotion_ros2.keyboard_teleop:main",
             "policy_node = anymal_locomotion_ros2.policy_node:main",
         ],
     },

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 import rclpy
@@ -19,6 +20,7 @@ from anymal_locomotion_ros2.policy_core import (
     canonical_joint_state,
     projected_gravity_from_quaternion,
 )
+from anymal_locomotion_ros2.onnx_backend import OnnxBackend
 from anymal_locomotion_ros2.torchscript_backend import TorchScriptBackend
 
 DEFAULT_EXPORT_DIR = (
@@ -27,15 +29,29 @@ DEFAULT_EXPORT_DIR = (
 )
 
 
+def create_inference_backend(backend_name: str, policy_path: str) -> Any:
+    """Create the selected external-process inference backend."""
+    normalized_name = backend_name.strip().lower()
+    if normalized_name == "onnx":
+        return OnnxBackend(policy_path)
+    if normalized_name == "torchscript":
+        return TorchScriptBackend(policy_path)
+    raise ValueError(
+        "backend must be 'onnx' or 'torchscript', "
+        f"received {backend_name!r}"
+    )
+
+
 class AnymalPolicyNode(Node):
-    """Assemble ROS state, execute TorchScript, and publish joint targets."""
+    """Assemble ROS state, execute the policy, and publish joint targets."""
 
     def __init__(
         self,
-        backend_factory: Callable[[str], TorchScriptBackend] = TorchScriptBackend,
+        backend_factory: Callable[[str], Any] | None = None,
     ) -> None:
         super().__init__("anymal_locomotion_policy")
-        self.declare_parameter("policy_path", f"{DEFAULT_EXPORT_DIR}/policy.pt")
+        self.declare_parameter("backend", "onnx")
+        self.declare_parameter("policy_path", f"{DEFAULT_EXPORT_DIR}/policy.onnx")
         self.declare_parameter("metadata_path", f"{DEFAULT_EXPORT_DIR}/policy_metadata.yaml")
         self.declare_parameter("joint_state_topic", "/joint_states")
         self.declare_parameter("imu_topic", "/imu")
@@ -50,10 +66,15 @@ class AnymalPolicyNode(Node):
 
         policy_path = self.get_parameter("policy_path").value
         metadata_path = self.get_parameter("metadata_path").value
+        backend_name = str(self.get_parameter("backend").value)
+        if backend_factory is None:
+            backend = create_inference_backend(backend_name, policy_path)
+        else:
+            backend = backend_factory(policy_path)
         self._contract = PolicyContract.from_metadata(metadata_path)
         self._runtime = PolicyRuntime(
             self._contract,
-            backend_factory(policy_path),
+            backend,
             max_abs_policy_action=float(self.get_parameter("max_abs_policy_action").value),
         )
         self._state_timeout = float(self.get_parameter("state_timeout_s").value)
@@ -105,7 +126,8 @@ class AnymalPolicyNode(Node):
         )
         self.create_timer(self._contract.control_period_s, self._on_policy_tick)
         self.get_logger().info(
-            f"Loaded 48-D -> 12-D policy; control period={self._contract.control_period_s:.3f} s"
+            f"Loaded {backend_name} 48-D -> 12-D policy; "
+            f"control period={self._contract.control_period_s:.3f} s"
         )
 
     def _now_seconds(self) -> float:
@@ -252,10 +274,12 @@ def main(args: list[str] | None = None) -> None:
     try:
         node = AnymalPolicyNode()
         rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
     finally:
         if node is not None:
             node.destroy_node()
-        rclpy.shutdown()
+        rclpy.try_shutdown()
 
 
 if __name__ == "__main__":

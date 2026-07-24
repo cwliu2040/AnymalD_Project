@@ -43,8 +43,8 @@ anymal_locomotion/
 ├── scripts/rsl_rl/             # train / play
 ├── scripts/validation/         # runtime 與契約驗證
 ├── configs/                    # policy 與 artifact 契約
-├── deployment/ros2_ws/         # 未來外部 ROS 2 policy/runtime
-├── action_graph/               # 未來 ROS 2 Bridge / Action Graph
+├── deployment/ros2_ws/         # 外部 ROS 2 policy/runtime
+├── action_graph/               # ROS 2 Bridge / Action Graph 契約
 ├── logs/                       # RSL-RL run 與 TensorBoard
 ├── checkpoints/                # 挑選後保留的 checkpoint
 ├── exported/                   # TorchScript / ONNX 與 metadata
@@ -72,6 +72,16 @@ PYTHONPATH=source/anymal_locomotion \
   scripts/validation/validate_project.py --headless
 ```
 
+ROS 2 Action Graph smoke test：
+
+```bash
+TERM=xterm-256color PYTHONPATH=source/anymal_locomotion \
+  /home/ros/IsaacLab/isaaclab.sh -p \
+  scripts/validation/validate_ros2_bridge.py \
+  --headless --device cuda:0 --steps 250 \
+  --external-control --validate-observation-parity
+```
+
 目前已在 RTX 5080 主機完成驗證：
 
 - 48 observations
@@ -80,6 +90,9 @@ PYTHONPATH=source/anymal_locomotion \
 - 無 height scanner
 - deterministic canonical-to-runtime joint mapping
 - 完整 runtime smoke test 通過
+- 外部 ROS 2 已接收 `/clock`、`/joint_states`、`/odom`、`/imu`
+- GPU PhysX、ROS 2 Bridge 與 ONNX closed loop 已完成整合驗證
+- ROS 組成的 48 維 observation 與 Isaac Lab observation 逐項一致
 - 官方 ±1.0 baseline 已完成 300 iterations
 - High-Speed v0.2.0 已由 baseline checkpoint 接續完成 1,000 iterations
   （最終 timeout 92.55%、XY velocity error 0.376 m/s）
@@ -150,5 +163,6 @@ hash 與 checkpoint／JIT／ONNX output parity 結果見
 詳細內容請見：
 
 - [系統架構](docs/architecture.md)
+- [ROS 2 模擬部署對齊紀錄](docs/ros2_deployment_decisions.md)
 - [Baseline 分析](docs/baseline_analysis.md)
 - [ROS 2 Policy Runtime v0.1](deployment/ros2_ws/README.md)
