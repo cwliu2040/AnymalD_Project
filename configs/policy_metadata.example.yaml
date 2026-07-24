@@ -14,6 +14,7 @@ action:
   scale: 0.5
   offset: default_joint_position
   control_period_s: 0.02
+  default_joint_positions: [0.0, 0.0, 0.0, 0.0, 0.4, -0.8, -0.4, 0.8, 0.4, -0.8, -0.4, 0.8]
 command:
   semantics: direct_body_velocity
   components: [vx, vy, wz]

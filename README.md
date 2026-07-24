@@ -151,3 +151,4 @@ hash 與 checkpoint／JIT／ONNX output parity 結果見
 
 - [系統架構](docs/architecture.md)
 - [Baseline 分析](docs/baseline_analysis.md)
+- [ROS 2 Policy Runtime v0.1](deployment/ros2_ws/README.md)

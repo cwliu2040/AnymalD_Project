@@ -86,12 +86,16 @@ def write_export_metadata(export_dir: str | Path, checkpoint_path: str | Path) -
     missing = [str(path) for path in artifact_paths.values() if not path.is_file()]
     if missing:
         raise FileNotFoundError(f"Policy export artifacts are missing: {missing}")
+    action_metadata = {
+        **POLICY_CONTRACT["action"],
+        "default_joint_positions": [item["default_position"] for item in POLICY_CONTRACT["joints"]],
+    }
     metadata = {
         "schema_version": POLICY_CONTRACT["schema_version"],
         "robot": POLICY_CONTRACT["robot"],
         "joint_order": list(CANONICAL_JOINT_ORDER),
         "observation": POLICY_CONTRACT["observation"],
-        "action": POLICY_CONTRACT["action"],
+        "action": action_metadata,
         "command": POLICY_CONTRACT["command"],
         "frames": POLICY_CONTRACT["frames"],
         "normalization": POLICY_CONTRACT["normalization"],

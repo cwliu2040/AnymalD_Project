@@ -10,6 +10,15 @@ import yaml
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TRAINING_PACKAGE = PROJECT_ROOT / "source" / "anymal_locomotion"
 EVALUATION_SCRIPT = PROJECT_ROOT / "scripts" / "rsl_rl" / "evaluate.py"
+ROS2_POLICY_NODE = (
+    PROJECT_ROOT
+    / "deployment"
+    / "ros2_ws"
+    / "src"
+    / "anymal_locomotion_ros2"
+    / "anymal_locomotion_ros2"
+    / "policy_node.py"
+)
 
 
 def test_training_package_does_not_import_rclpy() -> None:
@@ -42,3 +51,14 @@ def test_evaluation_uses_public_fixed_command_configuration() -> None:
     assert "command_manager._" not in source
     assert "rclpy" not in source
     assert 'LOG_ROOT / "evaluation"' in source
+
+
+def test_ros2_policy_node_stays_outside_training_and_uses_bridge_topics() -> None:
+    source = ROS2_POLICY_NODE.read_text(encoding="utf-8")
+    assert "import rclpy" in source
+    assert "Odometry" in source
+    assert "Imu" in source
+    assert "JointState" in source
+    assert '"/joint_command"' in source
+    assert "socket" not in source
+    assert "udp" not in source.lower()

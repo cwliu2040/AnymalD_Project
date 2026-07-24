@@ -79,6 +79,9 @@ def test_metadata_schema_and_example_have_required_fields() -> None:
     assert len(example["joint_order"]) == 12
     assert example["observation"]["dimension"] == 48
     assert example["action"]["dimension"] == 12
+    assert example["action"]["default_joint_positions"] == [
+        joint["default_position"] for joint in POLICY_CONTRACT["joints"]
+    ]
     assert set(example["artifacts"]) == {"torchscript", "onnx"}
     assert example["artifacts"]["torchscript"]["path"] == "policy.pt"
     assert example["artifacts"]["onnx"]["path"] == "policy.onnx"

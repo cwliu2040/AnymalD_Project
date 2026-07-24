@@ -69,29 +69,32 @@ canonical joint-name order。Runtime 與 ROS array 必須依 joint name remap。
 
 ## 模擬部署邊界
 
-未來外部 ROS 2 policy node 將：
+第一版外部 ROS 2 policy node 已建立於
+`deployment/ros2_ws/src/anymal_locomotion_ros2`，它會：
 
 1. 接收 `/cmd_vel`（`geometry_msgs/msg/Twist`）。
 2. 接收具有 timestamp 的 IMU、joint state 與 state-estimation data。
 3. 依照匯出的 metadata 組合 48 維 observation。
 4. 在 Isaac Sim 外執行 inference。
-5. 發布經確認的 low-level command interface。
+5. 對模擬器發布 `sensor_msgs/msg/JointState` `/joint_command`。
 
 Isaac Sim 使用內建 ROS 2 Bridge / Action Graph nodes 傳輸訊息。Isaac Sim 與
 Isaac Lab Python module 不可 import `rclpy`，也不可直接修改 command manager
 的 private tensor。
 
-Low-level command message type 必須等實體 ANYmal-D control interface 確認後
-才能決定。
+`/joint_command` 只作為 Isaac Sim adapter interface。實體 ANYmal-D 的
+low-level command message type 仍須等 controller/SDK 與 safety requirements
+確認後才能決定。
 
 訓練 command range 不等於實體機允許範圍。Hardware adapter 必須另行實作
 經安全審查的 clamp、rate limit 與 emergency stop。
 
 ## State Estimation
 
-官方 task 可直接使用 simulator ground-truth base linear velocity；實體機則
-需要明確定義 estimator、frame 與 timestamp contract。開始 ROS 2 policy
-實作前必須確認：
+官方 task 可直接使用 simulator ground-truth base linear velocity；IMU 無法
+單獨提供無 drift 的 base linear velocity。第一版模擬 deployment 明確使用
+body-frame `/odom.twist.twist.linear`，並使用 IMU angular velocity 與
+orientation。實體機仍需要明確定義 estimator、frame 與 timestamp contract：
 
 - base velocity estimator 與 body/world frame；
 - IMU orientation 與 angular-velocity convention；

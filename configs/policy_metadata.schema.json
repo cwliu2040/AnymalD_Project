@@ -38,12 +38,18 @@
     },
     "action": {
       "type": "object",
-      "required": ["dimension", "scale", "offset", "control_period_s"],
+      "required": ["dimension", "scale", "offset", "control_period_s", "default_joint_positions"],
       "properties": {
         "dimension": {"const": 12},
         "scale": {"const": 0.5},
         "offset": {"const": "default_joint_position"},
-        "control_period_s": {"const": 0.02}
+        "control_period_s": {"const": 0.02},
+        "default_joint_positions": {
+          "type": "array",
+          "minItems": 12,
+          "maxItems": 12,
+          "items": {"type": "number"}
+        }
       }
     },
     "command": {"type": "object"},
