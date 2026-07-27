@@ -31,7 +31,7 @@ versions:
   isaac_sim: 5.1.0
   isaac_lab: v2.3.2
 checkpoint:
-  path: /home/ros/anymal_locomotion/logs/rsl_rl/anymal_d_locomotion_v1/<run>/model_999.pt
+  path: logs/rsl_rl/anymal_d_locomotion_v1/<run>/model_999.pt
   sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 artifacts:
   torchscript:

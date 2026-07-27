@@ -73,12 +73,16 @@ names 與 position targets。模擬端的 ROS2 Subscribe Joint State 必須把
 
 ## 建置
 
+新電腦的正式安裝入口在根目錄 README。完成 Isaac Sim、Isaac Lab、ROS 2
+與 Git LFS 安裝後，由 repository root 執行：
+
 ```bash
-cd /home/ros/anymal_locomotion/deployment/ros2_ws
-source /opt/ros/humble/setup.bash
-colcon build --symlink-install --packages-select anymal_locomotion_ros2
-source install/setup.bash
+./scripts/setup_deployment.sh
 ```
+
+它會下載 LFS、匯入固定版本的 LIO-SAM、安裝 ONNX／ROS dependencies，並
+執行 colcon build。既有 checkout 可用
+`./scripts/setup_deployment.sh --check` 做唯讀完整性檢查。
 
 ## ONNX 是什麼
 
@@ -94,12 +98,13 @@ ONNX 不會重新訓練，也不會改變權重；它只是讓外部 ROS 2 Pytho
 
 ## 推論 runtime
 
-ROS 2 系統 Python 已有 `rclpy` 與 NumPy。預設使用 `policy.onnx` 與 ONNX
+ROS 2 系統 Python 已有 `rclpy` 與 NumPy。預設使用 repository 版本化的
+`policy.onnx` 與 ONNX
 reference evaluator；實測單次推論低於 0.1 ms，低於 50 Hz 的 20 ms 預算。
 依賴安裝在 repository 內、colcon workspace 外：
 
 ```bash
-cd /home/ros/anymal_locomotion
+cd <repository-root>
 python3 -m pip install \
   --target deployment/python_vendor \
   -r deployment/ros2_ws/requirements-inference.txt
@@ -108,16 +113,17 @@ python3 -m pip install \
 建置後可啟動：
 
 ```bash
-cd /home/ros/anymal_locomotion
+cd <repository-root>
+export ANYMAL_PROJECT_ROOT="$(pwd)"
 source /opt/ros/humble/setup.bash
 source deployment/ros2_ws/install/setup.bash
-export PYTHONPATH=/home/ros/anymal_locomotion/deployment/python_vendor:${PYTHONPATH}
+export PYTHONPATH="${ANYMAL_PROJECT_ROOT}/deployment/python_vendor:${PYTHONPATH}"
 
 ros2 run anymal_locomotion_ros2 policy_node --ros-args \
   -p use_sim_time:=true \
   -p backend:=onnx \
-  -p policy_path:=/home/ros/anymal_locomotion/exported/anymal_d_locomotion_v1/high_speed_v0.2.0/policy.onnx \
-  -p metadata_path:=/home/ros/anymal_locomotion/exported/anymal_d_locomotion_v1/high_speed_v0.2.0/policy_metadata.yaml
+  -p policy_path:="${ANYMAL_PROJECT_ROOT}/exported/anymal_d_locomotion_v1/high_speed_v0.2.0/policy.onnx" \
+  -p metadata_path:="${ANYMAL_PROJECT_ROOT}/exported/anymal_d_locomotion_v1/high_speed_v0.2.0/policy_metadata.yaml"
 ```
 
 也保留 `backend:=torchscript`，但必須在外部 ROS 2 Python 另裝 PyTorch，並
@@ -125,17 +131,13 @@ ros2 run anymal_locomotion_ros2 policy_node --ros-args \
 
 ## 單一 Bringup Launch
 
-ROS 2 workspace 位於：
-
-`/home/ros/anymal_locomotion/deployment/ros2_ws`
-
 根目錄 [README quick start](../../README.md#單一-launchfactory-建圖與鍵盤控制)
 是日常操作的正式入口。完成建置後，一個 launch 同時啟動外部 ONNX policy、
 LIO-SAM、PointCloud2 adapter、RViz2、Factory GPU simulation，以及官方
 `teleop_twist_keyboard`：
 
 ```bash
-cd /home/ros/anymal_locomotion
+cd <repository-root>
 unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
 unset PYTHONPATH LD_LIBRARY_PATH
 unset ROS_DISTRO ROS_VERSION ROS_PYTHON_VERSION
@@ -147,8 +149,8 @@ ros2 launch anymal_locomotion_ros2 bringup.launch.py
 
 所有 launch argument 都有正式預設值，正常使用不必傳入參數：
 
-- `project_root=/home/ros/anymal_locomotion`
-- `isaaclab_root=/home/ros/IsaacLab`
+- `project_root`：由 package source／colcon install path 自動解析
+- `isaaclab_root`：優先使用 `ISAACLAB_ROOT`，否則為 `~/IsaacLab`
 - `device=cuda:0`
 - `ros_domain_id`：繼承啟動 shell 的 `ROS_DOMAIN_ID`，未設定時為 `1`
 - `factory_usd_path=<project_root>/assets/maps/factory/Factory_Layout.usd`
@@ -180,10 +182,11 @@ scan matching 的裂圖風險，後續將比較多種 3D SLAM 的信心指標，
 回饋給 PPO，讓 locomotion policy 學習依環境可觀測性調整速度。
 
 另開終端可檢查 topic 與實際接收頻率；必須使用與啟動 launch 的 shell
-相同的 `ROS_DOMAIN_ID`。目前 `~/.bashrc` 設為 `1`，範例如下：
+相同的 `ROS_DOMAIN_ID`。若啟動時未另外設定，預設為 `1`：
 
 ```bash
 source /opt/ros/humble/setup.bash
+source <repository-root>/deployment/ros2_ws/install/setup.bash
 export ROS_DOMAIN_ID=1
 ros2 topic list
 ros2 topic hz /joint_states
@@ -193,12 +196,8 @@ ros2 topic hz /imu/data
 ros2 topic hz /joint_command
 ```
 
-目前 `~/.bashrc` 已 source ROS 2 Humble 與
-`~/anymal_locomotion/deployment/ros2_ws/install/setup.bash`，新開互動式
-Terminal 後可直接執行 `ros2 launch anymal_locomotion_ros2
-bringup.launch.py`，不需再修改 `.bashrc` 或手動 source。上面的 source
-命令仍適用於乾淨環境、非互動式 shell 與問題排查。Launch 無法替啟動它
-的 parent shell source workspace，但會把選定的 domain 傳給其所有子程序。
+安裝腳本不修改 `.bashrc`。Launch 無法替啟動它的 parent shell source
+workspace，但會把選定的 domain 傳給其所有子程序。
 
 目前 GPU 即時驗證結果：`/imu/data` 靜止時
 `linear_acceleration.z=9.80877 m/s²`、接收率約 `191.5 Hz`；`/tf` 為
@@ -230,6 +229,12 @@ Isaac Sim RTX LiDAR（OS1 32ch、10 Hz、1024 horizontal samples）
 /imu/data（200 Hz）------------------------------------^
 ```
 
+啟用 LIO-SAM 時，deployment host 會在 Isaac Sim 啟動前開啟 RTX Motion BVH
+與 Hydra engine masking。Isaac Sim 5.1 預設關閉 Motion BVH，但移動中的
+rotating LiDAR 需要它才能正確產生 intra-scan motion effect。這會增加 VRAM
+與 rendering 負擔；`getSimulationTimeMonotonicAtTime` 是否消失仍須另外以
+LiDAR header、`/clock` 與移動建圖驗證，不能只把 warning 隱藏。
+
 LiDAR mount 是 `base_link → lidar_link =
 (x=0.20, y=0, z=0.35, R=identity)`。LIO-SAM 的正式 TF tree 為
 `map → odom → base_link → lidar_link`。啟用 LIO-SAM 時，模擬器不再發布
@@ -240,7 +245,7 @@ preintegration 單獨負責。`/odom` topic 仍可供 locomotion policy 使用�
 LIO-SAM，請用乾淨環境匯入並建置：
 
 ```bash
-cd /home/ros/anymal_locomotion/deployment/ros2_ws
+cd <repository-root>/deployment/ros2_ws
 vcs import --input lio_sam.repos --skip-existing src
 
 unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
@@ -254,7 +259,7 @@ source install/setup.bash
 若只需單獨除錯 adapter 與 LIO-SAM，仍可使用：
 
 ```bash
-cd /home/ros/anymal_locomotion/deployment/ros2_ws
+cd <repository-root>/deployment/ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 ros2 launch anymal_locomotion_ros2 lio_sam.launch.py
@@ -263,9 +268,9 @@ ros2 launch anymal_locomotion_ros2 lio_sam.launch.py
 若只需單獨除錯包含 Factory 與 RTX LiDAR 的模擬 host：
 
 ```bash
-cd /home/ros/anymal_locomotion
+cd <repository-root>
 TERM=xterm-256color PYTHONPATH=source/anymal_locomotion \
-  /home/ros/IsaacLab/isaaclab.sh -p \
+  "${ISAACLAB_ROOT:-${HOME}/IsaacLab}/isaaclab.sh" -p \
   scripts/validation/validate_ros2_bridge.py \
   --device cuda:0 --steps 1000000 --real-time --external-control \
   --disable-episode-timeout --enable-lio-sam \

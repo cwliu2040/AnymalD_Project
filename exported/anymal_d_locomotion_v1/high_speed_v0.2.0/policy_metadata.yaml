@@ -1,0 +1,120 @@
+schema_version: 1.1.0
+robot:
+  name: ANYmal-D
+  reference: official_isaac_sim_5_1_usd
+  usd_uri: https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1/Isaac/IsaacLab/Robots/ANYbotics/ANYmal-D/anymal_d.usd
+  custom_usd_integrated: false
+joint_order:
+- LF_HAA
+- LH_HAA
+- RF_HAA
+- RH_HAA
+- LF_HFE
+- LF_KFE
+- LH_HFE
+- LH_KFE
+- RF_HFE
+- RF_KFE
+- RH_HFE
+- RH_KFE
+observation:
+  dimension: 48
+  concatenation_order: preserved
+  terms:
+  - name: base_linear_velocity
+    offset: 0
+    dimension: 3
+    frame: base
+  - name: base_angular_velocity
+    offset: 3
+    dimension: 3
+    frame: base
+  - name: projected_gravity
+    offset: 6
+    dimension: 3
+    frame: base
+  - name: velocity_command
+    offset: 9
+    dimension: 3
+    frame: base
+    components:
+    - vx
+    - vy
+    - wz
+  - name: relative_joint_position
+    offset: 12
+    dimension: 12
+    order: canonical_joint_order
+  - name: relative_joint_velocity
+    offset: 24
+    dimension: 12
+    order: canonical_joint_order
+  - name: previous_action
+    offset: 36
+    dimension: 12
+    order: canonical_joint_order
+action:
+  dimension: 12
+  type: joint_position
+  order: canonical_joint_order
+  scale: 0.5
+  offset: default_joint_position
+  control_period_s: 0.02
+  default_joint_positions:
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.4
+  - -0.8
+  - -0.4
+  - 0.8
+  - 0.4
+  - -0.8
+  - -0.4
+  - 0.8
+command:
+  semantics: direct_body_velocity
+  components:
+  - vx
+  - vy
+  - wz
+  ros_source: geometry_msgs/msg/Twist
+  limits:
+    vx:
+    - -2.0
+    - 3.0
+    vy:
+    - -1.5
+    - 1.5
+    wz:
+    - -2.0
+    - 2.0
+frames:
+  base_linear_velocity: base
+  base_angular_velocity: base
+  projected_gravity: base
+  velocity_command: base
+  ros_convention: REP-103
+normalization:
+  actor_observation: false
+  critic_observation: false
+versions:
+  isaac_sim: 5.1.0
+  isaac_lab: v2.3.2
+  isaac_lab_commit: 37ddf626871758333d6ed89cf64ad702aef127d0
+  historical_rollback_commit: cbf51abb5e98d1b3d497c8c73dc989e9f3628b89
+checkpoint:
+  path: checkpoints/anymal_d_locomotion_v1/high_speed_v0.2.0/model_1298.pt
+  sha256: a25799ceb15090d1a733ce49d77b444c9bedd325b7fd36d095b2b85e94f2c55d
+artifacts:
+  torchscript:
+    path: policy.pt
+    sha256: 869ad3ccf60375dd9cff2e3f2abe16493a234310e9c6da22f1ab626de9697dc6
+    size_bytes: 174248
+  onnx:
+    path: policy.onnx
+    sha256: e83a150970838dad16f4015618f799eb1f1bcb9ad174a70fa9caa80cac06cea0
+    size_bytes: 164629
+config_sha256: d009d9c0f9c1b70d2fdaf11841a8e08f4a833b512ec1269ef7f51d77c3fb60ff
+project_git_commit: cca09bbbeb77260860e3e85ebcce2084274441cf

@@ -71,6 +71,13 @@ ONNX_BACKEND = (
     / "anymal_locomotion_ros2"
     / "onnx_backend.py"
 )
+SETUP_DEPLOYMENT = PROJECT_ROOT / "scripts" / "setup_deployment.sh"
+DEPLOYMENT_POLICY_ROOT = (
+    PROJECT_ROOT
+    / "exported"
+    / "anymal_d_locomotion_v1"
+    / "high_speed_v0.2.0"
+)
 
 
 def test_training_package_does_not_import_rclpy() -> None:
@@ -86,13 +93,13 @@ def test_training_package_does_not_import_rclpy() -> None:
 
 
 def test_artifact_configuration_is_project_local() -> None:
-    config = yaml.safe_load((PROJECT_ROOT / "configs" / "artifacts.yaml").read_text(encoding="utf-8"))
-    root = Path(config["project_root"]).resolve()
+    config_path = PROJECT_ROOT / "configs" / "artifacts.yaml"
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    root = (config_path.parent / config["project_root"]).resolve()
     assert root == PROJECT_ROOT
     for key in ("logs_root", "checkpoints_root", "exports_root"):
-        path = Path(config[key]).resolve()
+        path = (root / config[key]).resolve()
         assert root in path.parents
-        assert not str(path).startswith("/home/ros/IsaacLab/logs")
 
 
 def test_evaluation_uses_public_fixed_command_configuration() -> None:
@@ -208,6 +215,9 @@ def test_rtx_lidar_is_project_owned_and_uses_official_ros2_bridge_writer() -> No
     assert "ros2_writer.attach([render_product])" in source
     assert "publish_ground_truth_tf=not args_cli.enable_lio_sam" in host_source
     assert "args_cli.enable_cameras = True" in host_source
+    assert '" --/renderer/raytracingMotion/enabled=true"' in host_source
+    assert "enableHydraEngineMasking=true" in host_source
+    assert "enabledForHydraEngines=0,1,2,3,4" in host_source
     assert "base_env.sim.render()" in host_source
     assert "rclpy" not in source
 
@@ -219,8 +229,10 @@ def test_complete_bringup_uses_project_defaults_and_official_teleop() -> None:
     factory_map = PROJECT_ROOT / "assets" / "maps" / "factory" / "Factory_Layout.usd"
 
     assert factory_map.is_file()
-    assert 'default_value="/home/ros/anymal_locomotion"' in source
-    assert 'default_value="/home/ros/IsaacLab"' in source
+    assert "_find_project_root" in source
+    assert 'os.environ.get("ISAACLAB_ROOT"' in source
+    assert 'Path.home() / "IsaacLab"' in source
+    assert "/home/ros/" not in source
     assert 'default_value="cuda:0"' in source
     assert '"ROS_DOMAIN_ID"' in source
     assert 'default_value="1"' in source
@@ -241,6 +253,19 @@ def test_complete_bringup_uses_project_defaults_and_official_teleop() -> None:
     assert 'token physxMaterial:frictionCombineMode = "multiply"' in factory_source
     assert "from teleop_twist_keyboard import main as teleop_main" in teleop_source
     assert "tkinter" not in teleop_source
+
+
+def test_fresh_clone_contains_policy_and_reproducible_setup_entrypoint() -> None:
+    for filename in ("policy.onnx", "policy.pt", "policy_metadata.yaml"):
+        assert (DEPLOYMENT_POLICY_ROOT / filename).is_file()
+
+    setup_source = SETUP_DEPLOYMENT.read_text(encoding="utf-8")
+    assert "git -C \"${PROJECT_ROOT}\" lfs pull" in setup_source
+    assert "vcs import" in setup_source
+    assert "rosdep install" in setup_source
+    assert "python3 -m pip install" in setup_source
+    assert "colcon build" in setup_source
+    assert 'ISAACLAB_ROOT:-${HOME}/IsaacLab' in setup_source
 
 
 def test_onnx_backend_is_external_and_cpu_only() -> None:

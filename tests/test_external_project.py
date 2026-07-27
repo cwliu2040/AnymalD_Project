@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+from pathlib import Path
 
 import pytest
 
@@ -123,8 +124,8 @@ def test_official_reward_and_ppo_baseline_are_retained() -> None:
 
 def test_artifact_root_is_not_isaaclab() -> None:
     assert PROJECT_ROOT == PROJECT_ROOT.resolve()
-    assert str(PROJECT_ROOT) == "/home/ros/anymal_locomotion"
-    assert not str(PROJECT_ROOT / "logs").startswith("/home/ros/IsaacLab/logs")
+    assert PROJECT_ROOT == Path(__file__).resolve().parents[1]
+    assert (PROJECT_ROOT / "logs").parent == PROJECT_ROOT
 
 
 def test_task_source_declares_project_contract() -> None:

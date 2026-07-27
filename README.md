@@ -11,7 +11,8 @@ ROS 2 感知層，不會改變既有 policy 契約。
 
 ## 目前基準
 
-- 專案根目錄：`/home/ros/anymal_locomotion`
+- 作業系統：Ubuntu 22.04 x86_64
+- 專案根目錄：可放在任意使用者目錄，launch 會自動解析
 - Isaac Sim：`5.1.0`
 - Isaac Lab：`v2.3.2`
 - Isaac Lab commit：`37ddf626871758333d6ed89cf64ad702aef127d0`
@@ -20,6 +21,131 @@ ROS 2 感知層，不會改變既有 policy 契約。
 - Play task：`Isaac-Velocity-Flat-Anymal-D-Locomotion-Play-v0`
 
 Isaac Lab 必須固定在支援的 tag，不以持續變動的 `origin/main` 作為基準。
+
+## 新電腦安裝
+
+目標環境是有 NVIDIA RTX GPU 的 Ubuntu 22.04 x86_64。Isaac Sim、Isaac
+Lab、ROS 2 與 GPU driver 是系統 dependency，不會複製進 repository；
+Factory 地圖、貼圖、High-Speed v0.2.0 deployment policy、ROS launch 與
+專案設定則全部由 Git／Git LFS 提供。
+
+### 1. NVIDIA driver 與基本工具
+
+先安裝符合 [Isaac Sim 5.1 system requirements][isaac-sim-requirements] 的
+NVIDIA driver，重新開機後確認：
+
+```bash
+nvidia-smi
+```
+
+安裝 Git、Git LFS 與建置工具：
+
+```bash
+sudo apt update
+sudo apt install -y \
+  build-essential cmake curl git git-lfs python3-colcon-common-extensions \
+  python3-pip python3-rosdep python3-vcstool software-properties-common unzip
+git lfs install
+```
+
+### 2. ROS 2 Humble
+
+若尚未安裝 ROS 2 apt repository：
+
+```bash
+sudo add-apt-repository universe
+sudo apt update
+sudo apt install -y curl
+sudo curl -sSL \
+  https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+  -o /usr/share/keyrings/ros-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo ${UBUNTU_CODENAME}) main" \
+  | sudo tee /etc/apt/sources.list.d/ros2.list >/dev/null
+```
+
+安裝 ROS 2、RViz、teleop 與專案建置工具：
+
+```bash
+sudo apt update
+sudo apt install -y \
+  ros-humble-desktop ros-dev-tools ros-humble-teleop-twist-keyboard \
+  gnome-terminal
+source /opt/ros/humble/setup.bash
+sudo rosdep init
+rosdep update
+```
+
+若 `rosdep init` 回報設定已存在，保留既有設定並繼續執行
+`rosdep update` 即可。完整 ROS 安裝基準以
+[ROS 2 Humble Ubuntu deb 文件][ros-humble-install] 為準。
+
+### 3. Isaac Sim 5.1
+
+從 [NVIDIA Isaac Sim 5.1 download][isaac-sim-download] 下載 Linux x86_64
+workstation zip，檔名應為
+`isaac-sim-standalone-5.1.0-linux-x86_64.zip`，然後：
+
+```bash
+mkdir -p "${HOME}/isaacsim"
+unzip "${HOME}/Downloads/isaac-sim-standalone-5.1.0-linux-x86_64.zip" \
+  -d "${HOME}/isaacsim"
+cd "${HOME}/isaacsim"
+./post_install.sh
+./isaac-sim.compatibility_check.sh --/app/quitAfter=10 --no-window
+```
+
+第一次啟動可先執行 `./isaac-sim.selector.sh`，讓 shader cache 完成初始化。
+
+### 4. Isaac Lab v2.3.2
+
+Isaac Lab 固定使用 `v2.3.2`，預設安裝位置是 `~/IsaacLab`：
+
+```bash
+cd "${HOME}"
+git clone --branch v2.3.2 --depth 1 \
+  https://github.com/isaac-sim/IsaacLab.git
+cd "${HOME}/IsaacLab"
+ln -s "${HOME}/isaacsim" _isaac_sim
+./isaaclab.sh --install rsl_rl
+git rev-parse HEAD
+```
+
+最後一行應為
+`37ddf626871758333d6ed89cf64ad702aef127d0`。若 Isaac Lab 安裝在其他位置，
+啟動前設定 `export ISAACLAB_ROOT=/實際/IsaacLab/路徑`；專案不會修改
+Isaac Lab。安裝方式依 [Isaac Lab v2.3.2 binary installation][isaac-lab-install]
+固定。
+
+### 5. Clone 與一鍵建置
+
+安裝上述系統 dependency 後，新電腦只需要：
+
+```bash
+cd "${HOME}"
+git clone https://github.com/cwliu2040/AnymalD_Project.git anymal_locomotion
+cd "${HOME}/anymal_locomotion"
+./scripts/setup_deployment.sh
+```
+
+`setup_deployment.sh` 會：
+
+- 下載並驗證 Git LFS 中的 Factory 資產與 deployment policy。
+- 依 `lio_sam.repos` 下載固定 commit 的 upstream LIO-SAM。
+- 用 `rosdep` 安裝 ROS package dependency。
+- 將 ONNX 1.20.1 安裝到 repository 內的 `deployment/python_vendor/`。
+- 建置 `deployment/ros2_ws` 並驗證必要檔案與版本。
+
+它不會修改 `~/.bashrc`、Isaac Lab、Isaac Sim 或 upstream LIO-SAM。完成後：
+
+```bash
+source /opt/ros/humble/setup.bash
+source deployment/ros2_ws/install/setup.bash
+ros2 launch anymal_locomotion_ros2 bringup.launch.py
+```
+
+repository 可以 clone 到其他路徑；launch 會自動尋找 Factory、policy 與
+Python vendor directory。Isaac Lab 若不在 `~/IsaacLab`，只需設定
+`ISAACLAB_ROOT`，不必改程式。
 
 ## v1 Policy 契約
 
@@ -61,16 +187,16 @@ Isaac Lab 與 RSL-RL 都是 dependency，不會複製進本專案。
 靜態測試：
 
 ```bash
-cd /home/ros/anymal_locomotion
+cd <repository-root>
 PYTHONPATH=source/anymal_locomotion python3 -m pytest -q tests
 ```
 
 Isaac Sim runtime smoke test：
 
 ```bash
-cd /home/ros/anymal_locomotion
+cd <repository-root>
 PYTHONPATH=source/anymal_locomotion \
-  /home/ros/IsaacLab/isaaclab.sh -p \
+  "${ISAACLAB_ROOT:-${HOME}/IsaacLab}/isaaclab.sh" -p \
   scripts/validation/validate_project.py --headless
 ```
 
@@ -78,7 +204,7 @@ ROS 2 Action Graph smoke test：
 
 ```bash
 TERM=xterm-256color PYTHONPATH=source/anymal_locomotion \
-  /home/ros/IsaacLab/isaaclab.sh -p \
+  "${ISAACLAB_ROOT:-${HOME}/IsaacLab}/isaaclab.sh" -p \
   scripts/validation/validate_ros2_bridge.py \
   --headless --device cuda:0 --steps 250 \
   --external-control --validate-observation-parity
@@ -103,12 +229,11 @@ TERM=xterm-256color PYTHONPATH=source/anymal_locomotion \
 
 ## 單一 Launch：Factory 建圖與鍵盤控制
 
-這是日常人工操作的正式入口。第一次執行前，須先依
-[ROS 2 deployment README](deployment/ros2_ws/README.md) 完成 workspace
-建置與 `deployment/python_vendor` 安裝。之後只需一個啟動命令：
+這是日常人工操作的正式入口。第一次執行先完成上方「新電腦安裝」與
+`./scripts/setup_deployment.sh`；之後只需：
 
 ```bash
-cd /home/ros/anymal_locomotion
+cd <repository-root>
 unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
 unset PYTHONPATH LD_LIBRARY_PATH
 unset ROS_DISTRO ROS_VERSION ROS_PYTHON_VERSION
@@ -124,10 +249,8 @@ simulation parity tolerance 與 episode timeout 設定均已有預設值，不�
 在每次啟動時逐項傳入。它會開啟 Isaac Sim、RViz2，並另外開一個 GNOME
 Terminal 執行官方 `teleop_twist_keyboard`。
 
-目前 `~/.bashrc` 已 source ROS 2 Humble 與本專案建置後的 workspace，
-因此新開的互動式 Terminal 可直接執行上述 `ros2 launch`，不必修改
-`.bashrc` 或再次手動 source。上方完整 source 流程保留作為乾淨環境與
-問題排查用；非互動式 shell 或其他尚未設定的電腦仍須先 source。
+每個新 terminal 都應 source ROS 2 與本專案 workspace；專案安裝流程不會
+修改使用者的 `.bashrc`。
 
 Factory 地圖及其相依 OpenUSD 資產位於
 `assets/maps/factory/`。ROS 2 deployment host 以 Factory USD terrain
@@ -167,9 +290,9 @@ LIO-SAM publisher 把兩套 correction 送入 GTSAM。這份 quick start 與
 訓練入口：
 
 ```bash
-cd /home/ros/anymal_locomotion
+cd <repository-root>
 PYTHONPATH=source/anymal_locomotion \
-  /home/ros/IsaacLab/isaaclab.sh -p scripts/rsl_rl/train.py \
+  "${ISAACLAB_ROOT:-${HOME}/IsaacLab}/isaaclab.sh" -p scripts/rsl_rl/train.py \
   --task Isaac-Velocity-Flat-Anymal-D-Locomotion-v0 \
   --headless \
   --seed 42
@@ -193,7 +316,7 @@ policy 的模型存檔，不會提交到 GitHub。
 
 ```bash
 PYTHONPATH=source/anymal_locomotion \
-  /home/ros/IsaacLab/isaaclab.sh -p scripts/rsl_rl/play.py \
+  "${ISAACLAB_ROOT:-${HOME}/IsaacLab}/isaaclab.sh" -p scripts/rsl_rl/play.py \
   --task Isaac-Velocity-Flat-Anymal-D-Locomotion-Play-v0 \
   --checkpoint <checkpoint-path>
 ```
@@ -202,7 +325,7 @@ PYTHONPATH=source/anymal_locomotion \
 
 ```bash
 PYTHONPATH=source/anymal_locomotion \
-  /home/ros/IsaacLab/isaaclab.sh -p scripts/rsl_rl/evaluate.py \
+  "${ISAACLAB_ROOT:-${HOME}/IsaacLab}/isaaclab.sh" -p scripts/rsl_rl/evaluate.py \
   --headless --num_envs 128 --steps 1000 --warmup_steps 100 \
   --vx 3.0 --vy 0.0 --wz 0.0 --checkpoint <checkpoint-path>
 ```
@@ -231,3 +354,8 @@ hash 與 checkpoint／JIT／ONNX output parity 結果見
 - [ROS 2 模擬部署對齊紀錄](docs/ros2_deployment_decisions.md)
 - [Baseline 分析](docs/baseline_analysis.md)
 - [ROS 2 Policy Runtime v0.2](deployment/ros2_ws/README.md)
+
+[isaac-sim-requirements]: https://docs.isaacsim.omniverse.nvidia.com/5.1.0/installation/requirements.html
+[isaac-sim-download]: https://docs.isaacsim.omniverse.nvidia.com/5.1.0/installation/download.html
+[isaac-lab-install]: https://isaac-sim.github.io/IsaacLab/v2.3.2/source/setup/installation/binaries_installation.html
+[ros-humble-install]: https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debians.html

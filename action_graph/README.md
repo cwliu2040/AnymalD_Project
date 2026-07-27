@@ -141,18 +141,18 @@ Graph 使用目前環境的 `ROS_DOMAIN_ID`，未設定時使用 0。外部 ROS 
 
 ```bash
 # Terminal 1：先建置並啟動外部 policy node
-cd /home/ros/anymal_locomotion
+cd <repository-root>
 source /opt/ros/humble/setup.bash
 source deployment/ros2_ws/install/setup.bash
-export PYTHONPATH=/home/ros/anymal_locomotion/deployment/python_vendor:${PYTHONPATH}
+export PYTHONPATH="$(pwd)/deployment/python_vendor:${PYTHONPATH}"
 ros2 run anymal_locomotion_ros2 policy_node --ros-args -p use_sim_time:=true
 ```
 
 ```bash
 # Terminal 2：在 policy node 等待時啟動 simulation host
-cd /home/ros/anymal_locomotion
+cd <repository-root>
 TERM=xterm-256color PYTHONPATH=source/anymal_locomotion \
-  /home/ros/IsaacLab/isaaclab.sh -p \
+  "${ISAACLAB_ROOT:-${HOME}/IsaacLab}/isaaclab.sh" -p \
   scripts/validation/validate_ros2_bridge.py \
   --headless --device cuda:0 --steps 800 --external-control \
   --validate-observation-parity

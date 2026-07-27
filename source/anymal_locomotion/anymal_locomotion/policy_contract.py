@@ -100,7 +100,10 @@ def write_export_metadata(export_dir: str | Path, checkpoint_path: str | Path) -
         "frames": POLICY_CONTRACT["frames"],
         "normalization": POLICY_CONTRACT["normalization"],
         "versions": POLICY_CONTRACT["versions"],
-        "checkpoint": {"path": str(checkpoint), "sha256": _sha256(checkpoint)},
+        "checkpoint": {
+            "path": str(checkpoint.relative_to(PROJECT_ROOT)),
+            "sha256": _sha256(checkpoint),
+        },
         "artifacts": {
             name: {
                 "path": path.name,

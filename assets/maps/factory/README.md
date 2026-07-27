@@ -2,7 +2,7 @@
 
 Deployment 入口：
 
-`/home/ros/anymal_locomotion/assets/maps/factory/Factory_Layout.usd`
+`<repository-root>/assets/maps/factory/Factory_Layout.usd`
 
 地圖與 OpenUSD 相依資產從舊 workspace 的 `anymal_d_sim_bringup/maps`
 複製而來，複製過程未修改舊 workspace。`Factory_Layout.usda` 是可審查的

@@ -1,10 +1,10 @@
 schema_version: 1
-project_root: /home/ros/anymal_locomotion
-logs_root: /home/ros/anymal_locomotion/logs
-checkpoints_root: /home/ros/anymal_locomotion/checkpoints
-exports_root: /home/ros/anymal_locomotion/exported
+project_root: ..
+logs_root: logs
+checkpoints_root: checkpoints
+exports_root: exported
 forbidden_roots:
-  - /home/ros/IsaacLab/logs
+  - ../IsaacLab/logs
 run_contents:
   - params/env.yaml
   - params/agent.yaml

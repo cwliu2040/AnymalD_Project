@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.metadata
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -12,7 +13,9 @@ LOG_ROOT = PROJECT_ROOT / "logs"
 CHECKPOINT_ROOT = PROJECT_ROOT / "checkpoints"
 EXPORT_ROOT = PROJECT_ROOT / "exported"
 
-ISAAC_LAB_ROOT = Path("/home/ros/IsaacLab")
+ISAAC_LAB_ROOT = Path(
+    os.environ.get("ISAACLAB_ROOT", Path.home() / "IsaacLab")
+).expanduser().resolve()
 TARGET_ISAAC_LAB_VERSION = "v2.3.2"
 TARGET_ISAAC_SIM_VERSION = "5.1.0"
 ROLLBACK_ISAAC_LAB_COMMIT = "cbf51abb5e98d1b3d497c8c73dc989e9f3628b89"

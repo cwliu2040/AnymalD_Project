@@ -23,11 +23,6 @@ from anymal_locomotion_ros2.policy_core import (
 from anymal_locomotion_ros2.onnx_backend import OnnxBackend
 from anymal_locomotion_ros2.torchscript_backend import TorchScriptBackend
 
-DEFAULT_EXPORT_DIR = (
-    "/home/ros/anymal_locomotion/exported/"
-    "anymal_d_locomotion_v1/high_speed_v0.2.0"
-)
-
 
 def create_inference_backend(backend_name: str, policy_path: str) -> Any:
     """Create the selected external-process inference backend."""
@@ -51,8 +46,8 @@ class AnymalPolicyNode(Node):
     ) -> None:
         super().__init__("anymal_locomotion_policy")
         self.declare_parameter("backend", "onnx")
-        self.declare_parameter("policy_path", f"{DEFAULT_EXPORT_DIR}/policy.onnx")
-        self.declare_parameter("metadata_path", f"{DEFAULT_EXPORT_DIR}/policy_metadata.yaml")
+        self.declare_parameter("policy_path", "")
+        self.declare_parameter("metadata_path", "")
         self.declare_parameter("joint_state_topic", "/joint_states")
         self.declare_parameter("imu_topic", "/imu/data")
         self.declare_parameter("odometry_topic", "/odom")
@@ -64,9 +59,14 @@ class AnymalPolicyNode(Node):
         self.declare_parameter("command_timeout_s", 0.5)
         self.declare_parameter("max_abs_policy_action", 10.0)
 
-        policy_path = self.get_parameter("policy_path").value
-        metadata_path = self.get_parameter("metadata_path").value
+        policy_path = str(self.get_parameter("policy_path").value)
+        metadata_path = str(self.get_parameter("metadata_path").value)
         backend_name = str(self.get_parameter("backend").value)
+        if not policy_path or not metadata_path:
+            raise ValueError(
+                "policy_path and metadata_path are required; use the project "
+                "bringup launch or pass both ROS parameters explicitly"
+            )
         if backend_factory is None:
             backend = create_inference_backend(backend_name, policy_path)
         else:

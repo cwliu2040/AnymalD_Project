@@ -135,6 +135,14 @@ required_kit_args = (
     "--enable isaacsim.ros2.bridge "
     "--/exts/isaacsim.ros2.bridge/ros_distro=system_default"
 )
+if args_cli.enable_lio_sam:
+    # Isaac Sim 5.1 disables Motion BVH by default. A rotating LiDAR mounted
+    # on a moving robot needs it for correct intra-scan motion effects.
+    required_kit_args += (
+        " --/renderer/raytracingMotion/enabled=true"
+        " --/renderer/raytracingMotion/enableHydraEngineMasking=true"
+        " --/renderer/raytracingMotion/enabledForHydraEngines=0,1,2,3,4"
+    )
 args_cli.kit_args = f"{args_cli.kit_args} {required_kit_args}".strip()
 
 app_launcher = AppLauncher(args_cli)

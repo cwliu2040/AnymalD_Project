@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
@@ -23,8 +24,34 @@ from launch.substitutions import (
 from launch_ros.actions import Node
 
 
+def _find_project_root(package_share: Path) -> Path:
+    """Resolve the repository root from either a source or colcon install path."""
+    for start in (Path(__file__).resolve(), package_share.resolve()):
+        for candidate in (start, *start.parents):
+            if (
+                (candidate / "pyproject.toml").is_file()
+                and (
+                    candidate
+                    / "assets"
+                    / "maps"
+                    / "factory"
+                    / "Factory_Layout.usd"
+                ).is_file()
+                and (candidate / "deployment" / "ros2_ws").is_dir()
+            ):
+                return candidate
+    raise RuntimeError(
+        "Cannot locate the anymal_locomotion repository from the installed "
+        f"package share: {package_share}"
+    )
+
+
 def generate_launch_description() -> LaunchDescription:
     package_share = Path(get_package_share_directory("anymal_locomotion_ros2"))
+    detected_project_root = _find_project_root(package_share)
+    default_isaaclab_root = Path(
+        os.environ.get("ISAACLAB_ROOT", Path.home() / "IsaacLab")
+    ).expanduser()
 
     project_root = LaunchConfiguration("project_root")
     isaaclab_root = LaunchConfiguration("isaaclab_root")
@@ -115,13 +142,16 @@ def generate_launch_description() -> LaunchDescription:
         [
             DeclareLaunchArgument(
                 "project_root",
-                default_value="/home/ros/anymal_locomotion",
-                description="ANYmal locomotion repository root",
+                default_value=str(detected_project_root),
+                description="Auto-detected ANYmal locomotion repository root",
             ),
             DeclareLaunchArgument(
                 "isaaclab_root",
-                default_value="/home/ros/IsaacLab",
-                description="Read-only Isaac Lab framework root",
+                default_value=str(default_isaaclab_root),
+                description=(
+                    "Read-only Isaac Lab root; defaults to ISAACLAB_ROOT or "
+                    "~/IsaacLab"
+                ),
             ),
             DeclareLaunchArgument(
                 "device",

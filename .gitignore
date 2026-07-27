@@ -22,6 +22,13 @@ checkpoints/*
 !checkpoints/.gitkeep
 exported/*
 !exported/.gitkeep
+!exported/anymal_d_locomotion_v1/
+exported/anymal_d_locomotion_v1/*
+!exported/anymal_d_locomotion_v1/high_speed_v0.2.0/
+exported/anymal_d_locomotion_v1/high_speed_v0.2.0/*
+!exported/anymal_d_locomotion_v1/high_speed_v0.2.0/policy.onnx
+!exported/anymal_d_locomotion_v1/high_speed_v0.2.0/policy.pt
+!exported/anymal_d_locomotion_v1/high_speed_v0.2.0/policy_metadata.yaml
 
 # Generated videos and external tool state
 **/videos/
