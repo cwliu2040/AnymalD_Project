@@ -44,6 +44,7 @@ anymal_locomotion/
 ├── scripts/rsl_rl/             # train / play
 ├── scripts/validation/         # runtime 與契約驗證
 ├── configs/                    # policy 與 artifact 契約
+├── assets/maps/factory/        # project-local Factory OpenUSD 與相依資產
 ├── deployment/ros2_ws/         # 外部 ROS 2 policy/runtime
 ├── action_graph/               # ROS 2 Bridge / Action Graph 契約
 ├── logs/                       # RSL-RL run 與 TensorBoard
@@ -100,15 +101,11 @@ TERM=xterm-256color PYTHONPATH=source/anymal_locomotion \
 - High-Speed v0.2.0 已由 baseline checkpoint 接續完成 1,000 iterations
   （最終 timeout 92.55%、XY velocity error 0.376 m/s）
 
-## 三個 Terminal：開啟視窗並用鍵盤控制
+## 單一 Launch：Factory 建圖與鍵盤控制
 
-這是日常人工操作的正式 quick start。三個 Terminal 都使用相同的
-`ROS_DOMAIN_ID=27`，而且先清除其他 ROS workspace 可能留下的環境變數。
-第一次執行前，須先依
+這是日常人工操作的正式入口。第一次執行前，須先依
 [ROS 2 deployment README](deployment/ros2_ws/README.md) 完成 workspace
-建置與 `deployment/python_vendor` 安裝。
-
-Terminal 1：啟動外部 ONNX locomotion policy：
+建置與 `deployment/python_vendor` 安裝。之後只需一個啟動命令：
 
 ```bash
 cd /home/ros/anymal_locomotion
@@ -117,87 +114,46 @@ unset PYTHONPATH LD_LIBRARY_PATH
 unset ROS_DISTRO ROS_VERSION ROS_PYTHON_VERSION
 source /opt/ros/humble/setup.bash
 source deployment/ros2_ws/install/setup.bash
-export PYTHONPATH=/home/ros/anymal_locomotion/deployment/python_vendor:${PYTHONPATH}
-export ROS_DOMAIN_ID=27
 
-ros2 run anymal_locomotion_ros2 policy_node --ros-args \
-  -p use_sim_time:=true \
-  -p backend:=onnx \
-  -p policy_path:=/home/ros/anymal_locomotion/exported/anymal_d_locomotion_v1/high_speed_v0.2.0/policy.onnx \
-  -p metadata_path:=/home/ros/anymal_locomotion/exported/anymal_d_locomotion_v1/high_speed_v0.2.0/policy_metadata.yaml
+ros2 launch anymal_locomotion_ros2 bringup.launch.py
 ```
 
-Terminal 2：啟動鍵盤控制視窗：
+此 launch 會繼承啟動 shell 的 `ROS_DOMAIN_ID`，若未設定則使用 `1`；
+ONNX policy 路徑、Factory map、`cuda:0`、LIO-SAM、RViz2、RTX LiDAR、
+simulation parity tolerance 與 episode timeout 設定均已有預設值，不必
+在每次啟動時逐項傳入。它會開啟 Isaac Sim、RViz2，並另外開一個 GNOME
+Terminal 執行官方 `teleop_twist_keyboard`。
 
-```bash
-cd /home/ros/anymal_locomotion
-unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
-unset PYTHONPATH LD_LIBRARY_PATH
-unset ROS_DISTRO ROS_VERSION ROS_PYTHON_VERSION
-source /opt/ros/humble/setup.bash
-source deployment/ros2_ws/install/setup.bash
-export ROS_DOMAIN_ID=27
+目前 `~/.bashrc` 已 source ROS 2 Humble 與本專案建置後的 workspace，
+因此新開的互動式 Terminal 可直接執行上述 `ros2 launch`，不必修改
+`.bashrc` 或再次手動 source。上方完整 source 流程保留作為乾淨環境與
+問題排查用；非互動式 shell 或其他尚未設定的電腦仍須先 source。
 
-ros2 run anymal_locomotion_ros2 keyboard_teleop
-```
+Factory 地圖及其相依 OpenUSD 資產位於
+`assets/maps/factory/`。ROS 2 deployment host 以 Factory USD terrain
+取代原本的 Flat plane，ANYmal 預設出生於 `(x=0, y=-18, yaw=0)`；訓練
+task 與 48 維 policy 契約仍維持官方 Flat baseline。
 
-Terminal 3：啟動可見的 GPU simulation；不要加入 `--headless`：
+保持 teleop terminal 焦點，按住按鍵控制：
 
-```bash
-cd /home/ros/anymal_locomotion
-unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
-unset PYTHONPATH LD_LIBRARY_PATH
-unset ROS_DISTRO ROS_VERSION ROS_PYTHON_VERSION
-source /opt/ros/humble/setup.bash
-export ROS_DOMAIN_ID=27
+- `i/,`：前進／後退
+- `j/l`：向左／向右旋轉
+- `Shift+j`／`Shift+l`：向左／向右側移
+- `k`：停止
+- `q/z`：同時提高／降低線速度與角速度
+- `w/x`：提高／降低線速度
+- `e/c`：提高／降低角速度
 
-TERM=xterm-256color \
-PYTHONPATH=/home/ros/anymal_locomotion/source/anymal_locomotion:${PYTHONPATH} \
-  /home/ros/IsaacLab/isaaclab.sh -p \
-  scripts/validation/validate_ros2_bridge.py \
-  --device cuda:0 --steps 1000000 --real-time --external-control \
-  --disable-episode-timeout
-```
+模擬視窗中的綠色箭頭是 `/cmd_vel` 目標，藍色箭頭是實際速度。若沒有
+動作，確認 teleop terminal 保持焦點，並檢查 `/cmd_vel` 與
+`/joint_command` 是否持續發布。
 
-鍵盤控制視窗必須保持焦點，按住移動鍵才會持續送命令：
-
-- `W/S`：前進／後退
-- `Q/E`：向左／向右側移
-- `A/D`：向左／向右旋轉
-- `Space`：立即停止
-- 主鍵盤 `+/-` 或數字鍵盤 `KP_Add/KP_Subtract`：調整速度倍率
-
-模擬視窗中的綠色箭頭是 `/cmd_vel` 目標，藍色箭頭是實際速度。若鍵盤視窗
-顯示的倍率有改變但機器人速度不變，先確認三個 Terminal 的
-`ROS_DOMAIN_ID` 相同，並檢查 Terminal 1 是否持續發布 `/joint_command`。
-
-### 同時啟用 LIO-SAM
-
-完整 LIO-SAM 會多一個 Terminal。先啟動下列 Terminal 4，再啟動 Terminal 3：
-
-```bash
-cd /home/ros/anymal_locomotion/deployment/ros2_ws
-unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
-unset PYTHONPATH LD_LIBRARY_PATH
-unset ROS_DISTRO ROS_VERSION ROS_PYTHON_VERSION
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-export ROS_DOMAIN_ID=27
-
-ros2 launch anymal_locomotion_ros2 lio_sam.launch.py
-```
-
-並在 Terminal 3 的 simulation 指令最後加上：
-
-```text
---enable-lio-sam --imu-observation-parity-atol 0.01
-```
-
-重新啟動 simulation time 前，必須先用 `Ctrl-C` 關閉舊的 LIO-SAM launch，
-避免殘留同名 publisher。這份 quick start 與
+重新啟動 simulation time 前，必須先在主 launch terminal 按 `Ctrl-C`
+關閉整組 process，並確認自動開啟的 teleop terminal 也已關閉，避免舊
+LIO-SAM publisher 把兩套 correction 送入 GTSAM。這份 quick start 與
 [deployment/ros2_ws/README.md](deployment/ros2_ws/README.md) 的
-「GPU 模擬與鍵盤控制」互相對應；未來若 executable、路徑、參數、按鍵或
-Terminal 數量改變，必須在同一批修改中同步更新兩處。
+「單一 Bringup Launch」互相對應；未來若 executable、路徑、參數、按鍵或
+啟動 process 改變，必須在同一批修改中同步更新兩處。
 
 ## 訓練
 

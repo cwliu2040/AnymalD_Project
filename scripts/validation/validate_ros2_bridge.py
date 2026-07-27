@@ -7,8 +7,14 @@ import argparse
 import math
 import time
 import traceback
+from pathlib import Path
 
 from isaaclab.app import AppLauncher
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_FACTORY_USD_PATH = (
+    PROJECT_ROOT / "assets" / "maps" / "factory" / "Factory_Layout.usd"
+)
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--steps", type=int, default=250, help="Number of 50 Hz environment steps.")
@@ -71,6 +77,30 @@ parser.add_argument(
         "step, and leave odom->base_link TF ownership to LIO-SAM."
     ),
 )
+parser.add_argument(
+    "--factory-usd-path",
+    type=Path,
+    default=DEFAULT_FACTORY_USD_PATH,
+    help="Project-local Factory USD used instead of the Flat plane.",
+)
+parser.add_argument(
+    "--spawn-x",
+    type=float,
+    default=0.0,
+    help="Initial ANYmal x position in the Factory map.",
+)
+parser.add_argument(
+    "--spawn-y",
+    type=float,
+    default=-18.0,
+    help="Initial ANYmal y position in the Factory map.",
+)
+parser.add_argument(
+    "--spawn-yaw",
+    type=float,
+    default=0.0,
+    help="Initial ANYmal yaw in the Factory map.",
+)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 if args_cli.steps <= 0:
@@ -87,6 +117,11 @@ if args_cli.straight_line_duration_s <= 0.0:
     parser.error("--straight-line-duration-s must be positive")
 if (args_cli.validate_observation_parity or args_cli.straight_line_check) and not args_cli.external_control:
     parser.error("observation parity and straight-line checks require --external-control")
+args_cli.factory_usd_path = args_cli.factory_usd_path.expanduser().resolve()
+if not args_cli.factory_usd_path.is_file():
+    parser.error(f"Factory USD does not exist: {args_cli.factory_usd_path}")
+if not all(math.isfinite(value) for value in (args_cli.spawn_x, args_cli.spawn_y, args_cli.spawn_yaw)):
+    parser.error("Factory spawn pose must contain finite values")
 if args_cli.enable_lio_sam:
     # RTX sensors are Hydra render products. Headless Isaac Lab otherwise uses
     # NO_RENDERING and silently creates the sensor without producing frames.
@@ -118,10 +153,7 @@ from anymal_locomotion.policy_contract import (
     validate_runtime_joint_names,
 )
 from anymal_locomotion.simulation.physics_imu import PhysicsImuSpawnerCfg
-from anymal_locomotion.simulation.rtx_lidar import (
-    create_lio_validation_landmarks,
-    create_rtx_lidar_sensor,
-)
+from anymal_locomotion.simulation.rtx_lidar import create_rtx_lidar_sensor
 from anymal_locomotion.simulation.ros2_bridge import (
     create_ros2_policy_bridge,
     read_base_state,
@@ -134,6 +166,7 @@ from anymal_locomotion.simulation.ros2_bridge import (
 )
 from anymal_locomotion.tasks.manager_based.locomotion.velocity.config.anymal_d import PLAY_TASK_ID
 from isaaclab.assets import AssetBaseCfg
+from isaaclab.terrains import TerrainImporterCfg
 from isaaclab_tasks.utils.parse_cfg import load_cfg_from_registry
 
 
@@ -330,6 +363,14 @@ def _wrap_angle(angle: float) -> float:
 def main() -> None:
     env_cfg = load_cfg_from_registry(PLAY_TASK_ID, "env_cfg_entry_point")
     env_cfg.scene.num_envs = 1
+    env_cfg.scene.terrain = TerrainImporterCfg(
+        prim_path="/World/Factory",
+        terrain_type="usd",
+        usd_path=str(args_cli.factory_usd_path),
+        env_spacing=2.5,
+        collision_group=-1,
+        debug_vis=False,
+    )
     env_cfg.scene.ros2_imu_sensor = AssetBaseCfg(
         prim_path="{ENV_REGEX_NS}/Robot/base/imu_sensor",
         spawn=PhysicsImuSpawnerCfg(sensor_period=0.005),
@@ -340,9 +381,9 @@ def main() -> None:
     # The ROS deployment host therefore uses an odom-aligned initial base pose
     # so its 200 Hz world-to-base IMU projection has no hidden yaw offset.
     env_cfg.events.reset_base.params["pose_range"] = {
-        "x": (0.0, 0.0),
-        "y": (0.0, 0.0),
-        "yaw": (0.0, 0.0),
+        "x": (args_cli.spawn_x, args_cli.spawn_x),
+        "y": (args_cli.spawn_y, args_cli.spawn_y),
+        "yaw": (args_cli.spawn_yaw, args_cli.spawn_yaw),
     }
     env_cfg.events.reset_base.params["velocity_range"] = {
         "x": (0.0, 0.0),
@@ -368,11 +409,6 @@ def main() -> None:
     try:
         base_env = env.unwrapped
         articulation_root = _find_articulation_root(base_env.scene.env_prim_paths[0])
-        lidar_landmarks = (
-            create_lio_validation_landmarks()
-            if args_cli.enable_lio_sam
-            else ()
-        )
         lidar = (
             create_rtx_lidar_sensor(articulation_root)
             if args_cli.enable_lio_sam
@@ -400,6 +436,13 @@ def main() -> None:
 
         print(f"PASS graph={bridge.graph_path}", flush=True)
         print(f"PASS articulation_root={bridge.articulation_root_path}", flush=True)
+        print(f"PASS factory_usd_path={args_cli.factory_usd_path}", flush=True)
+        print("PASS factory_terrain_prim=/World/Factory/terrain", flush=True)
+        print(
+            "PASS factory_spawn_pose="
+            f"({args_cli.spawn_x},{args_cli.spawn_y},{args_cli.spawn_yaw})",
+            flush=True,
+        )
         print(f"PASS imu_sensor_prim={bridge.imu_sensor_path}", flush=True)
         print(f"PASS imu_parent_prim={bridge.imu_parent_path}", flush=True)
         print(f"PASS imu_frame_id={bridge.imu_frame_id}", flush=True)
@@ -421,10 +464,6 @@ def main() -> None:
             flush=True,
         )
         if lidar is not None:
-            print(
-                f"PASS lidar_validation_landmarks={len(lidar_landmarks)}",
-                flush=True,
-            )
             print(f"PASS lidar_mount_prim={lidar.mount_path}", flush=True)
             print(f"PASS lidar_sensor_prim={lidar.sensor_path}", flush=True)
             print(

@@ -80,9 +80,10 @@ RTX render product 使用 Isaac Sim 5.1 官方 standalone example 相同的
 保持模擬器原始 PointCloud2 格式。
 Validation host 會在 `--enable-lio-sam` 時自動啟用 headless off-screen
 camera rendering；否則 render product 雖存在，RTX sensor 不會產生 frame。
-同一模式也會在 `/World/LioSamValidationLandmarks` 建立四面牆與三個不對稱
-立柱／箱體。它們只有 visual geometry、不具 collision，不改變 ANYmal
-physics 或 Flat policy task；用途是避免只看無限平面時的 SLAM 退化。
+Deployment host 以 repository 內的
+`assets/maps/factory/Factory_Layout.usd` terrain 取代 Flat plane，LIO-SAM
+直接使用 Factory 牆面、設備與其他不對稱幾何進行 scan matching。Training
+task 與 Flat v1 policy observation 契約不受 deployment 場景替換影響。
 外部 `lidar_point_adapter` 再依固定 OS1 beam elevation 與 scan azimuth
 產生 LIO-SAM Ouster contract 所需的 `ring` 與每點相對時間 `t`，輸出至
 `/lio_sam/points`。這個轉換位於 ROS 2 deployment process，不把 `rclpy`

@@ -24,43 +24,6 @@ class RtxLidarSensor:
     horizontal_resolution: int
 
 
-def create_lio_validation_landmarks(
-    root_path: str = "/World/LioSamValidationLandmarks",
-) -> tuple[str, ...]:
-    """Create asymmetric visual geometry for a non-degenerate SLAM smoke test."""
-    import omni.usd
-    from pxr import Gf, UsdGeom
-
-    stage = omni.usd.get_context().get_stage()
-    if stage.GetPrimAtPath(root_path).IsValid():
-        raise ValueError(f"LIO-SAM validation geometry already exists: {root_path}")
-    UsdGeom.Xform.Define(stage, root_path)
-
-    # Values are (name, center xyz, half-extent xyz). These prims are visual
-    # landmarks only: they do not alter ANYmal physics or the flat policy task.
-    landmarks = (
-        ("WallEast", (5.0, 0.0, 1.5), (0.10, 5.0, 1.5)),
-        ("WallWest", (-5.0, 0.0, 1.5), (0.10, 5.0, 1.5)),
-        ("WallNorth", (0.0, 5.0, 1.5), (5.0, 0.10, 1.5)),
-        ("WallSouth", (0.0, -5.0, 1.5), (5.0, 0.10, 1.5)),
-        ("ColumnNorthEast", (2.4, 2.0, 1.0), (0.30, 0.45, 1.0)),
-        ("ColumnSouthWest", (-2.8, -1.6, 0.75), (0.45, 0.25, 0.75)),
-        ("BoxSouthEast", (2.0, -2.7, 0.45), (0.70, 0.40, 0.45)),
-    )
-    paths: list[str] = []
-    for index, (name, center, half_extent) in enumerate(landmarks):
-        path = f"{root_path}/{name}"
-        cube = UsdGeom.Cube.Define(stage, path)
-        cube.CreateSizeAttr(2.0)
-        xform = UsdGeom.XformCommonAPI(cube)
-        xform.SetTranslate(Gf.Vec3d(*center))
-        xform.SetScale(Gf.Vec3f(*half_extent))
-        shade = 0.25 + 0.08 * (index % 5)
-        cube.CreateDisplayColorAttr([Gf.Vec3f(shade, 0.55, 0.75 - shade)])
-        paths.append(path)
-    return tuple(paths)
-
-
 def create_rtx_lidar_sensor(
     articulation_root_path: str,
     *,

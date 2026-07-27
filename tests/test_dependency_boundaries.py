@@ -44,6 +44,24 @@ RTX_LIDAR = (
     / "simulation"
     / "rtx_lidar.py"
 )
+BRINGUP_LAUNCH = (
+    PROJECT_ROOT
+    / "deployment"
+    / "ros2_ws"
+    / "src"
+    / "anymal_locomotion_ros2"
+    / "launch"
+    / "bringup.launch.py"
+)
+KEYBOARD_TELEOP = (
+    PROJECT_ROOT
+    / "deployment"
+    / "ros2_ws"
+    / "src"
+    / "anymal_locomotion_ros2"
+    / "anymal_locomotion_ros2"
+    / "keyboard_teleop.py"
+)
 ONNX_BACKEND = (
     PROJECT_ROOT
     / "deployment"
@@ -153,6 +171,10 @@ def test_isaac_ros2_bridge_uses_action_graph_and_name_based_commands() -> None:
 def test_bridge_host_preserves_manager_based_actuator_path() -> None:
     source = ROS2_BRIDGE_HOST.read_text(encoding="utf-8")
     assert "PhysicsImuSpawnerCfg(sensor_period=0.005)" in source
+    assert '"assets" / "maps" / "factory" / "Factory_Layout.usd"' in source
+    assert "terrain_type=\"usd\"" in source
+    assert 'prim_path="/World/Factory"' in source
+    assert "create_lio_validation_landmarks" not in source
     assert '"{ENV_REGEX_NS}/Robot/base/imu_sensor"' in source
     assert "connect_articulation_controller=not args_cli.external_control" in source
     assert "read_joint_position_command" in source
@@ -184,12 +206,29 @@ def test_rtx_lidar_is_project_owned_and_uses_official_ros2_bridge_writer() -> No
     assert "rep.create.render_product" in source
     assert '"RtxLidarROS2PublishPointCloudBuffer"' in source
     assert "ros2_writer.attach([render_product])" in source
-    assert "def create_lio_validation_landmarks(" in source
-    assert "they do not alter ANYmal physics" in source
     assert "publish_ground_truth_tf=not args_cli.enable_lio_sam" in host_source
     assert "args_cli.enable_cameras = True" in host_source
     assert "base_env.sim.render()" in host_source
     assert "rclpy" not in source
+
+
+def test_complete_bringup_uses_project_defaults_and_official_teleop() -> None:
+    source = BRINGUP_LAUNCH.read_text(encoding="utf-8")
+    teleop_source = KEYBOARD_TELEOP.read_text(encoding="utf-8")
+    factory_map = PROJECT_ROOT / "assets" / "maps" / "factory" / "Factory_Layout.usd"
+
+    assert factory_map.is_file()
+    assert 'default_value="/home/ros/anymal_locomotion"' in source
+    assert 'default_value="/home/ros/IsaacLab"' in source
+    assert 'default_value="cuda:0"' in source
+    assert '"ROS_DOMAIN_ID"' in source
+    assert 'default_value="1"' in source
+    assert '"teleop_twist_keyboard"' in source
+    assert '"--enable-lio-sam"' in source
+    assert '"--disable-episode-timeout"' in source
+    assert '"Factory_Layout.usd"' in source
+    assert "from teleop_twist_keyboard import main as teleop_main" in teleop_source
+    assert "tkinter" not in teleop_source
 
 
 def test_onnx_backend_is_external_and_cpu_only() -> None:

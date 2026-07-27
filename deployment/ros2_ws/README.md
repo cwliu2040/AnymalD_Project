@@ -123,18 +123,16 @@ ros2 run anymal_locomotion_ros2 policy_node --ros-args \
 也保留 `backend:=torchscript`，但必須在外部 ROS 2 Python 另裝 PyTorch，並
 把 `policy_path` 改成 `policy.pt`。兩種方式都不會把 `rclpy` 塞進 Isaac Sim。
 
-## GPU 模擬與鍵盤控制
+## 單一 Bringup Launch
 
 ROS 2 workspace 位於：
 
 `/home/ros/anymal_locomotion/deployment/ros2_ws`
 
-根目錄 [README quick start](../../README.md#三個-terminal開啟視窗並用鍵盤控制)
-是日常操作的正式入口。本節保留 deployment 細節；若 executable、路徑、
-參數、按鍵或 Terminal 數量改變，必須在同一批修改中同步更新兩處。
-
-Terminal 1 使用上節完整命令啟動 policy node，並固定
-`ROS_DOMAIN_ID=27`。Terminal 2 啟動鍵盤控制：
+根目錄 [README quick start](../../README.md#單一-launchfactory-建圖與鍵盤控制)
+是日常操作的正式入口。完成建置後，一個 launch 同時啟動外部 ONNX policy、
+LIO-SAM、PointCloud2 adapter、RViz2、Factory GPU simulation，以及官方
+`teleop_twist_keyboard`：
 
 ```bash
 cd /home/ros/anymal_locomotion
@@ -143,42 +141,42 @@ unset PYTHONPATH LD_LIBRARY_PATH
 unset ROS_DISTRO ROS_VERSION ROS_PYTHON_VERSION
 source /opt/ros/humble/setup.bash
 source deployment/ros2_ws/install/setup.bash
-export ROS_DOMAIN_ID=27
 
-ros2 run anymal_locomotion_ros2 keyboard_teleop
+ros2 launch anymal_locomotion_ros2 bringup.launch.py
 ```
 
-鍵盤視窗必須保持焦點。按住按鍵才持續送命令，放開後會在 0.1 秒內停止：
+所有 launch argument 都有正式預設值，正常使用不必傳入參數：
 
-- `W/S`：前進／後退
-- `Q/E`：向左／向右側移
-- `A/D`：向左／向右旋轉
-- `Space`：立即停止
-- `+/-`：調整速度倍率
-- 數字鍵盤 `KP_Add/KP_Subtract`：同樣調整速度倍率
+- `project_root=/home/ros/anymal_locomotion`
+- `isaaclab_root=/home/ros/IsaacLab`
+- `device=cuda:0`
+- `ros_domain_id`：繼承啟動 shell 的 `ROS_DOMAIN_ID`，未設定時為 `1`
+- `factory_usd_path=<project_root>/assets/maps/factory/Factory_Layout.usd`
+- High-Speed v0.2.0 ONNX policy 與 metadata
+- `use_rviz=true`
+- `open_teleop_terminal=true`
 
-Terminal 3 啟動 GPU simulation host；不要加 `--headless` 才能看到視窗：
+Factory USD 取代 deployment host 原本的 Flat plane，預設 spawn pose 是
+`(0, -18, 0)`。啟用 LIO-SAM 時直接使用 Factory 幾何進行 scan matching，
+不再建立 smoke-test 專用的七個 visual landmark。這只改 deployment
+場景；training task 與 policy observation 仍是 Flat v1 契約。
+
+Launch 會自動開一個 GNOME Terminal。保持該視窗焦點並使用官方按鍵：
+
+- `i/,`：前進／後退
+- `j/l`：向左／向右旋轉
+- `Shift+j`／`Shift+l`：向左／向右側移
+- `k`：停止
+- `q/z`：同時提高／降低線速度與角速度
+- `w/x`：提高／降低線速度
+- `e/c`：提高／降低角速度
+
+另開終端可檢查 topic 與實際接收頻率；必須使用與啟動 launch 的 shell
+相同的 `ROS_DOMAIN_ID`。目前 `~/.bashrc` 設為 `1`，範例如下：
 
 ```bash
-cd /home/ros/anymal_locomotion
-unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
-unset PYTHONPATH LD_LIBRARY_PATH
-unset ROS_DISTRO ROS_VERSION ROS_PYTHON_VERSION
 source /opt/ros/humble/setup.bash
-export ROS_DOMAIN_ID=27
-
-TERM=xterm-256color \
-PYTHONPATH=/home/ros/anymal_locomotion/source/anymal_locomotion:${PYTHONPATH} \
-  /home/ros/IsaacLab/isaaclab.sh -p \
-  scripts/validation/validate_ros2_bridge.py \
-  --device cuda:0 --steps 1000000 --real-time --external-control \
-  --disable-episode-timeout
-```
-
-另開終端可檢查 topic 與實際接收頻率：
-
-```bash
-source /opt/ros/humble/setup.bash
+export ROS_DOMAIN_ID=1
 ros2 topic list
 ros2 topic hz /joint_states
 ros2 topic hz /odom
@@ -187,18 +185,23 @@ ros2 topic hz /imu/data
 ros2 topic hz /joint_command
 ```
 
+目前 `~/.bashrc` 已 source ROS 2 Humble 與
+`~/anymal_locomotion/deployment/ros2_ws/install/setup.bash`，新開互動式
+Terminal 後可直接執行 `ros2 launch anymal_locomotion_ros2
+bringup.launch.py`，不需再修改 `.bashrc` 或手動 source。上面的 source
+命令仍適用於乾淨環境、非互動式 shell 與問題排查。Launch 無法替啟動它
+的 parent shell source workspace，但會把選定的 domain 傳給其所有子程序。
+
 目前 GPU 即時驗證結果：`/imu/data` 靜止時
 `linear_acceleration.z=9.80877 m/s²`、接收率約 `191.5 Hz`；`/tf` 為
 `odom → base_link`、接收率約 `49.2 Hz`，且可由
 `tf2_echo odom base_link` 查詢。
 
-若有設定 `ROS_DOMAIN_ID` 或 `RMW_IMPLEMENTATION`，所有終端必須使用相同值。
 綠色箭頭是收到的 body-frame `/cmd_vel` 目標；藍色箭頭是機器人的實際速度。
 
-若要同時使用 LIO-SAM，依下一節再開 Terminal 4 啟動
-`lio_sam.launch.py`，並在 Terminal 3 的 simulation 指令加上
-`--enable-lio-sam --imu-observation-parity-atol 0.01`。重新啟動 simulation
-time 前，必須先關閉舊的 LIO-SAM launch。
+重新啟動 simulation time 前，先在主 terminal 用 `Ctrl-C` 關閉整個
+bringup，並確認 teleop terminal 已關閉。若 executable、路徑、參數、按鍵
+或啟動 process 改變，必須同步更新本節與根目錄 README。
 
 ## RTX LiDAR 與 LIO-SAM
 
@@ -240,7 +243,7 @@ colcon build --symlink-install --packages-up-to anymal_locomotion_ros2
 source install/setup.bash
 ```
 
-Terminal 1 啟動 adapter 與 LIO-SAM：
+若只需單獨除錯 adapter 與 LIO-SAM，仍可使用：
 
 ```bash
 cd /home/ros/anymal_locomotion/deployment/ros2_ws
@@ -249,7 +252,7 @@ source install/setup.bash
 ros2 launch anymal_locomotion_ros2 lio_sam.launch.py
 ```
 
-Terminal 2 啟動包含 RTX LiDAR 的模擬 host：
+若只需單獨除錯包含 Factory 與 RTX LiDAR 的模擬 host：
 
 ```bash
 cd /home/ros/anymal_locomotion
@@ -257,7 +260,8 @@ TERM=xterm-256color PYTHONPATH=source/anymal_locomotion \
   /home/ros/IsaacLab/isaaclab.sh -p \
   scripts/validation/validate_ros2_bridge.py \
   --device cuda:0 --steps 1000000 --real-time --external-control \
-  --disable-episode-timeout --enable-lio-sam
+  --disable-episode-timeout --enable-lio-sam \
+  --imu-observation-parity-atol 0.01
 ```
 
 驗收時至少檢查：
@@ -285,6 +289,13 @@ ros2 run tf2_ros tf2_echo base_link lidar_link
   `map → odom → base_link → lidar_link` TF 可解析。
 - 零殘留啟動的 60 秒測試收到 85 筆 mapping correction，時戳全部嚴格
   遞增；四個 LIO-SAM 核心 process 在測試結束後仍存活。
+
+上述 60 秒結果是在舊的七個臨時 landmark 場景完成。改用 Factory 後已完成
+新的短時間整組 bringup smoke test：Factory、policy、RTX LiDAR、adapter 與
+四個 LIO-SAM core 均由 `bringup.launch.py` 啟動；`/joint_command` 與
+`/lio_sam/points` 都是單一 publisher／subscriber，並已收到 Factory 場景的
+mapping odometry。移動建圖精度與裂圖仍需用鍵盤實際走動後驗收，不能沿用
+舊 landmark 的 60 秒結果宣稱通過。
 
 每次重跑 simulation time 前應一起重啟整組 LIO-SAM launch。若殘留舊的
 adapter／feature／mapping process，同名 topic 會出現多個 publisher，

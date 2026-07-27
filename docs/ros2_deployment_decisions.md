@@ -56,14 +56,14 @@ position 與 12 個 joint velocity，會在發布邊界複製到 CPU。
 ### 第一階段：可控制的 ROS 2 policy closed loop
 
 - `/cmd_vel` 使用 body-frame `[vx, vy, wz]`。
-- 鍵盤採按住式控制：
-  - `W/S`：前進／後退。
-  - `Q/E`：向左／向右側移。
-  - `A/D`：向左／向右旋轉。
-  - `Space`：立即停止。
-  - `+/-`：調整速度倍率。
-- 放開控制鍵後 0.1 秒內回到零命令。
-- 預設速度為 `vx=0.5 m/s`、`vy=0.3 m/s`、`wz=0.5 rad/s`。
+- 鍵盤控制使用已驗證的官方 `teleop_twist_keyboard`：
+  - `i/,`：前進／後退。
+  - `j/l`：向左／向右旋轉。
+  - `Shift+j`／`Shift+l`：向左／向右側移。
+  - `k`：停止。
+  - `q/z`、`w/x`、`e/c`：調整速度。
+- 官方 teleop 預設線速度為 `0.5 m/s`、角速度為 `0.5 rad/s`；holonomic
+  側移也使用 `0.5 m/s`。
 - 綠色目標箭頭必須顯示收到的外部 body-frame command，不能繼續顯示
   Isaac Lab 的隨機 command。
 - ROS 2 組成的 48 維 observation 必須逐項對上 Isaac Lab observation。
@@ -196,6 +196,14 @@ Isaac Sim RTX LiDAR
 - LIO-SAM 與專案 ROS package 已在乾淨的 ROS Humble environment 完成
   colcon build，所有 adapter／LIO nodes 可啟動。
 - LiDAR 不加入 Flat v1 的 48 維 observation；它屬於獨立感知層。
+- Deployment host 使用 repository 內的
+  `assets/maps/factory/Factory_Layout.usd` 及完整相依 OpenUSD 資產，
+  取代原本的 Flat plane；預設出生位置為 `(0, -18, 0)`。Training task
+  與 policy 契約仍維持官方 Flat baseline。
+- `bringup.launch.py` 預設繼承啟動 shell 的 `ROS_DOMAIN_ID`，未設定時
+  回退到 `1`，並將相同 domain 傳給 policy、LIO-SAM、adapter、RViz2、
+  Factory simulation 與官方 keyboard teleop；正常操作不需逐項傳入
+  launch argument，也不必為此修改 `.bashrc`。
 
 TF 採單一 publisher ownership：
 
@@ -224,13 +232,18 @@ Runtime 驗收結果：
 - Image Projection 輸出 `imu_available=1`、`odom_available=1`；
   deskew、feature、mapping odometry 與
   `map → odom → base_link → lidar_link` TF 均可正常輸出。
-- 為避免只有無限平面造成 scan matching 退化，validation host 建立七個
-  不具 collision 的不對稱 visual landmark；不更動 ANYmal physics 或
-  Flat v1 policy task。
+- Factory 場景取代原本為無限平面 smoke test 建立的七個臨時 visual
+  landmark；後續移動建圖與裂圖驗證直接使用實際 Factory 幾何。
 - 零殘留啟動的 60 秒測試收到 85 筆 mapping correction，全部嚴格遞增；
   四個 LIO-SAM 核心 process 在測試結束後仍存活。重置 simulation time
   前必須一起重啟 LIO-SAM，避免殘留同名 publisher 將兩套 correction
   送入 GTSAM。
+- Factory 資產可攜性檢查共有 135 個使用中的 layer，指向舊 workspace
+  或其他外部絕對路徑的 layer 數均為 0，並保留 2,082 個 collision prim。
+- Factory 的 5-step GPU smoke test 已通過；單一 bringup 的短時間 runtime
+  也確認 `/joint_command`、`/lio_sam/points` 與 mapping odometry 有輸出，
+  結束後無殘留 process。先前 85 筆 correction 的 60 秒結果屬於舊的臨時
+  landmark 場景，不能當成 Factory 移動建圖精度或裂圖驗收結果。
 
 尚未完成的是移動建圖精度、回環，以及實體 ANYmal-D sensor extrinsic
 驗收；不影響目前靜止端到端 smoke test 的完成狀態。
