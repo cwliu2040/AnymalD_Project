@@ -42,6 +42,12 @@ parser.add_argument(
     help="Maximum absolute difference allowed for observation parity.",
 )
 parser.add_argument(
+    "--imu-observation-parity-atol",
+    type=float,
+    default=2.0e-3,
+    help="Maximum IMU angular-velocity and projected-gravity parity error.",
+)
+parser.add_argument(
     "--straight-line-check",
     action="store_true",
     help="Require a continuous [0.5, 0, 0] command and enforce the 10-second straight-line contract.",
@@ -67,6 +73,8 @@ if args_cli.joint_command_timeout_steps <= 0:
     parser.error("--joint-command-timeout-steps must be positive")
 if args_cli.observation_parity_atol <= 0.0:
     parser.error("--observation-parity-atol must be positive")
+if args_cli.imu_observation_parity_atol <= 0.0:
+    parser.error("--imu-observation-parity-atol must be positive")
 if args_cli.straight_line_duration_s <= 0.0:
     parser.error("--straight-line-duration-s must be positive")
 if (args_cli.validate_observation_parity or args_cli.straight_line_check) and not args_cli.external_control:
@@ -75,6 +83,7 @@ required_kit_args = (
     "--enable omni.graph.core "
     "--enable omni.graph.nodes "
     "--enable isaacsim.core.nodes "
+    "--enable isaacsim.sensors.physics "
     "--enable isaacsim.ros2.bridge "
     "--/exts/isaacsim.ros2.bridge/ros_distro=system_default"
 )
@@ -95,9 +104,11 @@ from anymal_locomotion.policy_contract import (
     POLICY_CONTRACT,
     validate_runtime_joint_names,
 )
+from anymal_locomotion.simulation.physics_imu import PhysicsImuSpawnerCfg
 from anymal_locomotion.simulation.ros2_bridge import (
     create_ros2_policy_bridge,
     read_base_state,
+    read_imu_state,
     read_joint_position_command,
     read_velocity_command,
     trigger_policy_step,
@@ -105,6 +116,7 @@ from anymal_locomotion.simulation.ros2_bridge import (
     write_joint_state,
 )
 from anymal_locomotion.tasks.manager_based.locomotion.velocity.config.anymal_d import PLAY_TASK_ID
+from isaaclab.assets import AssetBaseCfg
 from isaaclab_tasks.utils.parse_cfg import load_cfg_from_registry
 
 
@@ -231,6 +243,7 @@ def _build_bridge_observation(
     previous_action: torch.Tensor,
 ):
     base_state = read_base_state(bridge)
+    imu_state = read_imu_state(bridge)
     joint_positions = (
         robot.data.joint_pos[0, list(canonical_joint_indices)]
         .detach()
@@ -252,8 +265,8 @@ def _build_bridge_observation(
     observation = np.concatenate(
         (
             np.asarray(base_state.linear_velocity, dtype=np.float32),
-            np.asarray(base_state.angular_velocity, dtype=np.float32),
-            _projected_gravity_from_xyzw(base_state.orientation_xyzw),
+            np.asarray(imu_state.angular_velocity, dtype=np.float32),
+            _projected_gravity_from_xyzw(imu_state.orientation_xyzw),
             command.astype(np.float32, copy=False),
             joint_positions - default_positions,
             joint_velocities,
@@ -262,7 +275,7 @@ def _build_bridge_observation(
     )
     if observation.shape != (48,):
         raise RuntimeError(f"Bridge observation has unexpected shape {observation.shape}")
-    return observation, base_state
+    return observation, base_state, imu_state
 
 
 _OBSERVATION_TERMS = (
@@ -298,8 +311,28 @@ def _wrap_angle(angle: float) -> float:
 def main() -> None:
     env_cfg = load_cfg_from_registry(PLAY_TASK_ID, "env_cfg_entry_point")
     env_cfg.scene.num_envs = 1
+    env_cfg.scene.ros2_imu_sensor = AssetBaseCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/base/imu_sensor",
+        spawn=PhysicsImuSpawnerCfg(sensor_period=0.005),
+    )
     env_cfg.sim.device = args_cli.device
     env_cfg.seed = 42
+    # Isaac Compute Odometry reports orientation relative to the reset pose.
+    # The ROS deployment host therefore uses an odom-aligned initial base pose
+    # so its 200 Hz world-to-base IMU projection has no hidden yaw offset.
+    env_cfg.events.reset_base.params["pose_range"] = {
+        "x": (0.0, 0.0),
+        "y": (0.0, 0.0),
+        "yaw": (0.0, 0.0),
+    }
+    env_cfg.events.reset_base.params["velocity_range"] = {
+        "x": (0.0, 0.0),
+        "y": (0.0, 0.0),
+        "z": (0.0, 0.0),
+        "roll": (0.0, 0.0),
+        "pitch": (0.0, 0.0),
+        "yaw": (0.0, 0.0),
+    }
     if args_cli.disable_episode_timeout:
         env_cfg.terminations.time_out = None
     if args_cli.external_control:
@@ -320,16 +353,43 @@ def main() -> None:
             articulation_root,
             connect_articulation_controller=not args_cli.external_control,
         )
+        physics_dt = float(base_env.sim.get_physics_dt())
+        if not math.isclose(
+            physics_dt,
+            bridge.imu_update_period_s,
+            rel_tol=0.0,
+            abs_tol=1.0e-9,
+        ):
+            raise RuntimeError(
+                "Physics and IMU periods must match for true 200 Hz sampling: "
+                f"physics_dt={physics_dt}, imu_period={bridge.imu_update_period_s}"
+            )
         graph_prim = omni.usd.get_context().get_stage().GetPrimAtPath(bridge.graph_path)
         if not graph_prim.IsValid():
             raise RuntimeError(f"ROS 2 graph was not created: {bridge.graph_path}")
 
         print(f"PASS graph={bridge.graph_path}", flush=True)
         print(f"PASS articulation_root={bridge.articulation_root_path}", flush=True)
+        print(f"PASS imu_sensor_prim={bridge.imu_sensor_path}", flush=True)
+        print(f"PASS imu_parent_prim={bridge.imu_parent_path}", flush=True)
+        print(f"PASS imu_frame_id={bridge.imu_frame_id}", flush=True)
+        print(
+            f"PASS imu_mount_translation_xyz={bridge.imu_mount_translation_xyz}",
+            flush=True,
+        )
+        print(
+            f"PASS imu_mount_orientation_wxyz={bridge.imu_mount_orientation_wxyz}",
+            flush=True,
+        )
+        print(
+            f"PASS imu_update_period_s={bridge.imu_update_period_s:.6f}",
+            flush=True,
+        )
+        print(f"PASS physics_dt_s={physics_dt:.6f}", flush=True)
         print(
             "PASS topics="
             f"{bridge.command_topic},{bridge.joint_state_topic},{bridge.imu_topic},"
-            f"{bridge.odometry_topic},{bridge.joint_command_topic}",
+            f"{bridge.odometry_topic},{bridge.tf_topic},{bridge.joint_command_topic}",
             flush=True,
         )
         print(f"PASS ros_domain_id={bridge.domain_id}", flush=True)
@@ -372,6 +432,14 @@ def main() -> None:
         parity_worst_values: dict[str, tuple[list[float], list[float]]] = {}
         parity_angular_debug: dict[str, list[float]] = {}
         parity_samples = 0
+        first_imu_sensor_time: float | None = None
+        last_imu_sensor_time = float("-inf")
+        imu_sensor_samples = 0
+        imu_timestamp_step_error = 0.0
+        imu_angular_velocity_max_error = 0.0
+        imu_projected_gravity_max_error = 0.0
+        imu_orientation_norm_max_error = 0.0
+        final_imu_state = None
         straight_start_position: np.ndarray | None = None
         straight_start_yaw: float | None = None
         straight_end_position: np.ndarray | None = None
@@ -421,13 +489,77 @@ def main() -> None:
                     timestamp_s=(step_index + 1) * base_env.step_dt,
                 )
             _tick_action_graph(base_env, bridge)
+            imu_state = read_imu_state(bridge)
+            if imu_state.sensor_time <= last_imu_sensor_time:
+                raise RuntimeError(
+                    "IMU sensor timestamp did not increase monotonically: "
+                    f"previous={last_imu_sensor_time}, current={imu_state.sensor_time}"
+                )
+            if first_imu_sensor_time is None:
+                first_imu_sensor_time = imu_state.sensor_time
+            else:
+                imu_timestamp_step_error = max(
+                    imu_timestamp_step_error,
+                    abs(
+                        (imu_state.sensor_time - last_imu_sensor_time)
+                        - base_env.step_dt
+                    ),
+                )
+            last_imu_sensor_time = imu_state.sensor_time
+            imu_sensor_samples += 1
+            final_imu_state = imu_state
+            if step_terminated == 0 and step_truncated == 0:
+                imu_angular_velocity_max_error = max(
+                    imu_angular_velocity_max_error,
+                    float(
+                        np.max(
+                            np.abs(
+                                np.asarray(
+                                    imu_state.angular_velocity,
+                                    dtype=np.float32,
+                                )
+                                - robot.data.root_ang_vel_b[0]
+                                .detach()
+                                .cpu()
+                                .numpy()
+                            )
+                        )
+                    ),
+                )
+                imu_projected_gravity_max_error = max(
+                    imu_projected_gravity_max_error,
+                    float(
+                        np.max(
+                            np.abs(
+                                _projected_gravity_from_xyzw(
+                                    imu_state.orientation_xyzw
+                                )
+                                - robot.data.projected_gravity_b[0]
+                                .detach()
+                                .cpu()
+                                .numpy()
+                            )
+                        )
+                    ),
+                )
+            imu_orientation_norm_max_error = max(
+                imu_orientation_norm_max_error,
+                abs(
+                    float(np.linalg.norm(imu_state.orientation_xyzw))
+                    - 1.0
+                ),
+            )
             if (
                 args_cli.validate_observation_parity
                 and step_index >= args_cli.external_control_warmup_steps
                 and step_terminated == 0
                 and step_truncated == 0
             ):
-                bridge_observation, bridge_base_state = _build_bridge_observation(
+                (
+                    bridge_observation,
+                    bridge_base_state,
+                    bridge_imu_state,
+                ) = _build_bridge_observation(
                     bridge,
                     robot,
                     canonical_joint_indices,
@@ -462,8 +594,9 @@ def main() -> None:
                                     bridge_base_state.world_angular_velocity
                                 ),
                                 "orientation_xyzw": list(
-                                    bridge_base_state.orientation_xyzw
+                                    bridge_imu_state.orientation_xyzw
                                 ),
+                                "imu_sensor_time": [bridge_imu_state.sensor_time],
                                 "isaac_world": robot.data.root_ang_vel_w[0]
                                 .detach()
                                 .cpu()
@@ -545,7 +678,12 @@ def main() -> None:
             failed_terms = {
                 name: error
                 for name, error in parity_max_errors.items()
-                if error > args_cli.observation_parity_atol
+                if error
+                > (
+                    args_cli.imu_observation_parity_atol
+                    if name in ("base_angular_velocity", "projected_gravity")
+                    else args_cli.observation_parity_atol
+                )
             }
             if failed_terms:
                 for name in failed_terms:
@@ -565,7 +703,9 @@ def main() -> None:
                     )
                 raise RuntimeError(
                     "48-D observation parity failed: "
-                    f"atol={args_cli.observation_parity_atol}, errors={failed_terms}"
+                    f"atol={args_cli.observation_parity_atol}, "
+                    f"imu_atol={args_cli.imu_observation_parity_atol}, "
+                    f"errors={failed_terms}"
                 )
         if args_cli.straight_line_check:
             if (
@@ -616,7 +756,61 @@ def main() -> None:
                 failures.append(f"heading={math.degrees(heading_change):.6f}deg")
             if failures:
                 raise RuntimeError(f"Straight-line contract failed: {failures}")
+        imu_contract_failures = {}
+        if imu_timestamp_step_error > 1.0e-4:
+            imu_contract_failures["timestamp_step_error"] = imu_timestamp_step_error
+        if imu_angular_velocity_max_error > 2.0e-3:
+            imu_contract_failures["angular_velocity_error"] = (
+                imu_angular_velocity_max_error
+            )
+        if imu_projected_gravity_max_error > 2.0e-3:
+            imu_contract_failures["projected_gravity_error"] = (
+                imu_projected_gravity_max_error
+            )
+        if imu_orientation_norm_max_error > 1.0e-6:
+            imu_contract_failures["orientation_norm_error"] = (
+                imu_orientation_norm_max_error
+            )
+        if imu_contract_failures:
+            raise RuntimeError(
+                f"200 Hz IMU contract failed: {imu_contract_failures}"
+            )
         print(f"PASS simulation_steps={args_cli.steps}", flush=True)
+        print(f"PASS imu_monotonic_policy_samples={imu_sensor_samples}", flush=True)
+        print(f"PASS imu_final_sensor_time_s={last_imu_sensor_time:.6f}", flush=True)
+        print(
+            f"PASS imu_timestamp_step_max_error_s={imu_timestamp_step_error:.9g}",
+            flush=True,
+        )
+        print(
+            "PASS imu_angular_velocity_max_error="
+            f"{imu_angular_velocity_max_error:.9g}",
+            flush=True,
+        )
+        print(
+            "PASS imu_projected_gravity_max_error="
+            f"{imu_projected_gravity_max_error:.9g}",
+            flush=True,
+        )
+        print(
+            "PASS imu_orientation_norm_max_error="
+            f"{imu_orientation_norm_max_error:.9g}",
+            flush=True,
+        )
+        if final_imu_state is None:
+            raise RuntimeError("Physics IMU did not produce any samples")
+        print(
+            f"PASS imu_final_orientation_xyzw={final_imu_state.orientation_xyzw}",
+            flush=True,
+        )
+        print(
+            f"PASS imu_final_angular_velocity={final_imu_state.angular_velocity}",
+            flush=True,
+        )
+        print(
+            f"PASS imu_final_linear_acceleration={final_imu_state.linear_acceleration}",
+            flush=True,
+        )
         if args_cli.external_control:
             print(
                 "PASS external_control_warmup_steps="

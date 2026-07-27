@@ -103,7 +103,7 @@ Publisher 發布 `sensor_msgs/msg/JointState`，並以 Action Graph impulse
 
 ### 第三階段：真正的 200 Hz 模擬 IMU
 
-下一步才開始實作，尚未完成：
+已完成：
 
 - 使用 Isaac Sim 的真正 IMU sensor，不從低頻 base state 假造高頻訊息。
 - Sensor update period 對齊 200 Hz physics，即 `0.005 s`。
@@ -127,6 +127,45 @@ IMU 驗收至少包含：
 - 200 Hz simulation rate；即時運行時 wall-clock 接收率目標至少 180 Hz。
 - Policy 使用的 IMU sample 與 SLAM topic 來自同一個 sensor data source。
 
+目前實作與結果：
+
+- Sensor prim：
+  `/World/envs/env_0/Robot/base/imu_sensor`。
+- Parent prim：
+  `/World/envs/env_0/Robot/base`。
+- Frame：`base_link`。
+- Mounting translation：`(0, 0, 0)`。
+- Mounting quaternion `(w, x, y, z)`：`(1, 0, 0, 0)`。
+- Sensor period 與 physics dt 都是 `0.005 s`。
+- Topic：唯一使用 `/imu/data`；policy node 預設直接訂閱該 topic。
+- 動態 `/tf` 使用 `/odom` 的同一筆 pose 與 simulation timestamp，發布
+  `odom → base_link`；identity-mount IMU 的 `frame_id` 直接為 `base_link`。
+- Graph 由 `OnPhysicsStep` 驅動，sensor time 單調遞增；不是由 50 Hz policy
+  impulse 重播資料。
+- RTX 5080 即時 DDS 實收率為 `196.046 Hz`（1000-sample window），通過
+  至少 180 Hz 的目標。
+- 靜止訊息實測 linear acceleration 為
+  `(0.00543, 0.00108, 9.80877) m/s²`，z 軸包含正常重力加速度。
+- `/tf` 實收率約 `49.2 Hz`，且 `tf2_echo odom base_link` 可解析。
+- 250-step external closed loop、100 筆 parity sample：
+  - base angular velocity 最大誤差：`8.03e-4`。
+  - projected gravity 最大誤差：`2.11e-4`。
+  - 0 termination、0 timeout。
+
+Isaac Sim 5.1 的已知限制：
+
+- GPU articulation 上 `IsaacReadIMU` 的 orientation 固定為 identity，但
+  angular velocity、linear acceleration 與 sensor time 正常。
+- 因此 orientation 改由同一個 200 Hz physics event 的
+  `IsaacComputeOdometry` 取得；不是低頻 base state 重播。
+- `IsaacReadIMU` 的 angular velocity 是 world frame，graph 以同一筆
+  orientation 轉為 `base_link`。
+- `IsaacComputeOdometry` orientation 相對 reset pose；deployment host 將
+  初始 pose 與 velocity 設為 odom-aligned 零值，避免隱藏的初始 yaw offset。
+- 真實 sensor 取樣相對 policy state 有一個 physics-step 等級的差異，因此
+  IMU angular velocity 與 projected gravity 的 parity tolerance 使用
+  `2e-3`；其他 observation term 仍維持 `1e-4`。
+
 ## 暫時不做
 
 - 不加入 LiDAR、camera、LIO-SAM、LVI-SAM 或完整 SLAM。
@@ -137,6 +176,6 @@ IMU 驗收至少包含：
 
 ## Git checkpoint
 
-目前應先完成第一階段／GPU bridge 的 commit，再開始真正 IMU sensor。
-任何 commit 或 push 仍須依 `AGENTS.md` 重新取得明確同意。本文件本身不代表
-已授權 commit 或 push。
+第一階段、GPU bridge 與第三階段 IMU 都已有可重現驗證結果。任何 commit 或
+push 仍須依 `AGENTS.md` 重新取得明確同意。本文件本身不代表已授權 commit
+或 push。

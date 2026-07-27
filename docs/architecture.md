@@ -87,7 +87,8 @@ Isaac Lab Python module 不可 import `rclpy`，也不可直接修改 command ma
 
 專案內的 graph builder 已在 Play task 驗證：
 
-- `/joint_states`、`/odom`、`/imu`、`/clock` 可由外部 ROS 2 process 接收；
+- `/joint_states`、`/odom`、`/tf`、`/imu/data`、`/clock` 可由外部 ROS 2
+  process 接收；
 - `/joint_command` 使用 JointState joint names 進行 deterministic remap，
   不依賴 USD 內部關節陣列順序；
 - ROS2 Context 明確使用目前的 `ROS_DOMAIN_ID`；
@@ -128,9 +129,12 @@ low-level command message type 仍須等 controller/SDK 與 safety requirements
 body-frame `/odom.twist.twist.linear`，並使用 IMU angular velocity 與
 orientation。
 
-官方 Play 場景目前沒有獨立 IMU prim，所以第一版 `/imu` 由 base simulator
-state 產生。這是通訊與 observation 整合版本，不是 sensor-noise 模型。實體機
-仍需要明確定義 estimator、frame 與 timestamp contract：
+ROS 2 deployment host 會在 physics 啟動前於 ANYmal-D base 下建立真正的
+Isaac Sim IMU prim，以 200 Hz 發布 `/imu/data`。Policy 維持 50 Hz 並使用
+最新 sample；目前 filter width 為 1，尚未加入 sensor noise 或 bias。
+Action Graph 另以 `/odom` 的同一筆 pose 與 timestamp 發布動態
+`odom → base_link` TF；identity-mount IMU 直接使用 `base_link` frame。
+實體機仍需要明確定義 estimator、frame 與 timestamp contract：
 
 - base velocity estimator 與 body/world frame；
 - IMU orientation 與 angular-velocity convention；

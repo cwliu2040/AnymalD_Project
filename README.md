@@ -90,7 +90,7 @@ TERM=xterm-256color PYTHONPATH=source/anymal_locomotion \
 - 無 height scanner
 - deterministic canonical-to-runtime joint mapping
 - 完整 runtime smoke test 通過
-- 外部 ROS 2 已接收 `/clock`、`/joint_states`、`/odom`、`/imu`
+- 外部 ROS 2 已接收 `/clock`、`/joint_states`、`/odom`、`/tf`、`/imu/data`
 - GPU PhysX、ROS 2 Bridge 與 ONNX closed loop 已完成整合驗證
 - ROS 組成的 48 維 observation 與 Isaac Lab observation 逐項一致
 - 官方 ±1.0 baseline 已完成 300 iterations
@@ -165,4 +165,4 @@ hash 與 checkpoint／JIT／ONNX output parity 結果見
 - [系統架構](docs/architecture.md)
 - [ROS 2 模擬部署對齊紀錄](docs/ros2_deployment_decisions.md)
 - [Baseline 分析](docs/baseline_analysis.md)
-- [ROS 2 Policy Runtime v0.1](deployment/ros2_ws/README.md)
+- [ROS 2 Policy Runtime v0.2](deployment/ros2_ws/README.md)

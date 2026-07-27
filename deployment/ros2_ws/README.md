@@ -1,4 +1,4 @@
-# ROS 2 Policy Runtime v0.1
+# ROS 2 Policy Runtime v0.2
 
 ## 這一版解決什麼
 
@@ -9,9 +9,9 @@ Isaac Sim 外部的獨立程式，因此狀態必須透過 ROS 2 Bridge 傳出�
 ```text
 Isaac Sim
   ├─ /joint_states ─┐
-  ├─ /imu ──────────┼─> 外部 policy node ─> /joint_command ─> Isaac Sim
-  └─ /odom ─────────┘           ↑
-                            /cmd_vel
+  ├─ /imu/data ─────┼─> 外部 policy node ─> /joint_command ─> Isaac Sim
+  ├─ /odom ─────────┘           ↑
+  └─ /tf: odom → base_link   /cmd_vel
 ```
 
 `anymal_locomotion_ros2` 已實作第一版外部 policy node 與 ROS-independent
@@ -24,8 +24,8 @@ IMU 量到角速度、方向與加速度，但加速度積分成速度會快速�
 所以本版不從 IMU 猜 base linear velocity：
 
 - `/odom.twist.twist.linear`：body-frame base linear velocity
-- `/imu.angular_velocity`：body-frame base angular velocity
-- `/imu.orientation`：計算 body-frame projected gravity，`frame_id=base_link`
+- `/imu/data.angular_velocity`：body-frame base angular velocity
+- `/imu/data.orientation`：計算 body-frame projected gravity，`frame_id=base_link`
 - `/joint_states`：依 joint name 重排 position／velocity
 - `/cmd_vel`：body-frame `[vx, vy, wz]`
 
@@ -35,10 +35,18 @@ ROS 2 Publish Odometry，並使用 `publishRawVelocities=true` 避免 publisher
 body frame。`child_frame_id` 固定為 `base_link`。實體機必須由 robot state
 estimator 提供同一語意的 `/odom`。
 
-目前官方 Play 場景沒有獨立 IMU prim。模擬 v0.1 的 `/imu` 先由 base 的
-simulator state 產生；這足以驗證 48 維 observation 資料流，但不模擬實體
-IMU 的 noise、bias 或安裝角度。加入真正的模擬 IMU 是後續的 sensor realism
-工作，不會改變「速度由 `/odom` 提供」的介面。
+同一筆 odometry pose 與 simulation timestamp 也會發布成動態
+`/tf`：`odom → base_link`。IMU identity-mount 在 `base_link`，因此目前
+不另造一個內容相同的 `imu_link`。
+
+ROS 2 deployment host 現在會在 physics 啟動前建立真正的 Isaac Sim IMU
+prim，並在每個 0.005 秒 physics step 發布 `/imu/data`。Policy timer 仍為
+0.02 秒，每次使用 callback 收到的最新 IMU sample。Policy 與未來 SLAM
+共用這一個 topic；目前尚未加入 noise 或 bias model。
+
+此版本不發布舊 `/imu`。若 `ros2 topic info /imu -v` 只看到舊 policy
+subscription，代表 ROS 2 workspace 尚未重建或 process 尚未重啟；請以
+`/imu/data` 的 `_ROS2PolicyBridge_PublishImu` publisher 為準。
 
 ## Policy observation
 
@@ -47,8 +55,8 @@ IMU 的 noise、bias 或安裝角度。加入真正的模擬 IMU 是後續的 se
 | Offset | 維度 | 來源 |
 |---:|---:|---|
 | 0 | 3 | `/odom` base linear velocity |
-| 3 | 3 | `/imu` angular velocity |
-| 6 | 3 | `/imu` orientation 算出的 projected gravity |
+| 3 | 3 | `/imu/data` angular velocity |
+| 6 | 3 | `/imu/data` orientation 算出的 projected gravity |
 | 9 | 3 | clamp 後的 `/cmd_vel` |
 | 12 | 12 | joint position 減 default position |
 | 24 | 12 | joint velocity |
@@ -136,6 +144,7 @@ ros2 run anymal_locomotion_ros2 keyboard_teleop
 - `A/D`：向左／向右旋轉
 - `Space`：立即停止
 - `+/-`：調整速度倍率
+- 數字鍵盤 `KP_Add/KP_Subtract`：同樣調整速度倍率
 
 Terminal 3 啟動 GPU simulation host；不要加 `--headless` 才能看到視窗：
 
@@ -155,9 +164,15 @@ source /opt/ros/humble/setup.bash
 ros2 topic list
 ros2 topic hz /joint_states
 ros2 topic hz /odom
-ros2 topic hz /imu
+ros2 topic hz /tf
+ros2 topic hz /imu/data
 ros2 topic hz /joint_command
 ```
+
+目前 GPU 即時驗證結果：`/imu/data` 靜止時
+`linear_acceleration.z=9.80877 m/s²`、接收率約 `191.5 Hz`；`/tf` 為
+`odom → base_link`、接收率約 `49.2 Hz`，且可由
+`tf2_echo odom base_link` 查詢。
 
 若有設定 `ROS_DOMAIN_ID` 或 `RMW_IMPLEMENTATION`，所有終端必須使用相同值。
 綠色箭頭是收到的 body-frame `/cmd_vel` 目標；藍色箭頭是機器人的實際速度。
@@ -165,7 +180,7 @@ ros2 topic hz /joint_command
 ## 第一版安全行為
 
 - joint names 缺少、重複或多出時不發布 command。
-- `/odom`、`/imu` 或 `/joint_states` 超過 0.1 秒未更新時不發布 command。
+- `/odom`、`/imu/data` 或 `/joint_states` 超過 0.1 秒未更新時不發布 command。
 - `/cmd_vel` 超過 0.5 秒未更新時自動使用零速度。
 - command 會 clamp 到 policy 的訓練範圍。
 - observation 或 policy output 出現 NaN／Inf 時不發布 command。
@@ -185,4 +200,4 @@ ros2 topic hz /joint_command
   `vy/wz` bias，因此這是目前 policy 的低速 tracking 限制，不是 ROS 軸向錯接。
 
 專案內的 Action Graph builder、已驗證 topic 與 headless host 注意事項見
-[Action Graph v0.1 contract](../../action_graph/README.md)。
+[Action Graph v0.2 contract](../../action_graph/README.md)。

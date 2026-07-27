@@ -14,10 +14,17 @@ class Ros2PolicyBridge:
 
     graph_path: str
     articulation_root_path: str
+    imu_sensor_path: str
+    imu_parent_path: str
+    imu_frame_id: str
+    imu_update_period_s: float
+    imu_mount_translation_xyz: tuple[float, float, float]
+    imu_mount_orientation_wxyz: tuple[float, float, float, float]
     command_topic: str
     joint_state_topic: str
     imu_topic: str
     odometry_topic: str
+    tf_topic: str
     joint_command_topic: str
     domain_id: int
     uses_articulation_controller: bool
@@ -50,6 +57,16 @@ class Ros2BaseState:
     orientation_xyzw: tuple[float, float, float, float]
 
 
+@dataclass(frozen=True)
+class Ros2ImuState:
+    """Latest sample produced by the physics IMU sensor."""
+
+    angular_velocity: tuple[float, float, float]
+    linear_acceleration: tuple[float, float, float]
+    orientation_xyzw: tuple[float, float, float, float]
+    sensor_time: float
+
+
 def _resolve_domain_id(domain_id: int | None) -> int:
     if domain_id is None:
         value = os.environ.get("ROS_DOMAIN_ID", "0")
@@ -76,15 +93,57 @@ def _validate_articulation_root(path: str) -> None:
         raise ValueError(f"Articulation root is not a rigid body: {path}")
 
 
+def _validate_imu_sensor(
+    parent_path: str,
+    *,
+    sensor_name: str,
+    update_period_s: float,
+) -> str:
+    """Validate the physics IMU that was authored before physics startup."""
+    import omni.isaac.IsaacSensorSchema as IsaacSensorSchema
+    import omni.usd
+
+    if not sensor_name or "/" in sensor_name:
+        raise ValueError(
+            f"IMU sensor name must be one non-empty path component, got {sensor_name!r}"
+        )
+    if not math.isfinite(update_period_s) or update_period_s <= 0.0:
+        raise ValueError(
+            f"IMU update period must be finite and positive, got {update_period_s}"
+        )
+    sensor_path = f"{parent_path.rstrip('/')}/{sensor_name}"
+    stage = omni.usd.get_context().get_stage()
+    prim = stage.GetPrimAtPath(sensor_path)
+    if not prim.IsValid() or not prim.IsA(IsaacSensorSchema.IsaacImuSensor):
+        raise RuntimeError(
+            "Physics IMU sensor must be authored before physics startup at "
+            f"{sensor_path}"
+        )
+    sensor_period = prim.GetAttribute("sensorPeriod").Get()
+    if sensor_period is None or not math.isclose(
+        float(sensor_period),
+        update_period_s,
+        rel_tol=0.0,
+        abs_tol=1.0e-9,
+    ):
+        raise RuntimeError(
+            f"Physics IMU sensor period is {sensor_period}, expected {update_period_s}"
+        )
+    return sensor_path
+
+
 def create_ros2_policy_bridge(
     articulation_root_path: str,
     *,
     graph_path: str = "/ROS2PolicyBridge",
     command_topic: str = "cmd_vel",
     joint_state_topic: str = "joint_states",
-    imu_topic: str = "imu",
+    imu_topic: str = "imu/data",
     odometry_topic: str = "odom",
+    tf_topic: str = "tf",
     joint_command_topic: str = "joint_command",
+    imu_sensor_name: str = "imu_sensor",
+    imu_update_period_s: float = 0.005,
     domain_id: int | None = None,
     connect_articulation_controller: bool = True,
 ) -> Ros2PolicyBridge:
@@ -101,16 +160,35 @@ def create_ros2_policy_bridge(
         raise RuntimeError(
             "isaacsim.ros2.bridge is not enabled; preload it with AppLauncher kit_args"
         )
+    if not omni.kit.app.get_app().get_extension_manager().is_extension_enabled(
+        "isaacsim.sensors.physics"
+    ):
+        raise RuntimeError(
+            "isaacsim.sensors.physics is not enabled; preload it with AppLauncher kit_args"
+        )
     domain_id = _resolve_domain_id(domain_id)
     _validate_articulation_root(articulation_root_path)
     if omni.usd.get_context().get_stage().GetPrimAtPath(graph_path).IsValid():
         raise ValueError(f"Action Graph path already exists: {graph_path}")
+    imu_sensor_path = _validate_imu_sensor(
+        articulation_root_path,
+        sensor_name=imu_sensor_name,
+        update_period_s=imu_update_period_s,
+    )
 
     keys = og.Controller.Keys
     target_prim = [usdrt.Sdf.Path(articulation_root_path)]
+    imu_target_prim = [usdrt.Sdf.Path(imu_sensor_path)]
     nodes = [
         ("PolicyImpulse", "omni.graph.action.OnImpulseEvent"),
+        ("ImuPhysicsStep", "isaacsim.core.nodes.OnPhysicsStep"),
         ("ReadSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
+        ("ComputeImuOrientation", "isaacsim.core.nodes.IsaacComputeOdometry"),
+        ("ReadImuSensor", "isaacsim.sensors.physics.IsaacReadIMU"),
+        ("ImuIdentityMatrix", "omni.graph.nodes.ConstantMatrix4d"),
+        ("ImuOrientationMatrix", "omni.graph.nodes.SetMatrix4Rotation"),
+        ("ImuInverseOrientation", "omni.graph.nodes.OgnInvertMatrix"),
+        ("ImuBodyAngularVelocity", "omni.graph.nodes.TransformVector"),
         ("Context", "isaacsim.ros2.bridge.ROS2Context"),
         ("ComputeOdometry", "isaacsim.core.nodes.IsaacComputeOdometry"),
         ("BaseOrientation", "omni.graph.nodes.ConstantQuatd"),
@@ -121,6 +199,7 @@ def create_ros2_policy_bridge(
         ("PublishClock", "isaacsim.ros2.bridge.ROS2PublishClock"),
         ("PublishJointState", "isaacsim.ros2.bridge.ROS2Publisher"),
         ("PublishOdometry", "isaacsim.ros2.bridge.ROS2PublishOdometry"),
+        ("PublishTransform", "isaacsim.ros2.bridge.ROS2PublishRawTransformTree"),
         ("PublishImu", "isaacsim.ros2.bridge.ROS2PublishImu"),
         ("SubscribeTwist", "isaacsim.ros2.bridge.ROS2SubscribeTwist"),
         ("SubscribeJointState", "isaacsim.ros2.bridge.ROS2SubscribeJointState"),
@@ -128,6 +207,10 @@ def create_ros2_policy_bridge(
     values = [
         ("PolicyImpulse.inputs:onlyPlayback", False),
         ("ReadSimTime.inputs:resetOnStop", False),
+        ("ComputeImuOrientation.inputs:chassisPrim", target_prim),
+        ("ReadImuSensor.inputs:imuPrim", imu_target_prim),
+        ("ReadImuSensor.inputs:readGravity", True),
+        ("ReadImuSensor.inputs:useLatestData", True),
         ("Context.inputs:domain_id", domain_id),
         ("ComputeOdometry.inputs:chassisPrim", target_prim),
         ("PublishClock.inputs:topicName", "clock"),
@@ -139,22 +222,72 @@ def create_ros2_policy_bridge(
         ("PublishOdometry.inputs:odomFrameId", "odom"),
         ("PublishOdometry.inputs:chassisFrameId", "base_link"),
         ("PublishOdometry.inputs:publishRawVelocities", True),
+        ("PublishTransform.inputs:topicName", tf_topic),
+        ("PublishTransform.inputs:parentFrameId", "odom"),
+        ("PublishTransform.inputs:childFrameId", "base_link"),
         ("PublishImu.inputs:topicName", imu_topic),
         ("PublishImu.inputs:frameId", "base_link"),
         ("SubscribeTwist.inputs:topicName", command_topic),
         ("SubscribeJointState.inputs:topicName", joint_command_topic),
     ]
     connections = [
+        (
+            "ImuPhysicsStep.outputs:step",
+            "ComputeImuOrientation.inputs:execIn",
+        ),
+        (
+            "ComputeImuOrientation.outputs:execOut",
+            "ReadImuSensor.inputs:execIn",
+        ),
+        ("ReadImuSensor.outputs:execOut", "PublishImu.inputs:execIn"),
+        (
+            "ComputeImuOrientation.outputs:orientation",
+            "PublishImu.inputs:orientation",
+        ),
+        (
+            "ImuIdentityMatrix.inputs:value",
+            "ImuOrientationMatrix.inputs:matrix",
+        ),
+        (
+            "ComputeImuOrientation.outputs:orientation",
+            "ImuOrientationMatrix.inputs:rotationAngle",
+        ),
+        (
+            "ImuOrientationMatrix.outputs:matrix",
+            "ImuInverseOrientation.inputs:matrix",
+        ),
+        (
+            "ImuInverseOrientation.outputs:invertedMatrix",
+            "ImuBodyAngularVelocity.inputs:matrix",
+        ),
+        (
+            "ReadImuSensor.outputs:angVel",
+            "ImuBodyAngularVelocity.inputs:vector",
+        ),
+        (
+            "ImuBodyAngularVelocity.outputs:result",
+            "PublishImu.inputs:angularVelocity",
+        ),
+        (
+            "ReadImuSensor.outputs:linAcc",
+            "PublishImu.inputs:linearAcceleration",
+        ),
+        ("ReadImuSensor.outputs:sensorTime", "PublishImu.inputs:timeStamp"),
         ("PolicyImpulse.outputs:execOut", "PublishClock.inputs:execIn"),
         ("PolicyImpulse.outputs:execOut", "ComputeOdometry.inputs:execIn"),
         ("PolicyImpulse.outputs:execOut", "SubscribeTwist.inputs:execIn"),
         ("PolicyImpulse.outputs:execOut", "SubscribeJointState.inputs:execIn"),
         ("ComputeOdometry.outputs:execOut", "PublishOdometry.inputs:execIn"),
-        ("ComputeOdometry.outputs:execOut", "PublishImu.inputs:execIn"),
+        ("ComputeOdometry.outputs:execOut", "PublishTransform.inputs:execIn"),
         ("ComputeOdometry.outputs:position", "PublishOdometry.inputs:position"),
+        ("ComputeOdometry.outputs:position", "PublishTransform.inputs:translation"),
         (
             "ComputeOdometry.outputs:orientation",
             "PublishOdometry.inputs:orientation",
+        ),
+        (
+            "ComputeOdometry.outputs:orientation",
+            "PublishTransform.inputs:rotation",
         ),
         (
             "ComputeOdometry.outputs:linearVelocity",
@@ -164,7 +297,6 @@ def create_ros2_policy_bridge(
             "BodyAngularVelocity.outputs:result",
             "PublishOdometry.inputs:angularVelocity",
         ),
-        ("ComputeOdometry.outputs:orientation", "PublishImu.inputs:orientation"),
         (
             "IdentityMatrix.inputs:value",
             "OrientationMatrix.inputs:matrix",
@@ -186,14 +318,6 @@ def create_ros2_policy_bridge(
             "BodyAngularVelocity.inputs:vector",
         ),
         (
-            "BodyAngularVelocity.outputs:result",
-            "PublishImu.inputs:angularVelocity",
-        ),
-        (
-            "ComputeOdometry.outputs:linearAcceleration",
-            "PublishImu.inputs:linearAcceleration",
-        ),
-        (
             "ReadSimTime.outputs:simulationTime",
             "PublishClock.inputs:timeStamp",
         ),
@@ -203,11 +327,12 @@ def create_ros2_policy_bridge(
         ),
         (
             "ReadSimTime.outputs:simulationTime",
-            "PublishImu.inputs:timeStamp",
+            "PublishTransform.inputs:timeStamp",
         ),
         ("Context.outputs:context", "PublishClock.inputs:context"),
         ("Context.outputs:context", "PublishJointState.inputs:context"),
         ("Context.outputs:context", "PublishOdometry.inputs:context"),
+        ("Context.outputs:context", "PublishTransform.inputs:context"),
         ("Context.outputs:context", "PublishImu.inputs:context"),
         ("Context.outputs:context", "SubscribeTwist.inputs:context"),
         ("Context.outputs:context", "SubscribeJointState.inputs:context"),
@@ -240,7 +365,11 @@ def create_ros2_policy_bridge(
         )
 
     og.Controller.edit(
-        {"graph_path": graph_path, "evaluator_name": "execution"},
+        {
+            "graph_path": graph_path,
+            "evaluator_name": "execution",
+            "pipeline_stage": og.GraphPipelineStage.GRAPH_PIPELINE_STAGE_ONDEMAND,
+        },
         {
             keys.CREATE_NODES: nodes,
             keys.SET_VALUES: values,
@@ -281,10 +410,17 @@ def create_ros2_policy_bridge(
     return Ros2PolicyBridge(
         graph_path=graph_path,
         articulation_root_path=articulation_root_path,
+        imu_sensor_path=imu_sensor_path,
+        imu_parent_path=articulation_root_path,
+        imu_frame_id="base_link",
+        imu_update_period_s=imu_update_period_s,
+        imu_mount_translation_xyz=(0.0, 0.0, 0.0),
+        imu_mount_orientation_wxyz=(1.0, 0.0, 0.0, 0.0),
         command_topic=f"/{command_topic.lstrip('/')}",
         joint_state_topic=f"/{joint_state_topic.lstrip('/')}",
         imu_topic=f"/{imu_topic.lstrip('/')}",
         odometry_topic=f"/{odometry_topic.lstrip('/')}",
+        tf_topic=f"/{tf_topic.lstrip('/')}",
         joint_command_topic=f"/{joint_command_topic.lstrip('/')}",
         domain_id=domain_id,
         uses_articulation_controller=connect_articulation_controller,
@@ -360,6 +496,53 @@ def read_base_state(bridge: Ros2PolicyBridge) -> Ros2BaseState:
         ),
         angular_velocity=tuple(float(value) for value in angular_velocity),
         orientation_xyzw=tuple(float(value) for value in orientation),
+    )
+
+
+def read_imu_state(bridge: Ros2PolicyBridge) -> Ros2ImuState:
+    """Read the latest physics IMU sample without importing a ROS Python client."""
+    import omni.graph.core as og
+
+    node_path = f"{bridge.graph_path}/ReadImuSensor"
+    angular_velocity = og.Controller.get(
+        og.Controller.attribute(
+            f"{bridge.graph_path}/ImuBodyAngularVelocity.outputs:result"
+        )
+    )
+    linear_acceleration = og.Controller.get(
+        og.Controller.attribute(f"{node_path}.outputs:linAcc")
+    )
+    orientation = og.Controller.get(
+        og.Controller.attribute(
+            f"{bridge.graph_path}/ComputeImuOrientation.outputs:orientation"
+        )
+    )
+    sensor_time = og.Controller.get(
+        og.Controller.attribute(f"{node_path}.outputs:sensorTime")
+    )
+    if (
+        angular_velocity is None
+        or linear_acceleration is None
+        or orientation is None
+        or sensor_time is None
+        or len(angular_velocity) != 3
+        or len(linear_acceleration) != 3
+        or len(orientation) != 4
+    ):
+        raise RuntimeError("Physics IMU node did not produce a complete sample")
+    values = (
+        *(float(value) for value in angular_velocity),
+        *(float(value) for value in linear_acceleration),
+        *(float(value) for value in orientation),
+        float(sensor_time),
+    )
+    if not all(math.isfinite(value) for value in values):
+        raise RuntimeError("Physics IMU sample contains NaN or Inf")
+    return Ros2ImuState(
+        angular_velocity=tuple(float(value) for value in angular_velocity),
+        linear_acceleration=tuple(float(value) for value in linear_acceleration),
+        orientation_xyzw=tuple(float(value) for value in orientation),
+        sensor_time=float(sensor_time),
     )
 
 

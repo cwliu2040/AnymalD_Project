@@ -1,4 +1,4 @@
-# Isaac Sim ROS 2 Action Graph v0.1
+# Isaac Sim ROS 2 Action Graph v0.2
 
 第一版 graph 由
 `anymal_locomotion.simulation.ros2_bridge.create_ros2_policy_bridge()`
@@ -23,7 +23,8 @@
 | `/clock` | `rosgraph_msgs/Clock` | ROS2 Publish Clock | 使用 simulation time |
 | `/joint_states` | `sensor_msgs/JointState` | Generic ROS2 Publisher | canonical name、position、velocity |
 | `/odom` | `nav_msgs/Odometry` | ROS2 Publish Odometry | `chassisFrameId=base_link`、`publishRawVelocities=true` |
-| `/imu` | `sensor_msgs/Imu` | ROS2 Publish Imu | `frameId=base_link`，目前由 simulator base state 產生 |
+| `/tf` | `tf2_msgs/TFMessage` | ROS2 Publish Raw Transform Tree | 動態 `odom → base_link`，與 `/odom.pose` 共用 pose 與 timestamp |
+| `/imu/data` | `sensor_msgs/Imu` | Isaac Read IMU + ROS2 Publish Imu | `frameId=base_link`、200 Hz physics sample |
 
 ROS2 Publish Clock 的 timestamp input 與其他 publishers 必須使用同一個
 Isaac Read Simulation Time source。外部 node 設定 `use_sim_time=true`。
@@ -41,14 +42,29 @@ CPU tensor 讀取 articulation，造成 device mismatch。Graph 改用 ROS 2 Bri
 做 DDS 序列化。模擬、actuator 與 policy tensor 仍留在 GPU；沒有 `rclpy`
 或 UDP。
 
-目前官方 Play 場景沒有獨立 IMU sensor prim，因此 v0.1 的 `/imu` 是由
-Isaac Compute Odometry 的 base orientation、angular velocity 與 linear
-acceleration 產生的 simulator ground-truth 訊息。它用於先驗證 policy 資料流，
-不等於已建立實體 IMU noise/bias model。
+ROS 2 deployment host 會在 physics 啟動前，將真正的 Isaac Sim IMU sensor
+prim 建立於：
+
+`/World/envs/env_0/Robot/base/imu_sensor`
+
+它的 parent 是 articulation root `/World/envs/env_0/Robot/base`，mounting
+translation 為 `(0, 0, 0)`、mounting quaternion `(w, x, y, z)` 為
+`(1, 0, 0, 0)`，因此 sensor frame 與 `base_link` 對齊。sensor period 與
+physics dt 都是 `0.005 s`。
+
+高頻 graph 使用 `OnPhysicsStep`，每個 physics step 依序讀取真正 IMU 的
+angular velocity、linear acceleration 與 sensor time，再由
+`ROS2PublishImu` 發布。Isaac Sim 5.1 在 GPU articulation 上的 IMU orientation
+輸出會固定為 identity，因此 orientation 由同一個 200 Hz physics event 的
+`IsaacComputeOdometry` 取得；這不是把 50 Hz base state 重播成 200 Hz。
+由於該 orientation 相對 reset pose，deployment host 將初始 odom yaw 固定為
+零，再把 IMU 的 world angular velocity 轉成 `base_link` frame。
+
+目前 filter width 都是 1，尚未加入 noise 或 bias model。
 
 IMU 不負責提供 base linear velocity；policy 的 base linear velocity 來自
-`/odom.twist.twist.linear`。未來若加入有 mounting rotation 的 IMU sensor，
-必須先轉成 `base_link` frame。
+`/odom.twist.twist.linear`。目前 sensor 採 identity mounting；未來若加入
+mounting rotation，必須先轉成 `base_link` frame。
 
 ## Joint command subscriber
 
@@ -116,7 +132,16 @@ frame。GUI 與 headless 使用相同的 policy-rate trigger。
 - `/clock`：simulation time
 - `/joint_states`：12 個具名關節的 position/velocity/effort
 - `/odom`：`odom` 到 `base_link` 的 pose 與 body-frame velocity
-- `/imu`：`base_link` orientation、angular velocity、linear acceleration
+- `/tf`：與 `/odom.pose` 一致的動態 `odom` 到 `base_link` transform
+- `/imu/data`：`base_link` orientation、angular velocity、linear acceleration
+
+GPU 即時量測的 `/imu/data` DDS 接收率為 `196.046 Hz`（1000-sample
+window），高於 180 Hz 驗收目標。250-step closed loop 使用 100 筆 parity
+sample 驗證 latest-sample policy path；base angular velocity 最大誤差
+`8.03e-4`、projected gravity 最大誤差 `2.11e-4`。
+另一次靜止取樣的 linear acceleration 為
+`(0.00543, 0.00108, 9.80877) m/s²`。動態 `/tf` 實收率約 `49.2 Hz`，
+`tf2_echo odom base_link` 可正常解析。
 
 外部 ONNX policy closed loop 已在 RTX 5080 的 `cuda:0` host 驗證；GPU 模式
 可持續收到具名 joint commands、0 termination、0 timeout。100 個 controlled

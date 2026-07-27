@@ -54,7 +54,7 @@ class AnymalPolicyNode(Node):
         self.declare_parameter("policy_path", f"{DEFAULT_EXPORT_DIR}/policy.onnx")
         self.declare_parameter("metadata_path", f"{DEFAULT_EXPORT_DIR}/policy_metadata.yaml")
         self.declare_parameter("joint_state_topic", "/joint_states")
-        self.declare_parameter("imu_topic", "/imu")
+        self.declare_parameter("imu_topic", "/imu/data")
         self.declare_parameter("odometry_topic", "/odom")
         self.declare_parameter("command_topic", "/cmd_vel")
         self.declare_parameter("joint_command_topic", "/joint_command")

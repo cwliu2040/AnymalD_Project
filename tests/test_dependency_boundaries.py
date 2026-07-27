@@ -28,6 +28,14 @@ ROS2_BRIDGE = (
     / "ros2_bridge.py"
 )
 ROS2_BRIDGE_HOST = PROJECT_ROOT / "scripts" / "validation" / "validate_ros2_bridge.py"
+PHYSICS_IMU = (
+    PROJECT_ROOT
+    / "source"
+    / "anymal_locomotion"
+    / "anymal_locomotion"
+    / "simulation"
+    / "physics_imu.py"
+)
 ONNX_BACKEND = (
     PROJECT_ROOT
     / "deployment"
@@ -77,6 +85,7 @@ def test_ros2_policy_node_stays_outside_training_and_uses_bridge_topics() -> Non
     assert "Odometry" in source
     assert "Imu" in source
     assert "JointState" in source
+    assert '"/imu/data"' in source
     assert '"/joint_command"' in source
     assert "socket" not in source
     assert "udp" not in source.lower()
@@ -91,9 +100,12 @@ def test_isaac_ros2_bridge_uses_action_graph_and_name_based_commands() -> None:
         "OgnInvertMatrix",
         "TransformVector",
         "OnImpulseEvent",
+        "OnPhysicsStep",
+        "IsaacReadIMU",
         "ROS2PublishClock",
         "ROS2Publisher",
         "ROS2PublishOdometry",
+        "ROS2PublishRawTransformTree",
         "ROS2PublishImu",
         "ROS2SubscribeTwist",
         "ROS2SubscribeJointState",
@@ -103,10 +115,22 @@ def test_isaac_ros2_bridge_uses_action_graph_and_name_based_commands() -> None:
     assert "SubscribeJointState.outputs:jointNames" in source
     assert "ComputeOdometry.outputs:linearVelocity" in source
     assert "BodyAngularVelocity.outputs:result" in source
+    assert "ReadImuSensor.outputs:sensorTime" in source
+    assert "ReadImuSensor.outputs:angVel" in source
+    assert "ReadImuSensor.outputs:linAcc" in source
+    assert 'imu_topic: str = "imu/data"' in source
+    assert "imu_update_period_s: float = 0.005" in source
     assert '("PublishOdometry.inputs:publishRawVelocities", True)' in source
+    assert '("PublishTransform.inputs:parentFrameId", "odom")' in source
+    assert '("PublishTransform.inputs:childFrameId", "base_link")' in source
+    assert "ComputeOdometry.outputs:position" in source
+    assert "PublishTransform.inputs:translation" in source
+    assert "ComputeOdometry.outputs:orientation" in source
+    assert "PublishTransform.inputs:rotation" in source
     assert "Context.inputs:domain_id" in source
     assert "read_joint_position_command" in source
     assert "read_velocity_command" in source
+    assert "read_imu_state" in source
     assert "write_base_orientation" in source
     assert "write_joint_state" in source
     assert "trigger_policy_step" in source
@@ -120,6 +144,8 @@ def test_isaac_ros2_bridge_uses_action_graph_and_name_based_commands() -> None:
 
 def test_bridge_host_preserves_manager_based_actuator_path() -> None:
     source = ROS2_BRIDGE_HOST.read_text(encoding="utf-8")
+    assert "PhysicsImuSpawnerCfg(sensor_period=0.005)" in source
+    assert '"{ENV_REGEX_NS}/Robot/base/imu_sensor"' in source
     assert "connect_articulation_controller=not args_cli.external_control" in source
     assert "read_joint_position_command" in source
     assert "validate_runtime_joint_names" in source
@@ -127,6 +153,18 @@ def test_bridge_host_preserves_manager_based_actuator_path() -> None:
     assert "joint_command_timeout_steps" in source
     assert "actions.zero_()" in source
     assert "rclpy" not in source
+
+
+def test_physics_imu_is_project_owned_and_authored_before_startup() -> None:
+    source = PHYSICS_IMU.read_text(encoding="utf-8")
+    assert '"IsaacSensorCreateImuSensor"' in source
+    assert "sensor_period: float = 0.005" in source
+    assert "linear_acceleration_filter_size: int = 1" in source
+    assert "angular_velocity_filter_size: int = 1" in source
+    assert "orientation_filter_size: int = 1" in source
+    assert "rclpy" not in source
+    assert "socket" not in source
+    assert "udp" not in source.lower()
 
 
 def test_onnx_backend_is_external_and_cpu_only() -> None:
