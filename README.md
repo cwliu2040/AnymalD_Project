@@ -132,7 +132,9 @@ Terminal 執行官方 `teleop_twist_keyboard`。
 Factory 地圖及其相依 OpenUSD 資產位於
 `assets/maps/factory/`。ROS 2 deployment host 以 Factory USD terrain
 取代原本的 Flat plane，ANYmal 預設出生於 `(x=0, y=-18, yaw=0)`；訓練
-task 與 48 維 policy 契約仍維持官方 Flat baseline。
+task 與 48 維 policy 契約仍維持官方 Flat baseline。Factory collision
+統一使用 `static=1.0`、`dynamic=1.0`、`multiply` 的地面材質，與訓練時
+腳端 `0.8/0.6` 材質組合後，接觸摩擦對齊為 `0.8/0.6`。
 
 保持 teleop terminal 焦點，按住按鍵控制：
 
@@ -143,6 +145,11 @@ task 與 48 維 policy 契約仍維持官方 Flat baseline。
 - `q/z`：同時提高／降低線速度與角速度
 - `w/x`：提高／降低線速度
 - `e/c`：提高／降低角速度
+
+官方 teleop 直接發布 `/cmd_vel`，command 只 clamp 到 High-Speed policy
+原本的訓練範圍。高速時的 SLAM 裂圖不使用固定速度 filter 掩蓋；後續方向是
+整合多種 3D SLAM 的定位／建圖信心度，再把信心訊號納入 PPO 控制，讓 policy
+在特徵不足時主動降速、信心足夠時恢復高速。
 
 模擬視窗中的綠色箭頭是 `/cmd_vel` 目標，藍色箭頭是實際速度。若沒有
 動作，確認 teleop terminal 保持焦點，並檢查 `/cmd_vel` 與

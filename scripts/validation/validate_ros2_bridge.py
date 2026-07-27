@@ -144,7 +144,7 @@ import gymnasium as gym
 import numpy as np
 import omni.usd
 import torch
-from pxr import UsdPhysics
+from pxr import UsdPhysics, UsdShade
 
 import anymal_locomotion.tasks  # noqa: F401
 from anymal_locomotion.policy_contract import (
@@ -181,6 +181,66 @@ def _find_articulation_root(env_prim_path: str) -> str:
     if len(roots) != 1:
         raise RuntimeError(f"Expected one articulation root under {env_prim_path}, received {roots}")
     return roots[0]
+
+
+def _validate_factory_physics_material() -> tuple[float, float, str, int]:
+    stage = omni.usd.get_context().get_stage()
+    terrain_path = "/World/Factory/terrain"
+    material_path = f"{terrain_path}/FactoryPhysicsMaterial"
+    terrain = stage.GetPrimAtPath(terrain_path)
+    material = stage.GetPrimAtPath(material_path)
+    if not terrain.IsValid() or not material.IsValid():
+        raise RuntimeError(
+            "Factory terrain physics material is missing: "
+            f"terrain={terrain.IsValid()}, material={material.IsValid()}"
+        )
+    static_friction = material.GetAttribute("physics:staticFriction").Get()
+    dynamic_friction = material.GetAttribute("physics:dynamicFriction").Get()
+    combine_mode = material.GetAttribute(
+        "physxMaterial:frictionCombineMode"
+    ).Get()
+    binding = terrain.GetRelationship("material:binding:physics")
+    if (
+        static_friction is None
+        or dynamic_friction is None
+        or not math.isclose(float(static_friction), 1.0)
+        or not math.isclose(float(dynamic_friction), 1.0)
+        or combine_mode != "multiply"
+        or [str(path) for path in binding.GetTargets()] != [material_path]
+        or binding.GetMetadata("bindMaterialAs") != "strongerThanDescendants"
+    ):
+        raise RuntimeError(
+            "Factory physics material does not match the training terrain: "
+            f"static={static_friction}, dynamic={dynamic_friction}, "
+            f"combine={combine_mode}, targets={binding.GetTargets()}, "
+            f"strength={binding.GetMetadata('bindMaterialAs')}"
+        )
+    collision_prims = [
+        prim
+        for prim in stage.Traverse()
+        if str(prim.GetPath()).startswith(f"{terrain_path}/")
+        and prim.HasAPI(UsdPhysics.CollisionAPI)
+    ]
+    unresolved = []
+    for prim in collision_prims:
+        bound_material, _ = UsdShade.MaterialBindingAPI(
+            prim
+        ).ComputeBoundMaterial("physics")
+        if not bound_material or str(bound_material.GetPath()) != material_path:
+            unresolved.append(str(prim.GetPath()))
+            if len(unresolved) >= 5:
+                break
+    if not collision_prims or unresolved:
+        raise RuntimeError(
+            "Factory collision prims did not resolve the project physics material: "
+            f"collision_count={len(collision_prims)}, unresolved={unresolved}"
+        )
+    return (
+        float(static_friction),
+        float(dynamic_friction),
+        str(combine_mode),
+        len(collision_prims),
+    )
 
 
 def _tick_action_graph(base_env, bridge, *, render_lidar: bool = False) -> None:
@@ -433,11 +493,24 @@ def main() -> None:
         graph_prim = omni.usd.get_context().get_stage().GetPrimAtPath(bridge.graph_path)
         if not graph_prim.IsValid():
             raise RuntimeError(f"ROS 2 graph was not created: {bridge.graph_path}")
+        (
+            factory_static,
+            factory_dynamic,
+            factory_combine,
+            factory_collision_count,
+        ) = _validate_factory_physics_material()
 
         print(f"PASS graph={bridge.graph_path}", flush=True)
         print(f"PASS articulation_root={bridge.articulation_root_path}", flush=True)
         print(f"PASS factory_usd_path={args_cli.factory_usd_path}", flush=True)
         print("PASS factory_terrain_prim=/World/Factory/terrain", flush=True)
+        print(
+            "PASS factory_physics_material="
+            f"static:{factory_static},dynamic:{factory_dynamic},"
+            f"combine:{factory_combine},effective_with_robot:0.8/0.6,"
+            f"resolved_collision_prims:{factory_collision_count}",
+            flush=True,
+        )
         print(
             "PASS factory_spawn_pose="
             f"({args_cli.spawn_x},{args_cli.spawn_y},{args_cli.spawn_yaw})",

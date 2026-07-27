@@ -214,6 +214,7 @@ def test_rtx_lidar_is_project_owned_and_uses_official_ros2_bridge_writer() -> No
 
 def test_complete_bringup_uses_project_defaults_and_official_teleop() -> None:
     source = BRINGUP_LAUNCH.read_text(encoding="utf-8")
+    host_source = ROS2_BRIDGE_HOST.read_text(encoding="utf-8")
     teleop_source = KEYBOARD_TELEOP.read_text(encoding="utf-8")
     factory_map = PROJECT_ROOT / "assets" / "maps" / "factory" / "Factory_Layout.usd"
 
@@ -227,6 +228,17 @@ def test_complete_bringup_uses_project_defaults_and_official_teleop() -> None:
     assert '"--enable-lio-sam"' in source
     assert '"--disable-episode-timeout"' in source
     assert '"Factory_Layout.usd"' in source
+    assert '"cmd_vel:=/cmd_vel"' in source
+    assert "command_safety_node" not in source
+    assert "cmd_vel_raw" not in source
+    assert "_validate_factory_physics_material" in host_source
+    factory_source = (
+        PROJECT_ROOT / "assets" / "maps" / "factory" / "Factory_Layout.usda"
+    ).read_text(encoding="utf-8")
+    assert 'bindMaterialAs = "strongerThanDescendants"' in factory_source
+    assert "float physics:staticFriction = 1" in factory_source
+    assert "float physics:dynamicFriction = 1" in factory_source
+    assert 'token physxMaterial:frictionCombineMode = "multiply"' in factory_source
     assert "from teleop_twist_keyboard import main as teleop_main" in teleop_source
     assert "tkinter" not in teleop_source
 

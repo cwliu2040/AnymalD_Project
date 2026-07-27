@@ -160,6 +160,9 @@ Factory USD 取代 deployment host 原本的 Flat plane，預設 spawn pose 是
 `(0, -18, 0)`。啟用 LIO-SAM 時直接使用 Factory 幾何進行 scan matching，
 不再建立 smoke-test 專用的七個 visual landmark。這只改 deployment
 場景；training task 與 policy observation 仍是 Flat v1 契約。
+Factory collision 的地面 physics material 明確設為
+`static=1.0`、`dynamic=1.0`、combine=`multiply`；與訓練時 ANYmal
+rigid-body 的 `0.8/0.6` 材質相乘後，有效接觸摩擦維持 `0.8/0.6`。
 
 Launch 會自動開一個 GNOME Terminal。保持該視窗焦點並使用官方按鍵：
 
@@ -170,6 +173,11 @@ Launch 會自動開一個 GNOME Terminal。保持該視窗焦點並使用官方�
 - `q/z`：同時提高／降低線速度與角速度
 - `w/x`：提高／降低線速度
 - `e/c`：提高／降低角速度
+
+Teleop 直接發布 `/cmd_vel`；deployment 不加入固定速度 filter，command
+只 clamp 到 High-Speed policy 的訓練範圍。已知高速會提高 10 Hz LiDAR
+scan matching 的裂圖風險，後續將比較多種 3D SLAM 的信心指標，並把信心度
+回饋給 PPO，讓 locomotion policy 學習依環境可觀測性調整速度。
 
 另開終端可檢查 topic 與實際接收頻率；必須使用與啟動 launch 的 shell
 相同的 `ROS_DOMAIN_ID`。目前 `~/.bashrc` 設為 `1`，範例如下：

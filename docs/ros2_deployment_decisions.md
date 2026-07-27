@@ -204,6 +204,13 @@ Isaac Sim RTX LiDAR
   回退到 `1`，並將相同 domain 傳給 policy、LIO-SAM、adapter、RViz2、
   Factory simulation 與官方 keyboard teleop；正常操作不需逐項傳入
   launch argument，也不必為此修改 `.bashrc`。
+- Factory root layer 對所有 collision 強制繼承 `1.0/1.0 + multiply`
+  physics material；配合訓練事件套在 robot rigid bodies 的 `0.8/0.6`
+  材質，有效接觸摩擦對齊 Flat training 的 `0.8/0.6`。
+- 不在 teleop 與 policy 之間加入固定速度 filter；`/cmd_vel` 仍只受
+  High-Speed policy 訓練範圍限制。後續研究方向是比較多種 3D SLAM 的
+  信心指標，將信心度納入 PPO observation／控制，使 policy 依特徵可觀測性
+  自主減速或提速。
 
 TF 採單一 publisher ownership：
 
@@ -233,7 +240,9 @@ Runtime 驗收結果：
   deskew、feature、mapping odometry 與
   `map → odom → base_link → lidar_link` TF 均可正常輸出。
 - Factory 場景取代原本為無限平面 smoke test 建立的七個臨時 visual
-  landmark；後續移動建圖與裂圖驗證直接使用實際 Factory 幾何。
+  landmark；實際鍵盤走動已確認保守速度下可建圖。高速行走曾同時出現
+  足端打滑與裂圖，因此 Factory 摩擦材質已對齊訓練；裂圖保留為後續
+  SLAM confidence-aware PPO 要解決的行為問題，不以固定速度上限遮蔽。
 - 零殘留啟動的 60 秒測試收到 85 筆 mapping correction，全部嚴格遞增；
   四個 LIO-SAM 核心 process 在測試結束後仍存活。重置 simulation time
   前必須一起重啟 LIO-SAM，避免殘留同名 publisher 將兩套 correction

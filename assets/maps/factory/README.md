@@ -8,6 +8,12 @@ Deployment 入口：
 複製而來，複製過程未修改舊 workspace。`Factory_Layout.usda` 是可審查的
 source layer；`Factory_Layout.usd` 是由它產生的 runtime crate。
 
+Factory root layer 以 `strongerThanDescendants` 將同一個 physics material
+套用到所有 collision：static friction `1.0`、dynamic friction `1.0`、
+friction combine mode `multiply`。ANYmal 訓練設定會把 robot rigid-body
+材質固定為 `0.8/0.6`，因此有效接觸摩擦為與 Flat training 相同的
+`0.8/0.6`，而不是 USD／PhysX 的預設 combine 行為。
+
 舊 root layer 內含指回舊 workspace 的絕對路徑，現在已改成 project-relative
 asset path。以下相容層：
 
