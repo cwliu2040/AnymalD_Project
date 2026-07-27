@@ -129,12 +129,22 @@ ROS 2 workspace 位於：
 
 `/home/ros/anymal_locomotion/deployment/ros2_ws`
 
-先在 Terminal 1 啟動上面的 policy node，再於 Terminal 2 啟動鍵盤控制：
+根目錄 [README quick start](../../README.md#三個-terminal開啟視窗並用鍵盤控制)
+是日常操作的正式入口。本節保留 deployment 細節；若 executable、路徑、
+參數、按鍵或 Terminal 數量改變，必須在同一批修改中同步更新兩處。
+
+Terminal 1 使用上節完整命令啟動 policy node，並固定
+`ROS_DOMAIN_ID=27`。Terminal 2 啟動鍵盤控制：
 
 ```bash
 cd /home/ros/anymal_locomotion
+unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
+unset PYTHONPATH LD_LIBRARY_PATH
+unset ROS_DISTRO ROS_VERSION ROS_PYTHON_VERSION
 source /opt/ros/humble/setup.bash
 source deployment/ros2_ws/install/setup.bash
+export ROS_DOMAIN_ID=27
+
 ros2 run anymal_locomotion_ros2 keyboard_teleop
 ```
 
@@ -151,7 +161,14 @@ Terminal 3 啟動 GPU simulation host；不要加 `--headless` 才能看到視�
 
 ```bash
 cd /home/ros/anymal_locomotion
-TERM=xterm-256color PYTHONPATH=source/anymal_locomotion \
+unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
+unset PYTHONPATH LD_LIBRARY_PATH
+unset ROS_DISTRO ROS_VERSION ROS_PYTHON_VERSION
+source /opt/ros/humble/setup.bash
+export ROS_DOMAIN_ID=27
+
+TERM=xterm-256color \
+PYTHONPATH=/home/ros/anymal_locomotion/source/anymal_locomotion:${PYTHONPATH} \
   /home/ros/IsaacLab/isaaclab.sh -p \
   scripts/validation/validate_ros2_bridge.py \
   --device cuda:0 --steps 1000000 --real-time --external-control \
@@ -177,6 +194,11 @@ ros2 topic hz /joint_command
 
 若有設定 `ROS_DOMAIN_ID` 或 `RMW_IMPLEMENTATION`，所有終端必須使用相同值。
 綠色箭頭是收到的 body-frame `/cmd_vel` 目標；藍色箭頭是機器人的實際速度。
+
+若要同時使用 LIO-SAM，依下一節再開 Terminal 4 啟動
+`lio_sam.launch.py`，並在 Terminal 3 的 simulation 指令加上
+`--enable-lio-sam --imu-observation-parity-atol 0.01`。重新啟動 simulation
+time 前，必須先關閉舊的 LIO-SAM launch。
 
 ## RTX LiDAR 與 LIO-SAM
 

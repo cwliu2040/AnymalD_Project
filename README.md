@@ -100,6 +100,105 @@ TERM=xterm-256color PYTHONPATH=source/anymal_locomotion \
 - High-Speed v0.2.0 已由 baseline checkpoint 接續完成 1,000 iterations
   （最終 timeout 92.55%、XY velocity error 0.376 m/s）
 
+## 三個 Terminal：開啟視窗並用鍵盤控制
+
+這是日常人工操作的正式 quick start。三個 Terminal 都使用相同的
+`ROS_DOMAIN_ID=27`，而且先清除其他 ROS workspace 可能留下的環境變數。
+第一次執行前，須先依
+[ROS 2 deployment README](deployment/ros2_ws/README.md) 完成 workspace
+建置與 `deployment/python_vendor` 安裝。
+
+Terminal 1：啟動外部 ONNX locomotion policy：
+
+```bash
+cd /home/ros/anymal_locomotion
+unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
+unset PYTHONPATH LD_LIBRARY_PATH
+unset ROS_DISTRO ROS_VERSION ROS_PYTHON_VERSION
+source /opt/ros/humble/setup.bash
+source deployment/ros2_ws/install/setup.bash
+export PYTHONPATH=/home/ros/anymal_locomotion/deployment/python_vendor:${PYTHONPATH}
+export ROS_DOMAIN_ID=27
+
+ros2 run anymal_locomotion_ros2 policy_node --ros-args \
+  -p use_sim_time:=true \
+  -p backend:=onnx \
+  -p policy_path:=/home/ros/anymal_locomotion/exported/anymal_d_locomotion_v1/high_speed_v0.2.0/policy.onnx \
+  -p metadata_path:=/home/ros/anymal_locomotion/exported/anymal_d_locomotion_v1/high_speed_v0.2.0/policy_metadata.yaml
+```
+
+Terminal 2：啟動鍵盤控制視窗：
+
+```bash
+cd /home/ros/anymal_locomotion
+unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
+unset PYTHONPATH LD_LIBRARY_PATH
+unset ROS_DISTRO ROS_VERSION ROS_PYTHON_VERSION
+source /opt/ros/humble/setup.bash
+source deployment/ros2_ws/install/setup.bash
+export ROS_DOMAIN_ID=27
+
+ros2 run anymal_locomotion_ros2 keyboard_teleop
+```
+
+Terminal 3：啟動可見的 GPU simulation；不要加入 `--headless`：
+
+```bash
+cd /home/ros/anymal_locomotion
+unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
+unset PYTHONPATH LD_LIBRARY_PATH
+unset ROS_DISTRO ROS_VERSION ROS_PYTHON_VERSION
+source /opt/ros/humble/setup.bash
+export ROS_DOMAIN_ID=27
+
+TERM=xterm-256color \
+PYTHONPATH=/home/ros/anymal_locomotion/source/anymal_locomotion:${PYTHONPATH} \
+  /home/ros/IsaacLab/isaaclab.sh -p \
+  scripts/validation/validate_ros2_bridge.py \
+  --device cuda:0 --steps 1000000 --real-time --external-control \
+  --disable-episode-timeout
+```
+
+鍵盤控制視窗必須保持焦點，按住移動鍵才會持續送命令：
+
+- `W/S`：前進／後退
+- `Q/E`：向左／向右側移
+- `A/D`：向左／向右旋轉
+- `Space`：立即停止
+- 主鍵盤 `+/-` 或數字鍵盤 `KP_Add/KP_Subtract`：調整速度倍率
+
+模擬視窗中的綠色箭頭是 `/cmd_vel` 目標，藍色箭頭是實際速度。若鍵盤視窗
+顯示的倍率有改變但機器人速度不變，先確認三個 Terminal 的
+`ROS_DOMAIN_ID` 相同，並檢查 Terminal 1 是否持續發布 `/joint_command`。
+
+### 同時啟用 LIO-SAM
+
+完整 LIO-SAM 會多一個 Terminal。先啟動下列 Terminal 4，再啟動 Terminal 3：
+
+```bash
+cd /home/ros/anymal_locomotion/deployment/ros2_ws
+unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
+unset PYTHONPATH LD_LIBRARY_PATH
+unset ROS_DISTRO ROS_VERSION ROS_PYTHON_VERSION
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=27
+
+ros2 launch anymal_locomotion_ros2 lio_sam.launch.py
+```
+
+並在 Terminal 3 的 simulation 指令最後加上：
+
+```text
+--enable-lio-sam --imu-observation-parity-atol 0.01
+```
+
+重新啟動 simulation time 前，必須先用 `Ctrl-C` 關閉舊的 LIO-SAM launch，
+避免殘留同名 publisher。這份 quick start 與
+[deployment/ros2_ws/README.md](deployment/ros2_ws/README.md) 的
+「GPU 模擬與鍵盤控制」互相對應；未來若 executable、路徑、參數、按鍵或
+Terminal 數量改變，必須在同一批修改中同步更新兩處。
+
 ## 訓練
 
 訓練入口：
