@@ -25,7 +25,7 @@
 | `/odom` | `nav_msgs/Odometry` | ROS2 Publish Odometry | `chassisFrameId=base_link`、`publishRawVelocities=true` |
 | `/tf` | `tf2_msgs/TFMessage` | ROS2 Publish Raw Transform Tree | 動態 `odom → base_link`，與 `/odom.pose` 共用 pose 與 timestamp |
 | `/imu/data` | `sensor_msgs/Imu` | Isaac Read IMU + ROS2 Publish Imu | `frameId=base_link`、200 Hz physics sample |
-| `/lidar/points_raw` | `sensor_msgs/PointCloud2` | ROS2 RTX Lidar Helper | `frameId=lidar_link`、OS1 32-channel、10 Hz full scan |
+| `/lidar/points_raw` | `sensor_msgs/PointCloud2` | ROS2 Bridge RTX PointCloud Buffer writer | `frameId=lidar_link`、OS1 32-channel、10 Hz full scan |
 
 ROS2 Publish Clock 的 timestamp input 與其他 publishers 必須使用同一個
 Isaac Read Simulation Time source。外部 node 設定 `use_sim_time=true`。
@@ -75,7 +75,14 @@ mounting rotation，必須先轉成 `base_link` frame。
 內建 profile 固定為 `OS1_REV6_32ch10hz1024res`：32 channels、10 Hz、
 每圈 1024 個水平 sample。
 
-RTX helper 發布的 `/lidar/points_raw` 保持模擬器原始 PointCloud2 格式。
+RTX render product 使用 Isaac Sim 5.1 官方 standalone example 相同的
+`RtxLidarROS2PublishPointCloudBuffer` writer 發布 `/lidar/points_raw`，
+保持模擬器原始 PointCloud2 格式。
+Validation host 會在 `--enable-lio-sam` 時自動啟用 headless off-screen
+camera rendering；否則 render product 雖存在，RTX sensor 不會產生 frame。
+同一模式也會在 `/World/LioSamValidationLandmarks` 建立四面牆與三個不對稱
+立柱／箱體。它們只有 visual geometry、不具 collision，不改變 ANYmal
+physics 或 Flat policy task；用途是避免只看無限平面時的 SLAM 退化。
 外部 `lidar_point_adapter` 再依固定 OS1 beam elevation 與 scan azimuth
 產生 LIO-SAM Ouster contract 所需的 `ring` 與每點相對時間 `t`，輸出至
 `/lio_sam/points`。這個轉換位於 ROS 2 deployment process，不把 `rclpy`
@@ -171,6 +178,13 @@ sample 驗證 latest-sample policy path；base angular velocity 最大誤差
 另一次靜止取樣的 linear acceleration 為
 `(0.00543, 0.00108, 9.80877) m/s²`。動態 `/tf` 實收率約 `49.2 Hz`，
 `tf2_echo odom base_link` 可正常解析。
+
+RTX off-screen rendering 模式的 60 秒 LIO-SAM smoke test 也已通過：
+`/lio_sam/points` 的 `ring=0..31`、每點 `t` 約涵蓋一圈 0.1 秒；
+Image Projection 的 IMU／odometry coverage 都有效，mapping odometry 與
+`map → base_link` TF 可解析。該模式 wall-time point-cloud 接收率約
+`6.8–8.1 Hz`，是整體 RTF 小於 1 的結果；sensor profile 與 simulation
+timestamp 仍是 10 Hz。
 
 外部 ONNX policy closed loop 已在 RTX 5080 的 `cuda:0` host 驗證；GPU 模式
 可持續收到具名 joint commands、0 termination、0 timeout。100 個 controlled

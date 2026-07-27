@@ -13,6 +13,8 @@ class RtxLidarSensor:
     sensor_path: str
     render_product_path: str
     frame_id: str
+    raw_topic: str
+    ros2_writer_name: str
     config: str
     variant: str
     mount_translation_xyz: tuple[float, float, float]
@@ -20,6 +22,43 @@ class RtxLidarSensor:
     scan_rate_hz: float
     channels: int
     horizontal_resolution: int
+
+
+def create_lio_validation_landmarks(
+    root_path: str = "/World/LioSamValidationLandmarks",
+) -> tuple[str, ...]:
+    """Create asymmetric visual geometry for a non-degenerate SLAM smoke test."""
+    import omni.usd
+    from pxr import Gf, UsdGeom
+
+    stage = omni.usd.get_context().get_stage()
+    if stage.GetPrimAtPath(root_path).IsValid():
+        raise ValueError(f"LIO-SAM validation geometry already exists: {root_path}")
+    UsdGeom.Xform.Define(stage, root_path)
+
+    # Values are (name, center xyz, half-extent xyz). These prims are visual
+    # landmarks only: they do not alter ANYmal physics or the flat policy task.
+    landmarks = (
+        ("WallEast", (5.0, 0.0, 1.5), (0.10, 5.0, 1.5)),
+        ("WallWest", (-5.0, 0.0, 1.5), (0.10, 5.0, 1.5)),
+        ("WallNorth", (0.0, 5.0, 1.5), (5.0, 0.10, 1.5)),
+        ("WallSouth", (0.0, -5.0, 1.5), (5.0, 0.10, 1.5)),
+        ("ColumnNorthEast", (2.4, 2.0, 1.0), (0.30, 0.45, 1.0)),
+        ("ColumnSouthWest", (-2.8, -1.6, 0.75), (0.45, 0.25, 0.75)),
+        ("BoxSouthEast", (2.0, -2.7, 0.45), (0.70, 0.40, 0.45)),
+    )
+    paths: list[str] = []
+    for index, (name, center, half_extent) in enumerate(landmarks):
+        path = f"{root_path}/{name}"
+        cube = UsdGeom.Cube.Define(stage, path)
+        cube.CreateSizeAttr(2.0)
+        xform = UsdGeom.XformCommonAPI(cube)
+        xform.SetTranslate(Gf.Vec3d(*center))
+        xform.SetScale(Gf.Vec3f(*half_extent))
+        shade = 0.25 + 0.08 * (index % 5)
+        cube.CreateDisplayColorAttr([Gf.Vec3f(shade, 0.55, 0.75 - shade)])
+        paths.append(path)
+    return tuple(paths)
 
 
 def create_rtx_lidar_sensor(
@@ -30,8 +69,10 @@ def create_rtx_lidar_sensor(
     config: str = "OS1",
     variant: str = "OS1_REV6_32ch10hz1024res",
     mount_translation_xyz: tuple[float, float, float] = (0.20, 0.0, 0.35),
+    frame_id: str = "lidar_link",
+    raw_topic: str = "lidar/points_raw",
 ) -> RtxLidarSensor:
-    """Attach the confirmed OS1 profile without modifying Isaac Sim assets."""
+    """Attach the confirmed OS1 profile and official ROS 2 Bridge writer."""
     import omni.kit.commands
     import omni.replicator.core as rep
     import omni.usd
@@ -91,11 +132,21 @@ def create_rtx_lidar_sensor(
     if not render_product_path:
         raise RuntimeError("RTX LiDAR render product path is empty")
 
+    # Isaac Sim 5.1's official standalone RTX LiDAR example attaches the
+    # Replicator ROS 2 Bridge writer directly to the render product. The
+    # Buffer variant accumulates one complete mechanical scan.
+    ros2_writer_name = "RtxLidarROS2PublishPointCloudBuffer"
+    ros2_writer = rep.writers.get(ros2_writer_name)
+    ros2_writer.initialize(topicName=raw_topic, frameId=frame_id)
+    ros2_writer.attach([render_product])
+
     return RtxLidarSensor(
         mount_path=mount_path,
         sensor_path=sensor_path,
         render_product_path=render_product_path,
-        frame_id="lidar_link",
+        frame_id=frame_id,
+        raw_topic=f"/{raw_topic.lstrip('/')}",
+        ros2_writer_name=ros2_writer_name,
         config=config,
         variant=variant,
         mount_translation_xyz=mount_translation_xyz,

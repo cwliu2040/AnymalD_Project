@@ -93,8 +93,8 @@ TERM=xterm-256color PYTHONPATH=source/anymal_locomotion \
 - 完整 runtime smoke test 通過
 - 外部 ROS 2 已接收 `/clock`、`/joint_states`、`/odom`、`/tf`、`/imu/data`
 - GPU PhysX、ROS 2 Bridge 與 ONNX closed loop 已完成整合驗證
-- 專案擁有的 RTX LiDAR、PointCloud2 adapter 與 LIO-SAM bringup 已完成
-  編譯／啟動驗證；RTX 端到端資料驗證待主機 NVIDIA driver 重新載入
+- 專案擁有的 RTX LiDAR、PointCloud2 adapter 與 LIO-SAM 已完成 60 秒
+  端到端驗證；deskew、mapping odometry 與 `map → base_link` TF 可正常輸出
 - ROS 組成的 48 維 observation 與 Isaac Lab observation 逐項一致
 - 官方 ±1.0 baseline 已完成 300 iterations
 - High-Speed v0.2.0 已由 baseline checkpoint 接續完成 1,000 iterations

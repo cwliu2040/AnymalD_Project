@@ -25,7 +25,6 @@ class Ros2PolicyBridge:
     imu_topic: str
     odometry_topic: str
     tf_topic: str
-    lidar_raw_topic: str | None
     joint_command_topic: str
     domain_id: int
     uses_articulation_controller: bool
@@ -143,15 +142,12 @@ def create_ros2_policy_bridge(
     imu_topic: str = "imu/data",
     odometry_topic: str = "odom",
     tf_topic: str = "tf",
-    lidar_raw_topic: str = "lidar/points_raw",
     joint_command_topic: str = "joint_command",
     imu_sensor_name: str = "imu_sensor",
     imu_update_period_s: float = 0.005,
     domain_id: int | None = None,
     connect_articulation_controller: bool = True,
     publish_ground_truth_tf: bool = True,
-    lidar_render_product_path: str | None = None,
-    lidar_frame_id: str = "lidar_link",
 ) -> Ros2PolicyBridge:
     """Create state publishers and a name-based joint-position subscriber."""
     import carb
@@ -363,32 +359,6 @@ def create_ros2_policy_bridge(
                 ("Context.outputs:context", "PublishTransform.inputs:context"),
             ]
         )
-    if lidar_render_product_path is not None:
-        if not lidar_render_product_path:
-            raise ValueError("lidar_render_product_path cannot be empty")
-        nodes.append(
-            (
-                "PublishLidar",
-                "isaacsim.ros2.bridge.ROS2RtxLidarHelper",
-            )
-        )
-        values.extend(
-            [
-                ("PublishLidar.inputs:renderProductPath", lidar_render_product_path),
-                ("PublishLidar.inputs:topicName", lidar_raw_topic),
-                ("PublishLidar.inputs:frameId", lidar_frame_id),
-                ("PublishLidar.inputs:type", "point_cloud"),
-                ("PublishLidar.inputs:fullScan", True),
-                ("PublishLidar.inputs:frameSkipCount", 0),
-                ("PublishLidar.inputs:resetSimulationTimeOnStop", False),
-            ]
-        )
-        connections.extend(
-            [
-                ("PolicyImpulse.outputs:execOut", "PublishLidar.inputs:execIn"),
-                ("Context.outputs:context", "PublishLidar.inputs:context"),
-            ]
-        )
     if connect_articulation_controller:
         nodes.append(
             (
@@ -473,11 +443,6 @@ def create_ros2_policy_bridge(
         imu_topic=f"/{imu_topic.lstrip('/')}",
         odometry_topic=f"/{odometry_topic.lstrip('/')}",
         tf_topic=f"/{tf_topic.lstrip('/')}",
-        lidar_raw_topic=(
-            f"/{lidar_raw_topic.lstrip('/')}"
-            if lidar_render_product_path is not None
-            else None
-        ),
         joint_command_topic=f"/{joint_command_topic.lstrip('/')}",
         domain_id=domain_id,
         uses_articulation_controller=connect_articulation_controller,

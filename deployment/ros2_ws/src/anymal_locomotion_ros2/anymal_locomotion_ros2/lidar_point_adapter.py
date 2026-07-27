@@ -132,7 +132,12 @@ class LidarPointAdapter(Node):
             self.get_logger().info(
                 "Publishing LIO-SAM Ouster scans with ring/t fields: "
                 f"points={output.width}, frame={output.header.frame_id}, "
-                f"scan_period={self._scan_period_s:.3f}s"
+                f"scan_period={self._scan_period_s:.3f}s, "
+                f"rings={int(converted['ring'].min())}.."
+                f"{int(converted['ring'].max())}, "
+                f"relative_time_ns={int(converted['t'].min())}.."
+                f"{int(converted['t'].max())}, "
+                f"raw_stamp_ns={stamp_ns}, output_stamp_ns={output_stamp_ns}"
             )
             self._logged_contract = True
 

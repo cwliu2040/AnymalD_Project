@@ -164,7 +164,9 @@ Isaac Sim 5.1 的已知限制：
   初始 pose 與 velocity 設為 odom-aligned 零值，避免隱藏的初始 yaw offset。
 - 真實 sensor 取樣相對 policy state 有一個 physics-step 等級的差異，因此
   IMU angular velocity 與 projected gravity 的 parity tolerance 使用
-  `2e-3`；其他 observation term 仍維持 `1e-4`。
+  `2e-3`；啟用 RTX off-screen rendering 的 LIO-SAM 驗證使用 `1e-2`
+  （實測 angular velocity 最大差異 `0.008107`）。其他 observation term
+  仍維持 `1e-4`。
 
 ### 第四階段：RTX LiDAR 與 LIO-SAM
 
@@ -207,14 +209,31 @@ map --static--> odom --LIO-SAM IMU preintegration--> base_link
 `odom → base_link` TF。Upstream map-optimization 的重複 TF remap 到隔離
 topic；`/odom` topic 仍保留給 locomotion policy 使用。
 
-尚未完成的 runtime 驗收：
+Runtime 驗收結果：
 
-- 2026-07-27 主機已安裝 NVIDIA `580.173.02`，kernel 卻仍載入
-  `580.159.03`；`nvidia-smi` 回報 driver/library version mismatch，
-  Isaac RTX sensor 因此無法啟動。
-- 重新載入一致的 NVIDIA driver 後，須量測 `/lidar/points_raw` 10 Hz、
-  檢查 `/lio_sam/points` 的 `ring/t`、確認 LIO odometry，以及驗證
-  `map → odom → base_link → lidar_link` 可由 tf2 正常解析。
+- 重開機後 NVIDIA userspace、kernel module 與已載入 driver 均為
+  `580.173.02`，Isaac Sim 以 Vulkan 正常使用 RTX 5080。
+- Headless RTX sensor 必須啟用 off-screen rendering，並使用官方
+  `RtxLidarROS2PublishPointCloudBuffer` writer；只建立 render product
+  不會產生 point cloud frame。
+- raw 與 adapter point cloud 持續輸出；off-screen 負載下 wall-time
+  接收率約 `6.8–8.1 Hz`，而 sensor profile 與 simulation timestamp
+  維持 10 Hz。整體 RTF 小於 1 時，不把 wall rate 偽稱為 10 Hz。
+- `/lio_sam/points` 的 `ring` 完整涵蓋 `0..31`，每點 `t` 約涵蓋
+  `0..99,999,992 ns`，header 已轉成 scan-start simulation time。
+- Image Projection 輸出 `imu_available=1`、`odom_available=1`；
+  deskew、feature、mapping odometry 與
+  `map → odom → base_link → lidar_link` TF 均可正常輸出。
+- 為避免只有無限平面造成 scan matching 退化，validation host 建立七個
+  不具 collision 的不對稱 visual landmark；不更動 ANYmal physics 或
+  Flat v1 policy task。
+- 零殘留啟動的 60 秒測試收到 85 筆 mapping correction，全部嚴格遞增；
+  四個 LIO-SAM 核心 process 在測試結束後仍存活。重置 simulation time
+  前必須一起重啟 LIO-SAM，避免殘留同名 publisher 將兩套 correction
+  送入 GTSAM。
+
+尚未完成的是移動建圖精度、回環，以及實體 ANYmal-D sensor extrinsic
+驗收；不影響目前靜止端到端 smoke test 的完成狀態。
 
 ## 暫時不做
 

@@ -87,6 +87,10 @@ if args_cli.straight_line_duration_s <= 0.0:
     parser.error("--straight-line-duration-s must be positive")
 if (args_cli.validate_observation_parity or args_cli.straight_line_check) and not args_cli.external_control:
     parser.error("observation parity and straight-line checks require --external-control")
+if args_cli.enable_lio_sam:
+    # RTX sensors are Hydra render products. Headless Isaac Lab otherwise uses
+    # NO_RENDERING and silently creates the sensor without producing frames.
+    args_cli.enable_cameras = True
 required_kit_args = (
     "--enable omni.graph.core "
     "--enable omni.graph.nodes "
@@ -114,7 +118,10 @@ from anymal_locomotion.policy_contract import (
     validate_runtime_joint_names,
 )
 from anymal_locomotion.simulation.physics_imu import PhysicsImuSpawnerCfg
-from anymal_locomotion.simulation.rtx_lidar import create_rtx_lidar_sensor
+from anymal_locomotion.simulation.rtx_lidar import (
+    create_lio_validation_landmarks,
+    create_rtx_lidar_sensor,
+)
 from anymal_locomotion.simulation.ros2_bridge import (
     create_ros2_policy_bridge,
     read_base_state,
@@ -361,6 +368,11 @@ def main() -> None:
     try:
         base_env = env.unwrapped
         articulation_root = _find_articulation_root(base_env.scene.env_prim_paths[0])
+        lidar_landmarks = (
+            create_lio_validation_landmarks()
+            if args_cli.enable_lio_sam
+            else ()
+        )
         lidar = (
             create_rtx_lidar_sensor(articulation_root)
             if args_cli.enable_lio_sam
@@ -370,9 +382,6 @@ def main() -> None:
             articulation_root,
             connect_articulation_controller=not args_cli.external_control,
             publish_ground_truth_tf=not args_cli.enable_lio_sam,
-            lidar_render_product_path=(
-                lidar.render_product_path if lidar is not None else None
-            ),
         )
         physics_dt = float(base_env.sim.get_physics_dt())
         if not math.isclose(
@@ -412,13 +421,19 @@ def main() -> None:
             flush=True,
         )
         if lidar is not None:
+            print(
+                f"PASS lidar_validation_landmarks={len(lidar_landmarks)}",
+                flush=True,
+            )
             print(f"PASS lidar_mount_prim={lidar.mount_path}", flush=True)
             print(f"PASS lidar_sensor_prim={lidar.sensor_path}", flush=True)
             print(
                 f"PASS lidar_render_product={lidar.render_product_path}",
                 flush=True,
             )
+            print(f"PASS lidar_ros2_writer={lidar.ros2_writer_name}", flush=True)
             print(f"PASS lidar_frame_id={lidar.frame_id}", flush=True)
+            print(f"PASS lidar_raw_topic={lidar.raw_topic}", flush=True)
             print(
                 f"PASS lidar_profile={lidar.config}/{lidar.variant}",
                 flush=True,
@@ -431,7 +446,8 @@ def main() -> None:
             "PASS topics="
             f"{bridge.command_topic},{bridge.joint_state_topic},{bridge.imu_topic},"
             f"{bridge.odometry_topic},{bridge.tf_topic},"
-            f"{bridge.lidar_raw_topic},{bridge.joint_command_topic}",
+            f"{lidar.raw_topic if lidar is not None else None},"
+            f"{bridge.joint_command_topic}",
             flush=True,
         )
         print(f"PASS ros_domain_id={bridge.domain_id}", flush=True)
@@ -809,11 +825,11 @@ def main() -> None:
         imu_contract_failures = {}
         if imu_timestamp_step_error > 1.0e-4:
             imu_contract_failures["timestamp_step_error"] = imu_timestamp_step_error
-        if imu_angular_velocity_max_error > 2.0e-3:
+        if imu_angular_velocity_max_error > args_cli.imu_observation_parity_atol:
             imu_contract_failures["angular_velocity_error"] = (
                 imu_angular_velocity_max_error
             )
-        if imu_projected_gravity_max_error > 2.0e-3:
+        if imu_projected_gravity_max_error > args_cli.imu_observation_parity_atol:
             imu_contract_failures["projected_gravity_error"] = (
                 imu_projected_gravity_max_error
             )

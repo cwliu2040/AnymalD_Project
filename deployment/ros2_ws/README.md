@@ -249,12 +249,26 @@ ros2 run tf2_ros tf2_echo map base_link
 ros2 run tf2_ros tf2_echo base_link lidar_link
 ```
 
-本地 clean build 與所有 LIO-SAM nodes 的 bringup 已通過。2026-07-27 的
-RTX 端到端驗證被主機 NVIDIA driver 狀態擋住：已安裝 userspace/module
-版本為 `580.173.02`，但 kernel 當下仍載入 `580.159.03`，`nvidia-smi`
-回報 driver/library version mismatch。主機重新載入一致的 driver（通常是
-重開機）後，仍須完成 raw scan rate、`ring/t`、LIO odometry 與 TF 的實測，
-才能宣告 LIO-SAM 整合驗收完成。
+2026-07-27 重開機後，NVIDIA userspace、kernel module 與已載入 driver
+皆為 `580.173.02`。RTX 5080 的 60 秒端到端驗證已通過：
+
+- raw 與 adapter point cloud 都持續輸出；在 off-screen RTX rendering
+  負載下，wall-time 接收率約 `6.8–8.1 Hz`。Sensor profile 與 simulation
+  timestamp 仍是 10 Hz；此差異來自整體 RTF 小於 1，不把 wall rate 偽稱
+  為 10 Hz。
+- adapter 輸出 `ring=0..31`，每點 `t` 約涵蓋
+  `0..99,999,992 ns`，header 為 scan-start simulation time。
+- Image Projection 實測 `imu_available=1`、`odom_available=1`，並持續
+  發布 deskew cloud；mapping odometry 與
+  `map → odom → base_link → lidar_link` TF 可解析。
+- 零殘留啟動的 60 秒測試收到 85 筆 mapping correction，時戳全部嚴格
+  遞增；四個 LIO-SAM 核心 process 在測試結束後仍存活。
+
+每次重跑 simulation time 前應一起重啟整組 LIO-SAM launch。若殘留舊的
+adapter／feature／mapping process，同名 topic 會出現多個 publisher，
+IMU preintegration 可能因收到兩套相同時戳的 correction 而使 GTSAM
+因子圖失效。可先用 `ros2 topic info` 確認核心 topic 的 publisher count
+皆為 1。
 
 ## 第一版安全行為
 
@@ -274,8 +288,8 @@ RTX 端到端驗證被主機 NVIDIA driver 狀態擋住：已安裝 userspace/mo
 - `/joint_command` 只用於 Isaac Sim；實體 ANYmal-D low-level interface
   尚未確認。
 - 尚未加入獨立 IMU noise/bias model。
-- LIO-SAM 已可建置與啟動，但 RTX LiDAR 端到端 runtime 驗證仍待 NVIDIA
-  driver 重新載入後完成。
+- LIO-SAM 的靜止端到端 smoke test 已通過；移動建圖精度、回環與實體
+  ANYmal-D sensor extrinsic 仍未驗收。
 - 固定 `[0.5, 0, 0]` 的 10 秒測試可前進 4.88 m、偏航 6.04°，但橫向偏移
   0.61 m，未達原訂 0.30 m；原生 checkpoint 評估也有同方向的小幅
   `vy/wz` bias，因此這是目前 policy 的低速 tracking 限制，不是 ROS 軸向錯接。
