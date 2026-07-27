@@ -1,6 +1,6 @@
 # ROS 2 模擬部署對齊紀錄
 
-更新日期：2026-07-24
+更新日期：2026-07-27
 
 這份文件保存 Grill Me 訪談後確認的架構決策、驗收方式與已知限制。它是跨
 對話的共同依據；若後續實作方向改變，應同步更新本文件，不能只依賴聊天
@@ -166,9 +166,59 @@ Isaac Sim 5.1 的已知限制：
   IMU angular velocity 與 projected gravity 的 parity tolerance 使用
   `2e-3`；其他 observation term 仍維持 `1e-4`。
 
+### 第四階段：RTX LiDAR 與 LIO-SAM
+
+架構沿用前三階段，不把 SLAM 塞進 locomotion policy 或 Isaac Sim process：
+
+```text
+Isaac Sim RTX LiDAR
+  -> ROS 2 Bridge /lidar/points_raw
+  -> 外部 PointCloud2 adapter
+  -> /lio_sam/points
+  -> 外部 LIO-SAM
+
+真正的 200 Hz /imu/data -------------------^
+```
+
+已確認：
+
+- 使用 Isaac Sim 內建 `OS1_REV6_32ch10hz1024res` RTX profile：
+  32 channels、10 Hz、1024 個水平 sample。
+- LiDAR frame 為 `lidar_link`，相對 `base_link` 的 mounting translation
+  為 `(0.20, 0, 0.35) m`，rotation 為 identity。
+- RTX raw PointCloud2 由外部 adapter 補上 LIO-SAM Ouster contract 所需的
+  `ring` 與每點相對時間 `t`；點依 `t` 排序，header 使用 scan-start
+  simulation time。
+- Official LIO-SAM ROS 2 branch 以 `lio_sam.repos` 固定 exact commit，不
+  複製或修改 upstream source；專案擁有參數與 launch。
+- LIO-SAM 與專案 ROS package 已在乾淨的 ROS Humble environment 完成
+  colcon build，所有 adapter／LIO nodes 可啟動。
+- LiDAR 不加入 Flat v1 的 48 維 observation；它屬於獨立感知層。
+
+TF 採單一 publisher ownership：
+
+```text
+map --static--> odom --LIO-SAM IMU preintegration--> base_link
+                                               |
+                                               +--static--> lidar_link
+```
+
+啟用 `--enable-lio-sam` 時，模擬器停發 ground-truth
+`odom → base_link` TF。Upstream map-optimization 的重複 TF remap 到隔離
+topic；`/odom` topic 仍保留給 locomotion policy 使用。
+
+尚未完成的 runtime 驗收：
+
+- 2026-07-27 主機已安裝 NVIDIA `580.173.02`，kernel 卻仍載入
+  `580.159.03`；`nvidia-smi` 回報 driver/library version mismatch，
+  Isaac RTX sensor 因此無法啟動。
+- 重新載入一致的 NVIDIA driver 後，須量測 `/lidar/points_raw` 10 Hz、
+  檢查 `/lio_sam/points` 的 `ring/t`、確認 LIO odometry，以及驗證
+  `map → odom → base_link → lidar_link` 可由 tf2 正常解析。
+
 ## 暫時不做
 
-- 不加入 LiDAR、camera、LIO-SAM、LVI-SAM 或完整 SLAM。
+- 不加入 camera、LVI-SAM、Nav2 或完整 navigation stack。
 - 不把 LiDAR／camera observation 放進 Flat v1 policy。
 - 不直接處理實體 ANYmal-D low-level interface。
 - 不盲目繼續訓練 model_1298。

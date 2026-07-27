@@ -1,0 +1,77 @@
+/**:
+  ros__parameters:
+    use_sim_time: true
+
+    pointCloudTopic: /lio_sam/points
+    imuTopic: /imu/data
+    odomTopic: lio_sam/odometry/imu
+    gpsTopic: lio_sam/odometry/gps
+
+    lidarFrame: lidar_link
+    baselinkFrame: base_link
+    odometryFrame: odom
+    mapFrame: map
+
+    useImuHeadingInitialization: false
+    useGpsElevation: false
+    gpsCovThreshold: 2.0
+    poseCovThreshold: 25.0
+
+    savePCD: false
+    savePCDDirectory: /tmp/anymal_lio_sam_map/
+
+    sensor: ouster
+    N_SCAN: 32
+    Horizon_SCAN: 1024
+    downsampleRate: 1
+    lidarMinRange: 0.5
+    lidarMaxRange: 100.0
+
+    imuAccNoise: 0.01
+    imuGyrNoise: 0.001
+    imuAccBiasN: 0.00001
+    imuGyrBiasN: 0.00001
+    imuGravity: 9.80665
+    imuRPYWeight: 0.01
+
+    # LiDAR pose in base_link is (+0.20, 0, +0.35) with aligned axes.
+    # LIO-SAM expects the lidar-to-IMU translation here.
+    extrinsicTrans: [-0.20, 0.0, -0.35]
+    extrinsicRot: [1.0, 0.0, 0.0,
+                   0.0, 1.0, 0.0,
+                   0.0, 0.0, 1.0]
+    extrinsicRPY: [1.0, 0.0, 0.0,
+                   0.0, 1.0, 0.0,
+                   0.0, 0.0, 1.0]
+
+    edgeThreshold: 1.0
+    surfThreshold: 0.1
+    edgeFeatureMinValidNum: 10
+    surfFeatureMinValidNum: 100
+
+    odometrySurfLeafSize: 0.4
+    mappingCornerLeafSize: 0.2
+    mappingSurfLeafSize: 0.4
+
+    z_tollerance: 1000.0
+    rotation_tollerance: 1000.0
+
+    numberOfCores: 4
+    mappingProcessInterval: 0.15
+
+    surroundingkeyframeAddingDistThreshold: 1.0
+    surroundingkeyframeAddingAngleThreshold: 0.2
+    surroundingKeyframeDensity: 2.0
+    surroundingKeyframeSearchRadius: 50.0
+
+    loopClosureEnableFlag: false
+    loopClosureFrequency: 1.0
+    surroundingKeyframeSize: 50
+    historyKeyframeSearchRadius: 15.0
+    historyKeyframeSearchTimeDiff: 30.0
+    historyKeyframeSearchNum: 25
+    historyKeyframeFitnessScore: 0.3
+
+    globalMapVisualizationSearchRadius: 1000.0
+    globalMapVisualizationPoseDensity: 10.0
+    globalMapVisualizationLeafSize: 1.0

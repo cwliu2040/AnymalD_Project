@@ -1,0 +1,78 @@
+"""Tests for deterministic RTX-to-LIO-SAM point conversion."""
+
+from __future__ import annotations
+
+import numpy as np
+
+from anymal_locomotion_ros2.lidar_adapter_core import (
+    OS1_32_ELEVATION_DEG,
+    OUSTER_POINT_DTYPE,
+    convert_rtx_points_to_ouster,
+    scan_start_nanoseconds,
+)
+
+
+def _point(elevation_deg: float, azimuth_deg: float, distance: float = 10.0) -> list[float]:
+    elevation = np.deg2rad(elevation_deg)
+    azimuth = np.deg2rad(azimuth_deg)
+    horizontal = distance * np.cos(elevation)
+    return [
+        horizontal * np.cos(azimuth),
+        horizontal * np.sin(azimuth),
+        distance * np.sin(elevation),
+    ]
+
+
+def test_conversion_assigns_hardware_ring_and_monotonic_relative_time() -> None:
+    xyz = np.asarray(
+        [
+            _point(float(OS1_32_ELEVATION_DEG[31]), -270.0),
+            _point(float(OS1_32_ELEVATION_DEG[0]), 0.0),
+            _point(float(OS1_32_ELEVATION_DEG[15]), -90.0),
+            _point(float(OS1_32_ELEVATION_DEG[16]), -180.0),
+        ],
+        dtype=np.float32,
+    )
+    converted = convert_rtx_points_to_ouster(
+        xyz,
+        np.asarray([0.4, 0.1, 0.2, 0.3], dtype=np.float32),
+    )
+
+    assert converted.dtype == OUSTER_POINT_DTYPE
+    np.testing.assert_array_equal(converted["ring"], [0, 15, 16, 31])
+    np.testing.assert_allclose(converted["t"], [0, 25_000_000, 50_000_000, 75_000_000])
+    assert np.all(np.diff(converted["t"].astype(np.int64)) >= 0)
+    np.testing.assert_allclose(converted["range"], 10_000, atol=1)
+
+
+def test_conversion_drops_nonfinite_points_and_supplies_zero_intensity() -> None:
+    xyz = np.asarray(
+        [
+            _point(float(OS1_32_ELEVATION_DEG[4]), 0.0),
+            [np.nan, 0.0, 0.0],
+        ],
+        dtype=np.float32,
+    )
+    converted = convert_rtx_points_to_ouster(xyz)
+    assert converted.shape == (1,)
+    assert converted["ring"][0] == 4
+    assert converted["intensity"][0] == 0.0
+
+
+def test_scan_start_timestamp_accounts_for_full_scan_accumulation() -> None:
+    assert (
+        scan_start_nanoseconds(
+            12_345_000_000,
+            scan_period_s=0.1,
+            stamp_is_scan_end=True,
+        )
+        == 12_245_000_000
+    )
+    assert (
+        scan_start_nanoseconds(
+            12_345_000_000,
+            scan_period_s=0.1,
+            stamp_is_scan_end=False,
+        )
+        == 12_345_000_000
+    )

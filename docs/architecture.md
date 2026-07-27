@@ -10,7 +10,8 @@ velocity、base angular velocity、projected gravity、直接 velocity command�
 joint position/velocity 與 previous action。
 
 LiDAR、RGB-D、terrain perception、SLAM 與 navigation 不屬於 Flat v1
-policy observation。
+policy observation。它們可以作為獨立 ROS 2 感知層產生 odometry、map 或
+`/cmd_vel`，但不改變既有 48 維 locomotion policy contract。
 
 ## 系統生命週期
 
@@ -145,23 +146,39 @@ Action Graph 另以 `/odom` 的同一筆 pose 與 timestamp 發布動態
 ## 感知與導航
 
 ```text
-LiDAR / RGB-D
+Isaac Sim RTX LiDAR             200 Hz /imu/data
+      |                                |
+      v                                |
+/lidar/points_raw                      |
+      |                                |
+      v                                |
+Ouster PointCloud2 adapter ------------+
       |
       v
-ROS 2 Bridge / sensor drivers
+LIO-SAM -> odometry / map
       |
-      v
-SLAM / terrain perception / Nav2
-      |
-      v
-/cmd_vel
-      |
-      v
-外部 locomotion policy node
+      +----> terrain perception / Nav2 -> /cmd_vel
+                                          |
+                                          v
+                              外部 locomotion policy node
 ```
 
 LiDAR 與 camera tensor 不進入 Flat v1 observation。Rough locomotion 與
 perceptive locomotion 將使用獨立 task 與 policy version。
+
+模擬 LIO-SAM 採專案擁有的 `lidar_link` mount 與 Isaac Sim 內建 OS1 RTX
+profile；外部 ROS 2 adapter 補齊 upstream 所需的 `ring` 與每點相對時間
+`t`。TF 的單一 ownership 為：
+
+```text
+map --static--> odom --LIO-SAM IMU preintegration--> base_link
+                                               |
+                                               +--static--> lidar_link
+```
+
+啟用 LIO-SAM 時停用 simulator ground-truth `odom → base_link` TF，避免
+同一 child frame 由兩個來源驅動。模擬 `/odom` topic 仍可獨立提供目前
+locomotion policy 所需的 ground-truth body velocity。
 
 ## 未來 Custom USD
 

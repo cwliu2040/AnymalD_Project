@@ -11,7 +11,8 @@ Isaac Sim
   ├─ /joint_states ─┐
   ├─ /imu/data ─────┼─> 外部 policy node ─> /joint_command ─> Isaac Sim
   ├─ /odom ─────────┘           ↑
-  └─ /tf: odom → base_link   /cmd_vel
+  ├─ /tf: odom → base_link   /cmd_vel
+  └─ /lidar/points_raw ─> adapter ─> LIO-SAM（獨立感知層）
 ```
 
 `anymal_locomotion_ros2` 已實作第一版外部 policy node 與 ROS-independent
@@ -177,6 +178,84 @@ ros2 topic hz /joint_command
 若有設定 `ROS_DOMAIN_ID` 或 `RMW_IMPLEMENTATION`，所有終端必須使用相同值。
 綠色箭頭是收到的 body-frame `/cmd_vel` 目標；藍色箭頭是機器人的實際速度。
 
+## RTX LiDAR 與 LIO-SAM
+
+LIO-SAM 使用官方 `TixiaoShan/LIO-SAM` 的 ROS 2 branch，版本固定在
+`deployment/ros2_ws/lio_sam.repos` 記錄的 commit。Upstream source checkout
+位於 `src/lio_sam`，由 `.gitignore` 排除；專案只版本化 manifest、參數、
+launch 與資料格式 adapter，避免複製第三方 source。
+
+資料流固定為：
+
+```text
+Isaac Sim RTX LiDAR（OS1 32ch、10 Hz、1024 horizontal samples）
+  -> /lidar/points_raw
+  -> lidar_point_adapter（補 ring 與每點相對時間 t）
+  -> /lio_sam/points
+  -> LIO-SAM
+
+/imu/data（200 Hz）------------------------------------^
+```
+
+LiDAR mount 是 `base_link → lidar_link =
+(x=0.20, y=0, z=0.35, R=identity)`。LIO-SAM 的正式 TF tree 為
+`map → odom → base_link → lidar_link`。啟用 LIO-SAM 時，模擬器不再發布
+ground-truth `odom → base_link`；該 transform 由 LIO-SAM IMU
+preintegration 單獨負責。`/odom` topic 仍可供 locomotion policy 使用。
+
+目前 login shell 可能繼承其他 ROS workspace。為確保不誤用舊 workspace 的
+LIO-SAM，請用乾淨環境匯入並建置：
+
+```bash
+cd /home/ros/anymal_locomotion/deployment/ros2_ws
+vcs import --input lio_sam.repos --skip-existing src
+
+unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
+unset PYTHONPATH LD_LIBRARY_PATH
+unset ROS_DISTRO ROS_VERSION ROS_PYTHON_VERSION
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install --packages-up-to anymal_locomotion_ros2
+source install/setup.bash
+```
+
+Terminal 1 啟動 adapter 與 LIO-SAM：
+
+```bash
+cd /home/ros/anymal_locomotion/deployment/ros2_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+ros2 launch anymal_locomotion_ros2 lio_sam.launch.py
+```
+
+Terminal 2 啟動包含 RTX LiDAR 的模擬 host：
+
+```bash
+cd /home/ros/anymal_locomotion
+TERM=xterm-256color PYTHONPATH=source/anymal_locomotion \
+  /home/ros/IsaacLab/isaaclab.sh -p \
+  scripts/validation/validate_ros2_bridge.py \
+  --device cuda:0 --steps 1000000 --real-time --external-control \
+  --disable-episode-timeout --enable-lio-sam
+```
+
+驗收時至少檢查：
+
+```bash
+ros2 topic hz /lidar/points_raw
+ros2 topic echo /lio_sam/points --once
+ros2 topic hz /imu/data
+ros2 topic echo /lio_sam/mapping/odometry --once
+ros2 run tf2_ros tf2_echo map base_link
+ros2 run tf2_ros tf2_echo base_link lidar_link
+```
+
+本地 clean build 與所有 LIO-SAM nodes 的 bringup 已通過。2026-07-27 的
+RTX 端到端驗證被主機 NVIDIA driver 狀態擋住：已安裝 userspace/module
+版本為 `580.173.02`，但 kernel 當下仍載入 `580.159.03`，`nvidia-smi`
+回報 driver/library version mismatch。主機重新載入一致的 driver（通常是
+重開機）後，仍須完成 raw scan rate、`ring/t`、LIO odometry 與 TF 的實測，
+才能宣告 LIO-SAM 整合驗收完成。
+
 ## 第一版安全行為
 
 - joint names 缺少、重複或多出時不發布 command。
@@ -195,6 +274,8 @@ ros2 topic hz /joint_command
 - `/joint_command` 只用於 Isaac Sim；實體 ANYmal-D low-level interface
   尚未確認。
 - 尚未加入獨立 IMU noise/bias model。
+- LIO-SAM 已可建置與啟動，但 RTX LiDAR 端到端 runtime 驗證仍待 NVIDIA
+  driver 重新載入後完成。
 - 固定 `[0.5, 0, 0]` 的 10 秒測試可前進 4.88 m、偏航 6.04°，但橫向偏移
   0.61 m，未達原訂 0.30 m；原生 checkpoint 評估也有同方向的小幅
   `vy/wz` bias，因此這是目前 policy 的低速 tracking 限制，不是 ROS 軸向錯接。

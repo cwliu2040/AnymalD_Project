@@ -25,6 +25,7 @@
 | `/odom` | `nav_msgs/Odometry` | ROS2 Publish Odometry | `chassisFrameId=base_link`、`publishRawVelocities=true` |
 | `/tf` | `tf2_msgs/TFMessage` | ROS2 Publish Raw Transform Tree | 動態 `odom → base_link`，與 `/odom.pose` 共用 pose 與 timestamp |
 | `/imu/data` | `sensor_msgs/Imu` | Isaac Read IMU + ROS2 Publish Imu | `frameId=base_link`、200 Hz physics sample |
+| `/lidar/points_raw` | `sensor_msgs/PointCloud2` | ROS2 RTX Lidar Helper | `frameId=lidar_link`、OS1 32-channel、10 Hz full scan |
 
 ROS2 Publish Clock 的 timestamp input 與其他 publishers 必須使用同一個
 Isaac Read Simulation Time source。外部 node 設定 `use_sim_time=true`。
@@ -65,6 +66,33 @@ angular velocity、linear acceleration 與 sensor time，再由
 IMU 不負責提供 base linear velocity；policy 的 base linear velocity 來自
 `/odom.twist.twist.linear`。目前 sensor 採 identity mounting；未來若加入
 mounting rotation，必須先轉成 `base_link` frame。
+
+## RTX LiDAR 與 TF ownership
+
+加上 `--enable-lio-sam` 時，deployment host 會在 articulation root 下建立
+專案擁有的固定 `lidar_link` Xform，translation 為
+`(0.20, 0, 0.35) m`、rotation 為 identity，並掛上 Isaac Sim RTX LiDAR。
+內建 profile 固定為 `OS1_REV6_32ch10hz1024res`：32 channels、10 Hz、
+每圈 1024 個水平 sample。
+
+RTX helper 發布的 `/lidar/points_raw` 保持模擬器原始 PointCloud2 格式。
+外部 `lidar_point_adapter` 再依固定 OS1 beam elevation 與 scan azimuth
+產生 LIO-SAM Ouster contract 所需的 `ring` 與每點相對時間 `t`，輸出至
+`/lio_sam/points`。這個轉換位於 ROS 2 deployment process，不把 `rclpy`
+或 SLAM 邏輯放進 Isaac Sim。
+
+LIO-SAM 模式下的正式 TF ownership 為：
+
+```text
+map --static--> odom --LIO-SAM IMU preintegration--> base_link
+                                               |
+                                               +--static--> lidar_link
+```
+
+為避免同一條 TF 有兩個 publisher，simulation ground-truth
+`odom → base_link` 在此模式停用。Upstream map-optimization node 額外送出的
+重複 TF 被 remap 到隔離 topic；`/odom` topic 仍保留給 locomotion policy
+作為模擬 ground-truth velocity，不代表它擁有 TF。
 
 ## Joint command subscriber
 
@@ -134,6 +162,7 @@ frame。GUI 與 headless 使用相同的 policy-rate trigger。
 - `/odom`：`odom` 到 `base_link` 的 pose 與 body-frame velocity
 - `/tf`：與 `/odom.pose` 一致的動態 `odom` 到 `base_link` transform
 - `/imu/data`：`base_link` orientation、angular velocity、linear acceleration
+- `/lidar/points_raw`：僅在 `--enable-lio-sam` 模式發布的 RTX full scan
 
 GPU 即時量測的 `/imu/data` DDS 接收率為 `196.046 Hz`（1000-sample
 window），高於 180 Hz 驗收目標。250-step closed loop 使用 100 筆 parity

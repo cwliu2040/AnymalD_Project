@@ -63,6 +63,14 @@ parser.add_argument(
     action="store_true",
     help="Keep an interactive external-control session from resetting at the task time limit.",
 )
+parser.add_argument(
+    "--enable-lio-sam",
+    action="store_true",
+    help=(
+        "Create the project RTX LiDAR, publish full scans, render every policy "
+        "step, and leave odom->base_link TF ownership to LIO-SAM."
+    ),
+)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 if args_cli.steps <= 0:
@@ -84,6 +92,7 @@ required_kit_args = (
     "--enable omni.graph.nodes "
     "--enable isaacsim.core.nodes "
     "--enable isaacsim.sensors.physics "
+    "--enable isaacsim.sensors.rtx "
     "--enable isaacsim.ros2.bridge "
     "--/exts/isaacsim.ros2.bridge/ros_distro=system_default"
 )
@@ -105,6 +114,7 @@ from anymal_locomotion.policy_contract import (
     validate_runtime_joint_names,
 )
 from anymal_locomotion.simulation.physics_imu import PhysicsImuSpawnerCfg
+from anymal_locomotion.simulation.rtx_lidar import create_rtx_lidar_sensor
 from anymal_locomotion.simulation.ros2_bridge import (
     create_ros2_policy_bridge,
     read_base_state,
@@ -133,10 +143,12 @@ def _find_articulation_root(env_prim_path: str) -> str:
     return roots[0]
 
 
-def _tick_action_graph(base_env, bridge) -> None:
-    """Run one policy-rate graph impulse without advancing physics or rendering."""
+def _tick_action_graph(base_env, bridge, *, render_lidar: bool = False) -> None:
+    """Run one policy-rate graph impulse and optionally one RTX render."""
     base_env.sim.forward()
     trigger_policy_step(bridge)
+    if render_lidar:
+        base_env.sim.render()
 
 
 def _raw_policy_action(
@@ -349,9 +361,18 @@ def main() -> None:
     try:
         base_env = env.unwrapped
         articulation_root = _find_articulation_root(base_env.scene.env_prim_paths[0])
+        lidar = (
+            create_rtx_lidar_sensor(articulation_root)
+            if args_cli.enable_lio_sam
+            else None
+        )
         bridge = create_ros2_policy_bridge(
             articulation_root,
             connect_articulation_controller=not args_cli.external_control,
+            publish_ground_truth_tf=not args_cli.enable_lio_sam,
+            lidar_render_product_path=(
+                lidar.render_product_path if lidar is not None else None
+            ),
         )
         physics_dt = float(base_env.sim.get_physics_dt())
         if not math.isclose(
@@ -387,9 +408,30 @@ def main() -> None:
         )
         print(f"PASS physics_dt_s={physics_dt:.6f}", flush=True)
         print(
+            f"PASS publishes_ground_truth_tf={bridge.publishes_ground_truth_tf}",
+            flush=True,
+        )
+        if lidar is not None:
+            print(f"PASS lidar_mount_prim={lidar.mount_path}", flush=True)
+            print(f"PASS lidar_sensor_prim={lidar.sensor_path}", flush=True)
+            print(
+                f"PASS lidar_render_product={lidar.render_product_path}",
+                flush=True,
+            )
+            print(f"PASS lidar_frame_id={lidar.frame_id}", flush=True)
+            print(
+                f"PASS lidar_profile={lidar.config}/{lidar.variant}",
+                flush=True,
+            )
+            print(
+                f"PASS lidar_mount_translation_xyz={lidar.mount_translation_xyz}",
+                flush=True,
+            )
+        print(
             "PASS topics="
             f"{bridge.command_topic},{bridge.joint_state_topic},{bridge.imu_topic},"
-            f"{bridge.odometry_topic},{bridge.tf_topic},{bridge.joint_command_topic}",
+            f"{bridge.odometry_topic},{bridge.tf_topic},"
+            f"{bridge.lidar_raw_topic},{bridge.joint_command_topic}",
             flush=True,
         )
         print(f"PASS ros_domain_id={bridge.domain_id}", flush=True)
@@ -406,7 +448,11 @@ def main() -> None:
                 canonical_joint_indices,
                 timestamp_s=0.0,
             )
-            _tick_action_graph(base_env, bridge)
+            _tick_action_graph(
+                base_env,
+                bridge,
+                render_lidar=args_cli.enable_lio_sam,
+            )
             external_velocity_command = _clamp_external_command(
                 read_velocity_command(bridge)
             )
@@ -488,7 +534,11 @@ def main() -> None:
                     canonical_joint_indices,
                     timestamp_s=(step_index + 1) * base_env.step_dt,
                 )
-            _tick_action_graph(base_env, bridge)
+            _tick_action_graph(
+                base_env,
+                bridge,
+                render_lidar=args_cli.enable_lio_sam,
+            )
             imu_state = read_imu_state(bridge)
             if imu_state.sensor_time <= last_imu_sensor_time:
                 raise RuntimeError(

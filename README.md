@@ -6,7 +6,8 @@ ANYmal-D locomotion External Project。目標是建立乾淨、可維護，並�
 
 Flat Locomotion v1 以官方 ANYmal-D Flat task 為基準，採用
 Manager-Based workflow 與 48 維 proprioceptive observation。LiDAR、
-RGB-D、SLAM 與 navigation 不放入 v1 policy observation。
+RGB-D、SLAM 與 navigation 不放入 v1 policy observation；LIO-SAM 是獨立的
+ROS 2 感知層，不會改變既有 policy 契約。
 
 ## 目前基準
 
@@ -92,6 +93,8 @@ TERM=xterm-256color PYTHONPATH=source/anymal_locomotion \
 - 完整 runtime smoke test 通過
 - 外部 ROS 2 已接收 `/clock`、`/joint_states`、`/odom`、`/tf`、`/imu/data`
 - GPU PhysX、ROS 2 Bridge 與 ONNX closed loop 已完成整合驗證
+- 專案擁有的 RTX LiDAR、PointCloud2 adapter 與 LIO-SAM bringup 已完成
+  編譯／啟動驗證；RTX 端到端資料驗證待主機 NVIDIA driver 重新載入
 - ROS 組成的 48 維 observation 與 Isaac Lab observation 逐項一致
 - 官方 ±1.0 baseline 已完成 300 iterations
 - High-Speed v0.2.0 已由 baseline checkpoint 接續完成 1,000 iterations

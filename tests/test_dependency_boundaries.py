@@ -36,6 +36,14 @@ PHYSICS_IMU = (
     / "simulation"
     / "physics_imu.py"
 )
+RTX_LIDAR = (
+    PROJECT_ROOT
+    / "source"
+    / "anymal_locomotion"
+    / "anymal_locomotion"
+    / "simulation"
+    / "rtx_lidar.py"
+)
 ONNX_BACKEND = (
     PROJECT_ROOT
     / "deployment"
@@ -165,6 +173,22 @@ def test_physics_imu_is_project_owned_and_authored_before_startup() -> None:
     assert "rclpy" not in source
     assert "socket" not in source
     assert "udp" not in source.lower()
+
+
+def test_rtx_lidar_is_project_owned_and_uses_ros2_bridge_render_product() -> None:
+    source = RTX_LIDAR.read_text(encoding="utf-8")
+    bridge_source = ROS2_BRIDGE.read_text(encoding="utf-8")
+    host_source = ROS2_BRIDGE_HOST.read_text(encoding="utf-8")
+    assert '"IsaacSensorCreateRtxLidar"' in source
+    assert 'variant: str = "OS1_REV6_32ch10hz1024res"' in source
+    assert '"omni:sensor:Core:outputFrameOfReference": "SENSOR"' in source
+    assert "rep.create.render_product" in source
+    assert "ROS2RtxLidarHelper" in bridge_source
+    assert '("PublishLidar.inputs:fullScan", True)' in bridge_source
+    assert '("PublishLidar.inputs:type", "point_cloud")' in bridge_source
+    assert "publish_ground_truth_tf=not args_cli.enable_lio_sam" in host_source
+    assert "base_env.sim.render()" in host_source
+    assert "rclpy" not in source
 
 
 def test_onnx_backend_is_external_and_cpu_only() -> None:
