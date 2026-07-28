@@ -281,6 +281,4 @@ invalid，不能宣稱 LIO-SAM 通過或失敗。
 
 ## Git checkpoint
 
-第一階段、GPU bridge 與第三階段 IMU 都已有可重現驗證結果。任何 commit 或
-push 仍須依 `AGENTS.md` 重新取得明確同意。本文件本身不代表已授權 commit
-或 push。
+第一階段、GPU bridge 與第三階段 IMU 都已有可重現驗證結果。

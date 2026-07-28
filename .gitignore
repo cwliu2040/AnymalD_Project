@@ -15,6 +15,15 @@ core.*
 .idea/
 .vscode/
 
+# Local coding-assistant instructions and state
+AGENTS.md
+.agents/
+.codex/
+
+# Local presentation deliverables and generation helpers
+reports/final_review/
+scripts/reporting/
+
 # Generated training artifacts (retain directory placeholders)
 logs/*
 !logs/.gitkeep

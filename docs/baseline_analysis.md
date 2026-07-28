@@ -10,9 +10,8 @@
 
 - 實際專案根目錄是 `/home/ros/anymal_locomotion`。
   `/home/ros/Documents/anymal_locomotion` 目前不存在。
-- 分析當時，新專案尚未建立 Isaac Lab External Project scaffold；當時只有
-  `AGENTS.md`，以及空的 `.agents/`、`.codex/`、`.git/` 目錄。
-  其中 `.git/` 是空目錄，因此此專案當時不是有效的 Git repository。
+- 分析當時，新專案尚未建立 Isaac Lab External Project scaffold，且
+  `.git/` 是空目錄，因此此專案當時不是有效的 Git repository。
 - 歷史分析使用的 Isaac Lab checkout 是
   `v2.2.1-232-gcbf51abb5e`。本報告涉及的官方
   locomotion task 與 robot asset 檔案沒有本地修改；checkout 的 dirty
@@ -52,9 +51,6 @@ training。
 
 ```text
 /home/ros/anymal_locomotion/
-├── AGENTS.md
-├── .agents/                  # empty
-├── .codex/                   # empty
 ├── .git/                     # empty; not a valid Git repository
 └── docs/
     └── baseline_analysis.md
