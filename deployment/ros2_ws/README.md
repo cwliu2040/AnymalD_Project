@@ -144,6 +144,7 @@ unset ROS_DISTRO ROS_VERSION ROS_PYTHON_VERSION
 source /opt/ros/humble/setup.bash
 source deployment/ros2_ws/install/setup.bash
 
+echo "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-未設定}"
 ros2 launch anymal_locomotion_ros2 bringup.launch.py
 ```
 
@@ -152,7 +153,7 @@ ros2 launch anymal_locomotion_ros2 bringup.launch.py
 - `project_root`：由 package source／colcon install path 自動解析
 - `isaaclab_root`：優先使用 `ISAACLAB_ROOT`，否則為 `~/IsaacLab`
 - `device=cuda:0`
-- `ros_domain_id`：繼承啟動 shell 的 `ROS_DOMAIN_ID`，未設定時為 `1`
+- `ros_domain_id`：繼承啟動 shell 的 `ROS_DOMAIN_ID`；未設定時才為 `1`
 - `factory_usd_path=<project_root>/assets/maps/factory/Factory_Layout.usd`
 - High-Speed v0.2.0 ONNX policy 與 metadata
 - `use_rviz=true`
@@ -181,13 +182,24 @@ Teleop 直接發布 `/cmd_vel`；deployment 不加入固定速度 filter，comma
 scan matching 的裂圖風險，後續將比較多種 3D SLAM 的信心指標，並把信心度
 回饋給 PPO，讓 locomotion policy 學習依環境可觀測性調整速度。
 
+若 GNOME Terminal 無法自動開啟，使用
+`open_teleop_terminal:=false` 啟動 bringup，再從另一個使用相同
+`ROS_DOMAIN_ID` 的 ROS terminal 執行：
+
+```bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args \
+  -p speed:=0.5 \
+  -p turn:=0.5 \
+  -r cmd_vel:=/cmd_vel
+```
+
 另開終端可檢查 topic 與實際接收頻率；必須使用與啟動 launch 的 shell
-相同的 `ROS_DOMAIN_ID`。若啟動時未另外設定，預設為 `1`：
+相同的 `ROS_DOMAIN_ID`：
 
 ```bash
 source /opt/ros/humble/setup.bash
 source <repository-root>/deployment/ros2_ws/install/setup.bash
-export ROS_DOMAIN_ID=1
+echo "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-未設定}"
 ros2 topic list
 ros2 topic hz /joint_states
 ros2 topic hz /odom
@@ -196,8 +208,20 @@ ros2 topic hz /imu/data
 ros2 topic hz /joint_command
 ```
 
+ROS 2 官方建議同一網路上的不同電腦群組使用不同 domain，安全選擇範圍是
+`0..101`。實驗室應依每位使用者、每台機器人或每組實驗分配 domain，而不是
+讓所有人都使用 `1`。固定只操作一組系統的帳號可把自己的分配值寫入
+`.bashrc`；同一帳號需要切換多組系統時，則在各 terminal 個別 export。若
+所有 process 都在同一台電腦，可另外使用 `ROS_LOCALHOST_ONLY=1`；跨電腦或
+連接實體機時則使用 `0` 或 unset。完整設定範例見根目錄 README。
+
 安裝腳本不修改 `.bashrc`。Launch 無法替啟動它的 parent shell source
-workspace，但會把選定的 domain 傳給其所有子程序。
+workspace，但會把選定的 domain 傳給其所有子程序；未設定 domain 時保留
+fallback `1` 只供單機向後相容，不建議在共享網路依賴它。
+
+第一次啟動 Factory 與 RTX LiDAR 時會建立 shader cache，wall time 觀察到的
+topic rate 可能暫時偏低。cache 穩定後再量測，這不代表 physics 或 policy
+頻率契約改變。
 
 目前 GPU 即時驗證結果：`/imu/data` 靜止時
 `linear_acceleration.z=9.80877 m/s²`、接收率約 `191.5 Hz`；`/tf` 為

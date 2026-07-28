@@ -62,14 +62,26 @@ if [[ "${CHECK_ONLY}" == false ]]; then
     git -C "${PROJECT_ROOT}" lfs pull
 
     echo "[2/4] Importing pinned LIO-SAM source..."
+    if [[ -e "${LIO_SAM_ROOT}" && ! -d "${LIO_SAM_ROOT}/.git" ]]; then
+        [[ -d "${LIO_SAM_ROOT}" ]] \
+            || fail "LIO-SAM path exists but is not a directory: ${LIO_SAM_ROOT}"
+        rmdir "${LIO_SAM_ROOT}" 2>/dev/null \
+            || fail "LIO-SAM path is non-empty but is not a Git checkout: ${LIO_SAM_ROOT}"
+        echo "Removed an empty LIO-SAM directory left by an interrupted import."
+    fi
     vcs import \
         --input "${ROS_WORKSPACE}/lio_sam.repos" \
         --skip-existing \
         "${ROS_WORKSPACE}/src"
 
     echo "[3/4] Installing ROS and ONNX dependencies..."
+    # ROS 2 Humble's generated setup scripts reference variables that may be
+    # unset. Temporarily disable nounset while sourcing, then restore it for
+    # the remainder of this script.
+    set +u
     # shellcheck disable=SC1090
     source "${ROS_SETUP}"
+    set -u
     rosdep install \
         --from-paths "${ROS_WORKSPACE}/src" \
         --ignore-src \

@@ -262,10 +262,29 @@ def test_fresh_clone_contains_policy_and_reproducible_setup_entrypoint() -> None
     setup_source = SETUP_DEPLOYMENT.read_text(encoding="utf-8")
     assert "git -C \"${PROJECT_ROOT}\" lfs pull" in setup_source
     assert "vcs import" in setup_source
+    assert 'rmdir "${LIO_SAM_ROOT}"' in setup_source
+    assert "LIO-SAM path is non-empty but is not a Git checkout" in setup_source
+    assert "set +u" in setup_source
+    assert 'source "${ROS_SETUP}"' in setup_source
+    assert "set -u" in setup_source
     assert "rosdep install" in setup_source
     assert "python3 -m pip install" in setup_source
     assert "colcon build" in setup_source
     assert 'ISAACLAB_ROOT:-${HOME}/IsaacLab' in setup_source
+
+
+def test_lio_sam_multi_node_executable_keeps_its_internal_node_names() -> None:
+    source = (
+        PROJECT_ROOT
+        / "deployment"
+        / "ros2_ws"
+        / "src"
+        / "anymal_locomotion_ros2"
+        / "launch"
+        / "lio_sam.launch.py"
+    ).read_text(encoding="utf-8")
+    assert 'executable="lio_sam_imuPreintegration"' in source
+    assert 'name="lio_sam_imuPreintegration"' not in source
 
 
 def test_onnx_backend_is_external_and_cpu_only() -> None:

@@ -22,7 +22,6 @@ def generate_launch_description() -> LaunchDescription:
         Node(
             package="lio_sam",
             executable="lio_sam_imuPreintegration",
-            name="lio_sam_imuPreintegration",
             parameters=[params_file],
             output="screen",
         ),
