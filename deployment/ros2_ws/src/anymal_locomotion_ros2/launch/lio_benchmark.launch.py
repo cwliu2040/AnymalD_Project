@@ -29,6 +29,21 @@ from launch.substitutions import (
 from launch_ros.actions import Node
 
 
+def _shutdown_if_benchmark_failed(event, _context):
+    if event.returncode == 0:
+        return []
+    return [
+        EmitEvent(
+            event=Shutdown(
+                reason=(
+                    "LIO benchmark driver failed with "
+                    f"exit code {event.returncode}"
+                )
+            )
+        )
+    ]
+
+
 def _find_project_root(package_share: Path) -> Path:
     for start in (Path(__file__).resolve(), package_share.resolve()):
         for candidate in (start, *start.parents):
@@ -77,6 +92,14 @@ def generate_launch_description() -> LaunchDescription:
     motion_deskew_replace_upstream_rotation = LaunchConfiguration(
         "motion_deskew_replace_upstream_rotation"
     )
+    loop_closure_enable = LaunchConfiguration("loop_closure_enable")
+    loop_closure_expectation = LaunchConfiguration(
+        "loop_closure_expectation"
+    )
+    loop_search_radius = LaunchConfiguration("loop_search_radius")
+    loop_search_time_diff = LaunchConfiguration("loop_search_time_diff")
+    loop_search_keyframes = LaunchConfiguration("loop_search_keyframes")
+    loop_fitness_score = LaunchConfiguration("loop_fitness_score")
 
     project_python_path = [
         PathJoinSubstitution([project_root, "deployment", "python_vendor"]),
@@ -96,6 +119,9 @@ def generate_launch_description() -> LaunchDescription:
                 "backend": "onnx",
                 "policy_path": policy_path,
                 "metadata_path": metadata_path,
+                "diagnostics_path": PathJoinSubstitution(
+                    [output_dir, "policy_diagnostics.json"]
+                ),
             }
         ],
         output="screen",
@@ -124,6 +150,11 @@ def generate_launch_description() -> LaunchDescription:
                     / "cyclonedds_static_tf.xml"
                 )
             ),
+            "loop_closure_enable": loop_closure_enable,
+            "loop_search_radius": loop_search_radius,
+            "loop_search_time_diff": loop_search_time_diff,
+            "loop_search_keyframes": loop_search_keyframes,
+            "loop_fitness_score": loop_fitness_score,
         }.items(),
     )
     benchmark_node = Node(
@@ -138,6 +169,7 @@ def generate_launch_description() -> LaunchDescription:
                 "output_path": PathJoinSubstitution(
                     [output_dir, "metrics.json"]
                 ),
+                "loop_closure_expectation": loop_closure_expectation,
             }
         ],
         output="screen",
@@ -163,8 +195,20 @@ def generate_launch_description() -> LaunchDescription:
             "0.01",
             "--factory-usd-path",
             factory_usd_path,
+            "--locomotion-diagnostics-output",
+            PathJoinSubstitution(
+                [output_dir, "locomotion_diagnostics.json"]
+            ),
+            "--locomotion-profile",
+            profile,
+            "--benchmark-completion-file",
+            PathJoinSubstitution([output_dir, "metrics.json"]),
         ],
         output="log",
+        # Kit normally needs more than launch's five-second default to flush
+        # extensions and close the PhysX scene after SIGINT.
+        sigterm_timeout="30",
+        sigkill_timeout="10",
     )
     bag = ExecuteProcess(
         cmd=[
@@ -177,9 +221,6 @@ def generate_launch_description() -> LaunchDescription:
             "/odom",
             "/imu/data",
             "/lidar/points_raw",
-            "/lio_sam/points",
-            "/lio_sam/mapping/odometry",
-            "/lio_sam/mapping/odometry_incremental",
         ],
         condition=IfCondition(record_bag),
         output="screen",
@@ -228,6 +269,31 @@ def generate_launch_description() -> LaunchDescription:
                 ),
             ),
             DeclareLaunchArgument("record_bag", default_value="false"),
+            DeclareLaunchArgument(
+                "loop_closure_enable",
+                default_value="false",
+            ),
+            DeclareLaunchArgument(
+                "loop_closure_expectation",
+                default_value="disabled",
+                description="disabled, required, or forbidden",
+            ),
+            DeclareLaunchArgument(
+                "loop_search_radius",
+                default_value="1.5",
+            ),
+            DeclareLaunchArgument(
+                "loop_search_time_diff",
+                default_value="15.0",
+            ),
+            DeclareLaunchArgument(
+                "loop_search_keyframes",
+                default_value="25",
+            ),
+            DeclareLaunchArgument(
+                "loop_fitness_score",
+                default_value="0.3",
+            ),
             DeclareLaunchArgument(
                 "motion_deskew_apply_translation",
                 default_value="true",
@@ -306,10 +372,16 @@ def generate_launch_description() -> LaunchDescription:
             RegisterEventHandler(
                 OnProcessExit(
                     target_action=benchmark_node,
+                    on_exit=_shutdown_if_benchmark_failed,
+                )
+            ),
+            RegisterEventHandler(
+                OnProcessExit(
+                    target_action=simulation,
                     on_exit=[
                         EmitEvent(
                             event=Shutdown(
-                                reason="LIO benchmark completed",
+                                reason="LIO simulation completed",
                             )
                         )
                     ],

@@ -27,6 +27,64 @@ def test_motion_profile_ramps_and_returns_to_zero() -> None:
     assert profile.command_at(profile.duration_s) == (0.0, 0.0, 0.0)
 
 
+@pytest.mark.parametrize(
+    ("name", "expected_displacement"),
+    (
+        ("loop_out_and_back", 0.0),
+        ("loop_back_and_forth", 0.0),
+        ("loop_open_forward", 4.5),
+        ("loop_open_backward", -4.5),
+    ),
+)
+def test_loop_profiles_integrate_declared_displacement(
+    name: str,
+    expected_displacement: float,
+) -> None:
+    profile = get_motion_profile(name)
+    integrated_displacement = sum(
+        duration_s * 0.5 * (start[0] + end[0])
+        for duration_s, start, end in profile.sequence
+    )
+    assert integrated_displacement == pytest.approx(expected_displacement)
+
+
+@pytest.mark.parametrize(
+    ("name", "target"),
+    (
+        ("backward_0_5", (-0.5, 0.0, 0.0)),
+        ("backward_1_0", (-1.0, 0.0, 0.0)),
+        ("backward_2_0", (-2.0, 0.0, 0.0)),
+        ("lateral_right_0_75", (0.0, -0.75, 0.0)),
+        ("lateral_right_1_5", (0.0, -1.5, 0.0)),
+        ("yaw_left_1_0", (0.0, 0.0, 1.0)),
+        ("yaw_right_0_5", (0.0, 0.0, -0.5)),
+        ("yaw_right_1_0", (0.0, 0.0, -1.0)),
+        ("yaw_right_2_0", (0.0, 0.0, -2.0)),
+        ("curve_0_5_left_0_5", (0.5, 0.0, 0.5)),
+        ("curve_0_5_right_0_5", (0.5, 0.0, -0.5)),
+        ("curve_1_5_left_1_0", (1.5, 0.0, 1.0)),
+        ("curve_1_5_right_1_0", (1.5, 0.0, -1.0)),
+        ("curve_3_0_left_0_5", (3.0, 0.0, 0.5)),
+        ("curve_3_0_right_0_5", (3.0, 0.0, -0.5)),
+    ),
+)
+def test_stability_profiles_reach_declared_target(
+    name: str,
+    target: tuple[float, float, float],
+) -> None:
+    profile = get_motion_profile(name)
+    assert profile.target == target
+    assert profile.hold_s > 0.0
+    assert profile.command_at(profile.warmup_s + profile.ramp_s) == target
+    assert (
+        profile.command_at(
+            profile.warmup_s + profile.ramp_s + 0.5 * profile.hold_s
+        )
+        == target
+    )
+    assert profile.command_at(profile.duration_s) == (0.0, 0.0, 0.0)
+
+
 def test_trajectory_evaluation_aligns_initial_pose() -> None:
     truth = [
         PoseSample(0.0, 10.0, -3.0, 0.5, 0.2),

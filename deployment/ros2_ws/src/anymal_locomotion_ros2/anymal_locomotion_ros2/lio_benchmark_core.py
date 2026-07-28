@@ -34,13 +34,34 @@ class MotionProfile:
     ramp_s: float
     hold_s: float
     settle_s: float
+    sequence: tuple[
+        tuple[
+            float,
+            tuple[float, float, float],
+            tuple[float, float, float],
+        ],
+        ...,
+    ] = ()
 
     @property
     def duration_s(self) -> float:
+        if self.sequence:
+            return sum(segment[0] for segment in self.sequence)
         return self.warmup_s + 2.0 * self.ramp_s + self.hold_s + self.settle_s
 
     def command_at(self, elapsed_s: float) -> tuple[float, float, float]:
         if elapsed_s < 0.0 or elapsed_s >= self.duration_s:
+            return (0.0, 0.0, 0.0)
+        if self.sequence:
+            for duration_s, start, end in self.sequence:
+                if elapsed_s < duration_s:
+                    phase = elapsed_s / duration_s
+                    scale = phase * phase * (3.0 - 2.0 * phase)
+                    return tuple(
+                        start[index] + scale * (end[index] - start[index])
+                        for index in range(3)
+                    )
+                elapsed_s -= duration_s
             return (0.0, 0.0, 0.0)
         ramp_up_start = self.warmup_s
         hold_start = ramp_up_start + self.ramp_s
@@ -58,6 +79,41 @@ class MotionProfile:
             smooth = phase * phase * (3.0 - 2.0 * phase)
             scale = 1.0 - smooth
         return tuple(scale * value for value in self.target)
+
+
+def _out_and_back_sequence(
+    first_velocity_mps: float,
+    *,
+    closed: bool,
+) -> tuple[
+    tuple[float, tuple[float, float, float], tuple[float, float, float]],
+    ...,
+]:
+    zero = (0.0, 0.0, 0.0)
+    first = (first_velocity_mps, 0.0, 0.0)
+    second_velocity_mps = -1.0 if first_velocity_mps > 0.0 else 1.5
+    second = (second_velocity_mps, 0.0, 0.0)
+    first_hold_s = 2.5 if first_velocity_mps > 0.0 else 4.0
+    second_hold_s = 4.0 if second_velocity_mps < 0.0 else 2.5
+    sequence = [(5.0, zero, zero)]
+    sequence.extend(
+        (
+            (0.5, zero, first),
+            (first_hold_s, first, first),
+            (0.5, first, zero),
+        )
+    )
+    if closed:
+        sequence.extend(
+            (
+                (1.0, zero, zero),
+                (0.5, zero, second),
+                (second_hold_s, second, second),
+                (0.5, second, zero),
+            )
+        )
+    sequence.append((3.0, zero, zero))
+    return tuple(sequence)
 
 
 _PROFILES = {
@@ -90,7 +146,31 @@ _PROFILES = {
         (3.0, 0.0, 0.0),
         warmup_s=5.0,
         ramp_s=1.5,
-        hold_s=0.0,
+        hold_s=1.0,
+        settle_s=3.0,
+    ),
+    "backward_0_5": MotionProfile(
+        "backward_0_5",
+        (-0.5, 0.0, 0.0),
+        warmup_s=5.0,
+        ramp_s=2.0,
+        hold_s=4.0,
+        settle_s=3.0,
+    ),
+    "backward_1_0": MotionProfile(
+        "backward_1_0",
+        (-1.0, 0.0, 0.0),
+        warmup_s=5.0,
+        ramp_s=2.0,
+        hold_s=3.0,
+        settle_s=3.0,
+    ),
+    "backward_2_0": MotionProfile(
+        "backward_2_0",
+        (-2.0, 0.0, 0.0),
+        warmup_s=5.0,
+        ramp_s=1.5,
+        hold_s=1.0,
         settle_s=3.0,
     ),
     "lateral_0_75": MotionProfile(
@@ -109,6 +189,22 @@ _PROFILES = {
         hold_s=2.0,
         settle_s=3.0,
     ),
+    "lateral_right_0_75": MotionProfile(
+        "lateral_right_0_75",
+        (0.0, -0.75, 0.0),
+        warmup_s=5.0,
+        ramp_s=2.0,
+        hold_s=3.0,
+        settle_s=3.0,
+    ),
+    "lateral_right_1_5": MotionProfile(
+        "lateral_right_1_5",
+        (0.0, -1.5, 0.0),
+        warmup_s=5.0,
+        ramp_s=2.0,
+        hold_s=2.0,
+        settle_s=3.0,
+    ),
     "yaw_0_5": MotionProfile(
         "yaw_0_5",
         (0.0, 0.0, 0.5),
@@ -122,8 +218,126 @@ _PROFILES = {
         (0.0, 0.0, 2.0),
         warmup_s=5.0,
         ramp_s=1.0,
-        hold_s=0.0,
+        hold_s=1.0,
         settle_s=3.0,
+    ),
+    "yaw_left_1_0": MotionProfile(
+        "yaw_left_1_0",
+        (0.0, 0.0, 1.0),
+        warmup_s=5.0,
+        ramp_s=2.0,
+        hold_s=4.0,
+        settle_s=3.0,
+    ),
+    "yaw_right_0_5": MotionProfile(
+        "yaw_right_0_5",
+        (0.0, 0.0, -0.5),
+        warmup_s=5.0,
+        ramp_s=2.0,
+        hold_s=4.0,
+        settle_s=3.0,
+    ),
+    "yaw_right_1_0": MotionProfile(
+        "yaw_right_1_0",
+        (0.0, 0.0, -1.0),
+        warmup_s=5.0,
+        ramp_s=2.0,
+        hold_s=4.0,
+        settle_s=3.0,
+    ),
+    "yaw_right_2_0": MotionProfile(
+        "yaw_right_2_0",
+        (0.0, 0.0, -2.0),
+        warmup_s=5.0,
+        ramp_s=1.0,
+        hold_s=1.0,
+        settle_s=3.0,
+    ),
+    "curve_0_5_left_0_5": MotionProfile(
+        "curve_0_5_left_0_5",
+        (0.5, 0.0, 0.5),
+        warmup_s=5.0,
+        ramp_s=2.0,
+        hold_s=5.0,
+        settle_s=3.0,
+    ),
+    "curve_0_5_right_0_5": MotionProfile(
+        "curve_0_5_right_0_5",
+        (0.5, 0.0, -0.5),
+        warmup_s=5.0,
+        ramp_s=2.0,
+        hold_s=5.0,
+        settle_s=3.0,
+    ),
+    "curve_1_5_left_1_0": MotionProfile(
+        "curve_1_5_left_1_0",
+        (1.5, 0.0, 1.0),
+        warmup_s=5.0,
+        ramp_s=2.0,
+        hold_s=5.0,
+        settle_s=3.0,
+    ),
+    "curve_1_5_right_1_0": MotionProfile(
+        "curve_1_5_right_1_0",
+        (1.5, 0.0, -1.0),
+        warmup_s=5.0,
+        ramp_s=2.0,
+        hold_s=5.0,
+        settle_s=3.0,
+    ),
+    "curve_3_0_left_0_5": MotionProfile(
+        "curve_3_0_left_0_5",
+        (3.0, 0.0, 0.5),
+        warmup_s=5.0,
+        ramp_s=1.5,
+        hold_s=1.0,
+        settle_s=3.0,
+    ),
+    "curve_3_0_right_0_5": MotionProfile(
+        "curve_3_0_right_0_5",
+        (3.0, 0.0, -0.5),
+        warmup_s=5.0,
+        ramp_s=1.5,
+        hold_s=1.0,
+        settle_s=3.0,
+    ),
+    # Out-and-back motion revisits the same spatial path and start pose while
+    # using only the pure-translation commands qualified by the stability matrix.
+    "loop_out_and_back": MotionProfile(
+        "loop_out_and_back",
+        (1.5, 0.0, 0.0),
+        warmup_s=0.0,
+        ramp_s=0.0,
+        hold_s=0.0,
+        settle_s=0.0,
+        sequence=_out_and_back_sequence(1.5, closed=True),
+    ),
+    "loop_back_and_forth": MotionProfile(
+        "loop_back_and_forth",
+        (-1.0, 0.0, 0.0),
+        warmup_s=0.0,
+        ramp_s=0.0,
+        hold_s=0.0,
+        settle_s=0.0,
+        sequence=_out_and_back_sequence(-1.0, closed=True),
+    ),
+    "loop_open_forward": MotionProfile(
+        "loop_open_forward",
+        (1.5, 0.0, 0.0),
+        warmup_s=0.0,
+        ramp_s=0.0,
+        hold_s=0.0,
+        settle_s=0.0,
+        sequence=_out_and_back_sequence(1.5, closed=False),
+    ),
+    "loop_open_backward": MotionProfile(
+        "loop_open_backward",
+        (-1.0, 0.0, 0.0),
+        warmup_s=0.0,
+        ramp_s=0.0,
+        hold_s=0.0,
+        settle_s=0.0,
+        sequence=_out_and_back_sequence(-1.0, closed=False),
     ),
     "combined": MotionProfile(
         "combined",

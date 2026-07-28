@@ -10,6 +10,7 @@ from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -30,6 +31,12 @@ def generate_launch_description() -> LaunchDescription:
     static_transform_cyclonedds_uri = LaunchConfiguration(
         "static_transform_cyclonedds_uri"
     )
+    loop_closure_enable = LaunchConfiguration("loop_closure_enable")
+    loop_closure_frequency = LaunchConfiguration("loop_closure_frequency")
+    loop_search_radius = LaunchConfiguration("loop_search_radius")
+    loop_search_time_diff = LaunchConfiguration("loop_search_time_diff")
+    loop_search_keyframes = LaunchConfiguration("loop_search_keyframes")
+    loop_fitness_score = LaunchConfiguration("loop_fitness_score")
 
     lio_nodes = [
         Node(
@@ -58,18 +65,46 @@ def generate_launch_description() -> LaunchDescription:
             ],
             output="screen",
         ),
-        Node(
-            package="lio_sam",
-            executable="lio_sam_mapOptimization",
-            name="lio_sam_mapOptimization",
-            parameters=[params_file],
-            # Upstream also broadcasts odom->lidar_link. The high-rate IMU
-            # preintegration transform plus base_link->lidar_link is the single
-            # authoritative project TF chain, so isolate the duplicate.
-            remappings=[("/tf", "/lio_sam/map_optimization_tf")],
-            output="screen",
-        ),
     ]
+    map_optimization = Node(
+        package="lio_sam",
+        executable="lio_sam_mapOptimization",
+        name="lio_sam_mapOptimization",
+        parameters=[
+            params_file,
+            {
+                "loopClosureEnableFlag": ParameterValue(
+                    loop_closure_enable,
+                    value_type=bool,
+                ),
+                "loopClosureFrequency": ParameterValue(
+                    loop_closure_frequency,
+                    value_type=float,
+                ),
+                "historyKeyframeSearchRadius": ParameterValue(
+                    loop_search_radius,
+                    value_type=float,
+                ),
+                "historyKeyframeSearchTimeDiff": ParameterValue(
+                    loop_search_time_diff,
+                    value_type=float,
+                ),
+                "historyKeyframeSearchNum": ParameterValue(
+                    loop_search_keyframes,
+                    value_type=int,
+                ),
+                "historyKeyframeFitnessScore": ParameterValue(
+                    loop_fitness_score,
+                    value_type=float,
+                ),
+            },
+        ],
+        # Upstream also broadcasts odom->lidar_link. The high-rate IMU
+        # preintegration transform plus base_link->lidar_link is the single
+        # authoritative project TF chain, so isolate the duplicate.
+        remappings=[("/tf", "/lio_sam/map_optimization_tf")],
+        output="screen",
+    )
 
     return LaunchDescription(
         [
@@ -92,6 +127,31 @@ def generate_launch_description() -> LaunchDescription:
                 description=(
                     "Optional CycloneDDS URI used only by static TF publishers"
                 ),
+            ),
+            DeclareLaunchArgument(
+                "loop_closure_enable",
+                default_value="false",
+                description="Enable upstream ICP loop-factor generation",
+            ),
+            DeclareLaunchArgument(
+                "loop_closure_frequency",
+                default_value="1.0",
+            ),
+            DeclareLaunchArgument(
+                "loop_search_radius",
+                default_value="15.0",
+            ),
+            DeclareLaunchArgument(
+                "loop_search_time_diff",
+                default_value="30.0",
+            ),
+            DeclareLaunchArgument(
+                "loop_search_keyframes",
+                default_value="25",
+            ),
+            DeclareLaunchArgument(
+                "loop_fitness_score",
+                default_value="0.3",
             ),
             DeclareLaunchArgument(
                 "use_motion_deskew",
@@ -208,6 +268,7 @@ def generate_launch_description() -> LaunchDescription:
                 output="screen",
             ),
             *lio_nodes,
+            map_optimization,
             Node(
                 package="rviz2",
                 executable="rviz2",

@@ -16,6 +16,7 @@ from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Imu, PointCloud2
+from visualization_msgs.msg import Marker, MarkerArray
 
 from anymal_locomotion_ros2.lio_benchmark_core import (
     PoseSample,
@@ -93,6 +94,7 @@ class LioBenchmarkNode(Node):
         self.declare_parameter("output_path", "")
         self.declare_parameter("project_root", "")
         self.declare_parameter("readiness_timeout_s", 12.0)
+        self.declare_parameter("loop_closure_expectation", "disabled")
 
         self._profile = get_motion_profile(
             str(self.get_parameter("profile").value)
@@ -115,6 +117,18 @@ class LioBenchmarkNode(Node):
         )
         if self._readiness_timeout_s <= 0.0:
             raise ValueError("readiness_timeout_s must be positive")
+        self._loop_closure_expectation = str(
+            self.get_parameter("loop_closure_expectation").value
+        )
+        if self._loop_closure_expectation not in {
+            "disabled",
+            "required",
+            "forbidden",
+        }:
+            raise ValueError(
+                "loop_closure_expectation must be disabled, required, "
+                f"or forbidden; received {self._loop_closure_expectation!r}"
+            )
 
         self._ground_truth: list[PoseSample] = []
         self._estimate: list[PoseSample] = []
@@ -137,6 +151,7 @@ class LioBenchmarkNode(Node):
             "motion_deskew_applied": 0,
             "motion_deskew_unavailable": 0,
             "motion_deskew_unavailable_after_ready": 0,
+            "loop_closure_marker": 0,
         }
         self._last_stamps: dict[str, float] = {}
         self._timestamp_violations: dict[str, int] = {}
@@ -150,6 +165,7 @@ class LioBenchmarkNode(Node):
         self._previous_truth_registered_xyz: np.ndarray | None = None
         self._registered_overlap_separations_m: list[float] = []
         self._registered_overlap_samples: list[dict[str, float]] = []
+        self._loop_constraint_edge_count_max = 0
 
         self._command_publisher = self.create_publisher(Twist, "/cmd_vel", 10)
         self.create_subscription(
@@ -193,6 +209,12 @@ class LioBenchmarkNode(Node):
             "/imu/data",
             self._on_imu,
             qos_profile_sensor_data,
+        )
+        self.create_subscription(
+            MarkerArray,
+            "/lio_sam/mapping/loop_closure_constraints",
+            self._on_loop_closure_constraints,
+            10,
         )
         self.create_timer(0.05, self._on_timer)
 
@@ -293,6 +315,25 @@ class LioBenchmarkNode(Node):
     def _on_imu(self, message: Imu) -> None:
         self._observe_stamp("imu", _stamp_seconds(message))
         self._counts["imu"] += 1
+
+    def _on_loop_closure_constraints(
+        self,
+        message: MarkerArray,
+    ) -> None:
+        edge_count = max(
+            (
+                len(marker.points) // 2
+                for marker in message.markers
+                if marker.type == Marker.LINE_LIST
+                and marker.ns == "loop_edges"
+            ),
+            default=0,
+        )
+        self._counts["loop_closure_marker"] += 1
+        self._loop_constraint_edge_count_max = max(
+            self._loop_constraint_edge_count_max,
+            edge_count,
+        )
 
     def _measure_wall_separation(self, message: CloudInfo) -> None:
         cloud = message.cloud_deskewed
@@ -553,6 +594,18 @@ class LioBenchmarkNode(Node):
             failures.append(
                 "truth-registered vertical wall separation exceeds 0.15 m"
             )
+        if (
+            self._loop_closure_expectation == "required"
+            and self._loop_constraint_edge_count_max < 1
+        ):
+            failures.append("no LIO-SAM loop constraint edge was observed")
+        if (
+            self._loop_closure_expectation == "forbidden"
+            and self._loop_constraint_edge_count_max != 0
+        ):
+            failures.append(
+                "an unexpected LIO-SAM loop constraint edge was observed"
+            )
 
         invalid_reasons: list[str] = []
         if metrics:
@@ -614,6 +667,15 @@ class LioBenchmarkNode(Node):
                     max(self._motion_deskew_norms_m)
                     if self._motion_deskew_norms_m
                     else None
+                ),
+            },
+            "loop_closure": {
+                "expectation": self._loop_closure_expectation,
+                "marker_message_count": self._counts[
+                    "loop_closure_marker"
+                ],
+                "max_constraint_edge_count": (
+                    self._loop_constraint_edge_count_max
                 ),
             },
             "truth_registered_vertical_wall_separation_p95_m": {
