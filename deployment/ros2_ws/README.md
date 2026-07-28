@@ -159,6 +159,12 @@ ros2 launch anymal_locomotion_ros2 bringup.launch.py
 - `use_rviz=true`
 - `open_teleop_terminal=true`
 
+Launch 會先啟動 Iceoryx RouDi，再讓本機 CycloneDDS participant 使用
+shared memory 傳輸多 MB RTX LiDAR scans。固定 TF publisher 使用獨立的
+UDP-only CycloneDDS 設定，避免 Humble 所附 Iceoryx 單筆 history 限制讓
+晚啟動的 RViz 收不到 `/tf_static`。這些設定只作用於 launch 子程序，使用者
+不需要 export `RMW_IMPLEMENTATION` 或 `CYCLONEDDS_URI`。
+
 Factory USD 取代 deployment host 原本的 Flat plane，預設 spawn pose 是
 `(0, -18, 0)`。啟用 LIO-SAM 時直接使用 Factory 幾何進行 scan matching，
 不再建立 smoke-test 專用的七個 visual landmark。這只改 deployment
@@ -178,9 +184,10 @@ Launch 會自動開一個 GNOME Terminal。保持該視窗焦點並使用官方�
 - `e/c`：提高／降低角速度
 
 Teleop 直接發布 `/cmd_vel`；deployment 不加入固定速度 filter，command
-只 clamp 到 High-Speed policy 的訓練範圍。已知高速會提高 10 Hz LiDAR
-scan matching 的裂圖風險，後續將比較多種 3D SLAM 的信心指標，並把信心度
-回饋給 PPO，讓 locomotion policy 學習依環境可觀測性調整速度。
+只 clamp 到 High-Speed policy 的訓練範圍。10 Hz LiDAR 的 3 m/s 高速直行
+裂圖已由 project-owned scan motion deskew 與 shared-memory 點雲路徑處理。
+後續仍將比較多種 3D SLAM 的信心指標，並把信心度回饋給 PPO，讓 locomotion
+policy 學習依環境可觀測性調整速度。
 
 若 GNOME Terminal 無法自動開啟，使用
 `open_teleop_terminal:=false` 啟動 bringup，再從另一個使用相同
@@ -248,10 +255,20 @@ Isaac Sim RTX LiDAR（OS1 32ch、10 Hz、1024 horizontal samples）
   -> /lidar/points_raw
   -> lidar_point_adapter（補 ring 與每點相對時間 t）
   -> /lio_sam/points
-  -> LIO-SAM
+  -> upstream Image Projection
+  -> motion_deskew（raw IMU quaternion rotation + 200 Hz odometry translation）
+  -> /lio_sam/deskew/cloud_info_motion_corrected
+  -> upstream Feature Extraction / Map Optimization
 
 /imu/data（200 Hz）------------------------------------^
+/lio_sam/odometry/imu_incremental（200 Hz）------------^
 ```
+
+Upstream LIO-SAM ROS 2 branch 不做 point translation deskew，旋轉則使用逐軸
+Euler 累加。專案不修改 upstream source，而是在 Image Projection 與 Feature
+Extraction 之間重建 range-image points：旋轉由原始 `/imu/data` 做 quaternion
+積分，平移由高頻 incremental odometry 插值。sim ground truth 只供 benchmark
+評分，絕不回饋 scan correction。
 
 啟用 LIO-SAM 時，deployment host 會在 Isaac Sim 啟動前開啟 RTX Motion BVH
 與 Hydra engine masking。Isaac Sim 5.1 預設關閉 Motion BVH，但移動中的
@@ -297,7 +314,7 @@ TERM=xterm-256color PYTHONPATH=source/anymal_locomotion \
   "${ISAACLAB_ROOT:-${HOME}/IsaacLab}/isaaclab.sh" -p \
   scripts/validation/validate_ros2_bridge.py \
   --device cuda:0 --steps 1000000 --real-time --external-control \
-  --disable-episode-timeout --enable-lio-sam \
+  --disable-episode-timeout --enhanced-determinism --enable-lio-sam \
   --imu-observation-parity-atol 0.01
 ```
 
@@ -327,12 +344,27 @@ ros2 run tf2_ros tf2_echo base_link lidar_link
 - 零殘留啟動的 60 秒測試收到 85 筆 mapping correction，時戳全部嚴格
   遞增；四個 LIO-SAM 核心 process 在測試結束後仍存活。
 
-上述 60 秒結果是在舊的七個臨時 landmark 場景完成。改用 Factory 後已完成
-新的短時間整組 bringup smoke test：Factory、policy、RTX LiDAR、adapter 與
-四個 LIO-SAM core 均由 `bringup.launch.py` 啟動；`/joint_command` 與
-`/lio_sam/points` 都是單一 publisher／subscriber，並已收到 Factory 場景的
-mapping odometry。移動建圖精度與裂圖仍需用鍵盤實際走動後驗收，不能沿用
-舊 landmark 的 60 秒結果宣稱通過。
+上述 60 秒結果是在舊的七個臨時 landmark 場景完成。改用 Factory 後，正式
+`bringup.launch.py` 已完成 Factory、policy、RTX LiDAR、adapter、motion
+deskew 與四個 LIO-SAM core 的整組 smoke test。另有 deterministic benchmark
+在實速 3.05–3.13 m/s 下連續三次通過，translation ATE 為
+1.37–1.55 cm、最大 pose jump 為 3.5–4.2 cm、vertical wall separation
+為 6.9–10.0 cm，且穩態 scan／IMU coverage 零缺失。完整門檻、限制與重跑
+命令見 [高速 LIO-SAM 驗證](../../docs/validation/lio_sam_high_speed.md)。
+
+可在 repository root 執行單次隔離 benchmark：
+
+```bash
+source /opt/ros/humble/setup.bash
+source deployment/ros2_ws/install/setup.bash
+ros2 launch anymal_locomotion_ros2 lio_benchmark.launch.py \
+  profile:=forward_3_0 \
+  output_dir:="$(pwd)/outputs/lio_sam_benchmarks/forward_3_0"
+```
+
+`metrics.json` 與選用的 rosbag 都寫入 ignored `outputs/`；精簡驗證結論才放入
+Git。Benchmark 預設關閉 loop closure，並以 simulation time 檢查 10 Hz
+scan 完整性；wall-time rate 只用來判斷主機負載。
 
 每次重跑 simulation time 前應一起重啟整組 LIO-SAM launch。若殘留舊的
 adapter／feature／mapping process，同名 topic 會出現多個 publisher，
@@ -358,8 +390,8 @@ IMU preintegration 可能因收到兩套相同時戳的 correction 而使 GTSAM
 - `/joint_command` 只用於 Isaac Sim；實體 ANYmal-D low-level interface
   尚未確認。
 - 尚未加入獨立 IMU noise/bias model。
-- LIO-SAM 的靜止端到端 smoke test 已通過；移動建圖精度、回環與實體
-  ANYmal-D sensor extrinsic 仍未驗收。
+- LIO-SAM 的 3 m/s Factory 直行已完成三次定量驗收；loop closure、可穩定
+  達成的高速旋轉，以及實體 ANYmal-D sensor extrinsic 仍未驗收。
 - 固定 `[0.5, 0, 0]` 的 10 秒測試可前進 4.88 m、偏航 6.04°，但橫向偏移
   0.61 m，未達原訂 0.30 m；原生 checkpoint 評估也有同方向的小幅
   `vy/wz` bias，因此這是目前 policy 的低速 tracking 限制，不是 ROS 軸向錯接。

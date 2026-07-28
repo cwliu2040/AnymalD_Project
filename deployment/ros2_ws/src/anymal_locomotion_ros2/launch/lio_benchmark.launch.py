@@ -1,4 +1,4 @@
-"""Start the complete Factory locomotion and LIO-SAM stack."""
+"""Run one isolated, deterministic Factory LIO-SAM benchmark."""
 
 from __future__ import annotations
 
@@ -9,12 +9,16 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
+    EmitEvent,
     ExecuteProcess,
     IncludeLaunchDescription,
+    RegisterEventHandler,
     SetEnvironmentVariable,
     TimerAction,
 )
 from launch.conditions import IfCondition
+from launch.event_handlers import OnProcessExit
+from launch.events import Shutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (
     EnvironmentVariable,
@@ -26,7 +30,6 @@ from launch_ros.actions import Node
 
 
 def _find_project_root(package_share: Path) -> Path:
-    """Resolve the repository root from either a source or colcon install path."""
     for start in (Path(__file__).resolve(), package_share.resolve()):
         for candidate in (start, *start.parents):
             if (
@@ -42,8 +45,8 @@ def _find_project_root(package_share: Path) -> Path:
             ):
                 return candidate
     raise RuntimeError(
-        "Cannot locate the anymal_locomotion repository from the installed "
-        f"package share: {package_share}"
+        "Cannot locate the anymal_locomotion repository from "
+        f"{package_share}"
     )
 
 
@@ -51,10 +54,8 @@ def generate_launch_description() -> LaunchDescription:
     package_share = Path(get_package_share_directory("anymal_locomotion_ros2"))
     detected_project_root = _find_project_root(package_share)
     local_cyclonedds_uri = (
-        "file://" + str(package_share / "config" / "cyclonedds_local.xml")
-    )
-    static_transform_cyclonedds_uri = (
-        "file://" + str(package_share / "config" / "cyclonedds_static_tf.xml")
+        "file://"
+        + str(package_share / "config" / "cyclonedds_local.xml")
     )
     default_isaaclab_root = Path(
         os.environ.get("ISAACLAB_ROOT", Path.home() / "IsaacLab")
@@ -64,11 +65,18 @@ def generate_launch_description() -> LaunchDescription:
     isaaclab_root = LaunchConfiguration("isaaclab_root")
     device = LaunchConfiguration("device")
     ros_domain_id = LaunchConfiguration("ros_domain_id")
+    profile = LaunchConfiguration("profile")
+    output_dir = LaunchConfiguration("output_dir")
     policy_path = LaunchConfiguration("policy_path")
     metadata_path = LaunchConfiguration("metadata_path")
     factory_usd_path = LaunchConfiguration("factory_usd_path")
-    use_rviz = LaunchConfiguration("use_rviz")
-    open_teleop_terminal = LaunchConfiguration("open_teleop_terminal")
+    record_bag = LaunchConfiguration("record_bag")
+    motion_deskew_apply_translation = LaunchConfiguration(
+        "motion_deskew_apply_translation"
+    )
+    motion_deskew_replace_upstream_rotation = LaunchConfiguration(
+        "motion_deskew_replace_upstream_rotation"
+    )
 
     project_python_path = [
         PathJoinSubstitution([project_root, "deployment", "python_vendor"]),
@@ -92,25 +100,48 @@ def generate_launch_description() -> LaunchDescription:
         ],
         output="screen",
     )
-
     lio_sam = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             str(package_share / "launch" / "lio_sam.launch.py")
         ),
         launch_arguments={
-            "use_rviz": use_rviz,
+            "use_rviz": "false",
             "use_motion_deskew": "true",
             "feature_cloud_info_topic": (
                 "/lio_sam/deskew/cloud_info_motion_corrected"
             ),
-            "motion_deskew_apply_translation": "true",
-            "motion_deskew_replace_upstream_rotation": "true",
+            "motion_deskew_apply_translation": (
+                motion_deskew_apply_translation
+            ),
+            "motion_deskew_replace_upstream_rotation": (
+                motion_deskew_replace_upstream_rotation
+            ),
             "static_transform_cyclonedds_uri": (
-                static_transform_cyclonedds_uri
+                "file://"
+                + str(
+                    package_share
+                    / "config"
+                    / "cyclonedds_static_tf.xml"
+                )
             ),
         }.items(),
     )
-
+    benchmark_node = Node(
+        package="anymal_locomotion_ros2",
+        executable="lio_benchmark",
+        name="anymal_lio_benchmark",
+        parameters=[
+            {
+                "use_sim_time": True,
+                "profile": profile,
+                "project_root": project_root,
+                "output_path": PathJoinSubstitution(
+                    [output_dir, "metrics.json"]
+                ),
+            }
+        ],
+        output="screen",
+    )
     simulation = ExecuteProcess(
         cmd=[
             PathJoinSubstitution([isaaclab_root, "isaaclab.sh"]),
@@ -120,8 +151,9 @@ def generate_launch_description() -> LaunchDescription:
             ),
             "--device",
             device,
+            "--headless",
             "--steps",
-            "1000000",
+            "4000",
             "--real-time",
             "--external-control",
             "--disable-episode-timeout",
@@ -132,9 +164,30 @@ def generate_launch_description() -> LaunchDescription:
             "--factory-usd-path",
             factory_usd_path,
         ],
+        output="log",
+    )
+    bag = ExecuteProcess(
+        cmd=[
+            "ros2",
+            "bag",
+            "record",
+            "-o",
+            PathJoinSubstitution([output_dir, "bag"]),
+            "/clock",
+            "/odom",
+            "/imu/data",
+            "/lidar/points_raw",
+            "/lio_sam/points",
+            "/lio_sam/mapping/odometry",
+            "/lio_sam/mapping/odometry_incremental",
+        ],
+        condition=IfCondition(record_bag),
         output="screen",
     )
-
+    prepare_output = ExecuteProcess(
+        cmd=["mkdir", "-p", output_dir],
+        output="screen",
+    )
     roudi = ExecuteProcess(
         cmd=[
             FindExecutable(name="iox-roudi"),
@@ -144,58 +197,44 @@ def generate_launch_description() -> LaunchDescription:
         output="log",
     )
 
-    teleop = ExecuteProcess(
-        cmd=[
-            "gnome-terminal",
-            "--wait",
-            "--title=ANYmal-D teleop_twist_keyboard",
-            "--",
-            "ros2",
-            "run",
-            "teleop_twist_keyboard",
-            "teleop_twist_keyboard",
-            "--ros-args",
-            "-p",
-            "speed:=0.5",
-            "-p",
-            "turn:=0.5",
-            "-r",
-            "cmd_vel:=/cmd_vel",
-        ],
-        condition=IfCondition(open_teleop_terminal),
-        output="screen",
-    )
-
     return LaunchDescription(
         [
             DeclareLaunchArgument(
                 "project_root",
                 default_value=str(detected_project_root),
-                description="Auto-detected ANYmal locomotion repository root",
             ),
             DeclareLaunchArgument(
                 "isaaclab_root",
                 default_value=str(default_isaaclab_root),
-                description=(
-                    "Read-only Isaac Lab root; defaults to ISAACLAB_ROOT or "
-                    "~/IsaacLab"
-                ),
             ),
-            DeclareLaunchArgument(
-                "device",
-                default_value="cuda:0",
-                description="Isaac Lab simulation device",
-            ),
+            DeclareLaunchArgument("device", default_value="cuda:0"),
             DeclareLaunchArgument(
                 "ros_domain_id",
                 default_value=EnvironmentVariable(
                     "ROS_DOMAIN_ID",
                     default_value="1",
                 ),
-                description=(
-                    "ROS 2 DDS domain shared by the complete stack; inherits the "
-                    "launching shell and falls back to 1"
+            ),
+            DeclareLaunchArgument("profile", default_value="stationary"),
+            DeclareLaunchArgument(
+                "output_dir",
+                default_value=PathJoinSubstitution(
+                    [
+                        project_root,
+                        "outputs",
+                        "lio_sam_benchmarks",
+                        "latest",
+                    ]
                 ),
+            ),
+            DeclareLaunchArgument("record_bag", default_value="false"),
+            DeclareLaunchArgument(
+                "motion_deskew_apply_translation",
+                default_value="true",
+            ),
+            DeclareLaunchArgument(
+                "motion_deskew_replace_upstream_rotation",
+                default_value="true",
             ),
             DeclareLaunchArgument(
                 "policy_path",
@@ -208,7 +247,6 @@ def generate_launch_description() -> LaunchDescription:
                         "policy.onnx",
                     ]
                 ),
-                description="Exported locomotion ONNX policy",
             ),
             DeclareLaunchArgument(
                 "metadata_path",
@@ -221,7 +259,6 @@ def generate_launch_description() -> LaunchDescription:
                         "policy_metadata.yaml",
                     ]
                 ),
-                description="Policy metadata contract",
             ),
             DeclareLaunchArgument(
                 "factory_usd_path",
@@ -234,38 +271,49 @@ def generate_launch_description() -> LaunchDescription:
                         "Factory_Layout.usd",
                     ]
                 ),
-                description="Project-local Factory USD terrain",
-            ),
-            DeclareLaunchArgument(
-                "use_rviz",
-                default_value="true",
-                description="Open RViz2 with the LIO-SAM view",
-            ),
-            DeclareLaunchArgument(
-                "open_teleop_terminal",
-                default_value="true",
-                description="Open the official teleop_twist_keyboard in GNOME Terminal",
             ),
             SetEnvironmentVariable("ROS_DOMAIN_ID", ros_domain_id),
+            SetEnvironmentVariable("ROS_LOCALHOST_ONLY", "1"),
             SetEnvironmentVariable(
                 "RMW_IMPLEMENTATION",
                 "rmw_cyclonedds_cpp",
             ),
-            SetEnvironmentVariable("CYCLONEDDS_URI", local_cyclonedds_uri),
+            # A complete benchmark starts more than CycloneDDS Humble's
+            # default ten local participants. Keep the larger discovery range
+            # scoped to this isolated launch instead of changing user or
+            # deployment-wide middleware settings.
+            SetEnvironmentVariable(
+                "CYCLONEDDS_URI",
+                local_cyclonedds_uri,
+            ),
             SetEnvironmentVariable("TERM", "xterm-256color"),
             SetEnvironmentVariable("PYTHONPATH", project_python_path),
+            prepare_output,
             roudi,
             # CycloneDDS creates Iceoryx clients during participant startup.
-            # Start the full stack only after RouDi is ready so multi-megabyte
-            # LiDAR scans never silently fall back to fragmented UDP.
+            # Give RouDi a deterministic head start so the benchmark never
+            # silently falls back to fragmented UDP for the large point clouds.
             TimerAction(
                 period=1.0,
                 actions=[
+                    bag,
                     policy_node,
                     lio_sam,
-                    teleop,
+                    benchmark_node,
                     TimerAction(period=2.0, actions=[simulation]),
                 ],
+            ),
+            RegisterEventHandler(
+                OnProcessExit(
+                    target_action=benchmark_node,
+                    on_exit=[
+                        EmitEvent(
+                            event=Shutdown(
+                                reason="LIO benchmark completed",
+                            )
+                        )
+                    ],
+                )
             ),
         ]
     )

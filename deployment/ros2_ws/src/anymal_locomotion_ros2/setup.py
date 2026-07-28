@@ -11,7 +11,10 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
-        (f"share/{package_name}/config", glob("config/*.yaml")),
+        (
+            f"share/{package_name}/config",
+            glob("config/*.yaml") + glob("config/*.xml"),
+        ),
         (f"share/{package_name}/launch", glob("launch/*.launch.py")),
     ],
     install_requires=["numpy", "PyYAML", "setuptools"],
@@ -23,8 +26,10 @@ setup(
     entry_points={
         "console_scripts": [
             "keyboard_teleop = anymal_locomotion_ros2.keyboard_teleop:main",
+            "lio_benchmark = anymal_locomotion_ros2.lio_benchmark_node:main",
             "lidar_point_adapter = anymal_locomotion_ros2.lidar_point_adapter:main",
             "policy_node = anymal_locomotion_ros2.policy_node:main",
+            "motion_deskew = anymal_locomotion_ros2.motion_deskew_node:main",
         ],
     },
 )

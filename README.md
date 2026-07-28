@@ -76,7 +76,8 @@ echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-a
 sudo apt update
 sudo apt install -y \
   ros-humble-desktop ros-dev-tools ros-humble-teleop-twist-keyboard \
-  ros-humble-gtsam gnome-terminal
+  ros-humble-gtsam ros-humble-rmw-cyclonedds-cpp \
+  ros-humble-iceoryx-posh gnome-terminal
 source /opt/ros/humble/setup.bash
 sudo rosdep init
 rosdep update
@@ -343,7 +344,10 @@ ros2 launch anymal_locomotion_ros2 bringup.launch.py
 ONNX policy 路徑、Factory map、`cuda:0`、LIO-SAM、RViz2、RTX LiDAR、
 simulation parity tolerance 與 episode timeout 設定均已有預設值，不必
 在每次啟動時逐項傳入。它會開啟 Isaac Sim、RViz2，並另外開一個 GNOME
-Terminal 執行官方 `teleop_twist_keyboard`。
+Terminal 執行官方 `teleop_twist_keyboard`。Launch 也會啟動 Iceoryx
+RouDi，讓本機多 MB PointCloud2 經 CycloneDDS shared memory 傳輸；
+`/tf_static` 另外保留 UDP transient history，晚啟動的 RViz 仍能取得固定
+sensor transform。使用者不需設定 `RMW_IMPLEMENTATION`。
 
 每個新 terminal 都應 source ROS 2 與本專案 workspace；專案安裝流程不會
 修改使用者的 `.bashrc`。
@@ -370,8 +374,11 @@ task 與 48 維 policy 契約仍維持官方 Flat baseline。Factory collision
 - `e/c`：提高／降低角速度
 
 官方 teleop 直接發布 `/cmd_vel`，command 只 clamp 到 High-Speed policy
-原本的訓練範圍。高速時的 SLAM 裂圖不使用固定速度 filter 掩蓋；後續方向是
-整合多種 3D SLAM 的定位／建圖信心度，再把信心訊號納入 PPO 控制，讓 policy
+原本的訓練範圍。高速直行裂圖已在 ROS 2 deployment 層以完整 scan motion
+deskew 與無遺失的 shared-memory 點雲路徑處理，不使用固定速度 filter
+掩蓋。Factory 的 3 m/s 自動軌跡已連續三次通過定量門檻；結果與重跑方式見
+[高速 LIO-SAM 驗證](docs/validation/lio_sam_high_speed.md)。後續仍會整合
+多種 3D SLAM 的定位／建圖信心度，再把信心訊號納入 PPO 控制，讓 policy
 在特徵不足時主動降速、信心足夠時恢復高速。
 
 若桌面環境沒有 GNOME Terminal，或 launch 無法自動開啟 teleop，改用：

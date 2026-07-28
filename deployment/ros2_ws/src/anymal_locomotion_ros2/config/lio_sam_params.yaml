@@ -56,8 +56,10 @@
     z_tollerance: 1000.0
     rotation_tollerance: 1000.0
 
-    numberOfCores: 4
-    mappingProcessInterval: 0.15
+    numberOfCores: 8
+    # Process every 10 Hz LiDAR scan. At 3 m/s, the upstream 0.15 s default
+    # skips alternate scans and leaves roughly 0.6 m between mapping updates.
+    mappingProcessInterval: 0.05
 
     surroundingkeyframeAddingDistThreshold: 1.0
     surroundingkeyframeAddingAngleThreshold: 0.2

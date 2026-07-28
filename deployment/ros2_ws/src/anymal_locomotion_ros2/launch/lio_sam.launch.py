@@ -8,7 +8,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import Node
 
 
@@ -17,6 +17,19 @@ def generate_launch_description() -> LaunchDescription:
     default_params = package_share / "config" / "lio_sam_params.yaml"
     params_file = LaunchConfiguration("params_file")
     use_rviz = LaunchConfiguration("use_rviz")
+    use_motion_deskew = LaunchConfiguration("use_motion_deskew")
+    motion_deskew_apply_translation = LaunchConfiguration(
+        "motion_deskew_apply_translation"
+    )
+    motion_deskew_replace_upstream_rotation = LaunchConfiguration(
+        "motion_deskew_replace_upstream_rotation"
+    )
+    feature_cloud_info_topic = LaunchConfiguration(
+        "feature_cloud_info_topic"
+    )
+    static_transform_cyclonedds_uri = LaunchConfiguration(
+        "static_transform_cyclonedds_uri"
+    )
 
     lio_nodes = [
         Node(
@@ -37,6 +50,12 @@ def generate_launch_description() -> LaunchDescription:
             executable="lio_sam_featureExtraction",
             name="lio_sam_featureExtraction",
             parameters=[params_file],
+            remappings=[
+                (
+                    "lio_sam/deskew/cloud_info",
+                    feature_cloud_info_topic,
+                )
+            ],
             output="screen",
         ),
         Node(
@@ -64,6 +83,44 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="false",
                 description="Start RViz2 with the upstream LIO-SAM view",
             ),
+            DeclareLaunchArgument(
+                "static_transform_cyclonedds_uri",
+                default_value=EnvironmentVariable(
+                    "CYCLONEDDS_URI",
+                    default_value="",
+                ),
+                description=(
+                    "Optional CycloneDDS URI used only by static TF publishers"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "use_motion_deskew",
+                default_value="false",
+                description=(
+                    "Insert project-owned IMU/odometry motion deskew before "
+                    "feature extraction"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "feature_cloud_info_topic",
+                default_value="/lio_sam/deskew/cloud_info",
+                description="CloudInfo input used by LIO-SAM feature extraction",
+            ),
+            DeclareLaunchArgument(
+                "motion_deskew_apply_translation",
+                default_value="true",
+                description=(
+                    "Apply project-owned translational motion compensation"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "motion_deskew_replace_upstream_rotation",
+                default_value="false",
+                description=(
+                    "Reconstruct rotation from raw IMU using quaternion "
+                    "integration instead of upstream Euler deskew"
+                ),
+            ),
             Node(
                 package="tf2_ros",
                 executable="static_transform_publisher",
@@ -87,6 +144,9 @@ def generate_launch_description() -> LaunchDescription:
                     "lidar_link",
                 ],
                 parameters=[{"use_sim_time": True}],
+                additional_env={
+                    "CYCLONEDDS_URI": static_transform_cyclonedds_uri
+                },
             ),
             Node(
                 package="tf2_ros",
@@ -111,6 +171,9 @@ def generate_launch_description() -> LaunchDescription:
                     "odom",
                 ],
                 parameters=[{"use_sim_time": True}],
+                additional_env={
+                    "CYCLONEDDS_URI": static_transform_cyclonedds_uri
+                },
             ),
             Node(
                 package="anymal_locomotion_ros2",
@@ -126,6 +189,22 @@ def generate_launch_description() -> LaunchDescription:
                         "raw_stamp_is_scan_end": True,
                     }
                 ],
+                output="screen",
+            ),
+            Node(
+                package="anymal_locomotion_ros2",
+                executable="motion_deskew",
+                name="anymal_lio_motion_deskew",
+                parameters=[
+                    {
+                        "use_sim_time": True,
+                        "apply_translation": motion_deskew_apply_translation,
+                        "replace_upstream_rotation": (
+                            motion_deskew_replace_upstream_rotation
+                        ),
+                    }
+                ],
+                condition=IfCondition(use_motion_deskew),
                 output="screen",
             ),
             *lio_nodes,

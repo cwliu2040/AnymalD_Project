@@ -278,8 +278,14 @@ def main(args: list[str] | None = None) -> None:
         pass
     finally:
         if node is not None:
-            node.destroy_node()
-        rclpy.try_shutdown()
+            try:
+                node.destroy_node()
+            except (KeyboardInterrupt, RuntimeError):
+                pass
+        try:
+            rclpy.try_shutdown()
+        except (KeyboardInterrupt, RuntimeError):
+            pass
 
 
 if __name__ == "__main__":

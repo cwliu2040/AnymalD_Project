@@ -177,9 +177,12 @@ Isaac Sim RTX LiDAR
   -> ROS 2 Bridge /lidar/points_raw
   -> 外部 PointCloud2 adapter
   -> /lio_sam/points
-  -> 外部 LIO-SAM
+  -> upstream Image Projection
+  -> project-owned motion deskew
+  -> upstream Feature Extraction / Map Optimization
 
-真正的 200 Hz /imu/data -------------------^
+真正的 200 Hz /imu/data --------------------^
+200 Hz incremental odometry ----------------^
 ```
 
 已確認：
@@ -195,6 +198,12 @@ Isaac Sim RTX LiDAR
   複製或修改 upstream source；專案擁有參數與 launch。
 - LIO-SAM 與專案 ROS package 已在乾淨的 ROS Humble environment 完成
   colcon build，所有 adapter／LIO nodes 可啟動。
+- 本機大型 PointCloud2 使用 CycloneDDS／Iceoryx shared memory，避免 UDP
+  fragmentation 丟 scan；`/tf_static` publisher 則保留 UDP transient
+  history。Bringup 會自動啟動 RouDi，不要求使用者設定 RMW。
+- 不修改 upstream Image Projection；專案在其後加入 motion deskew，以 raw
+  IMU quaternion integration 處理旋轉，並以 200 Hz incremental odometry
+  interpolation 處理 point translation。
 - LiDAR 不加入 Flat v1 的 48 維 observation；它屬於獨立感知層。
 - Deployment host 使用 repository 內的
   `assets/maps/factory/Factory_Layout.usd` 及完整相依 OpenUSD 資產，
@@ -240,9 +249,12 @@ Runtime 驗收結果：
   deskew、feature、mapping odometry 與
   `map → odom → base_link → lidar_link` TF 均可正常輸出。
 - Factory 場景取代原本為無限平面 smoke test 建立的七個臨時 visual
-  landmark；實際鍵盤走動已確認保守速度下可建圖。高速行走曾同時出現
-  足端打滑與裂圖，因此 Factory 摩擦材質已對齊訓練；裂圖保留為後續
-  SLAM confidence-aware PPO 要解決的行為問題，不以固定速度上限遮蔽。
+  landmark。Factory 摩擦材質已對齊訓練；高速直行裂圖另外以完整 scan
+  motion deskew 與無丟包點雲路徑修正，不以固定速度上限遮蔽。
+- `forward_3_0` deterministic profile 在實速 3.05–3.13 m/s 連續三次
+  通過：translation ATE 1.37–1.55 cm、最大 translation jump
+  3.5–4.2 cm、vertical wall separation 6.9–10.0 cm，且 ready 後
+  scan／IMU／odometry coverage 零缺失。
 - 零殘留啟動的 60 秒測試收到 85 筆 mapping correction，全部嚴格遞增；
   四個 LIO-SAM 核心 process 在測試結束後仍存活。重置 simulation time
   前必須一起重啟 LIO-SAM，避免殘留同名 publisher 將兩套 correction
@@ -252,10 +264,12 @@ Runtime 驗收結果：
 - Factory 的 5-step GPU smoke test 已通過；單一 bringup 的短時間 runtime
   也確認 `/joint_command`、`/lio_sam/points` 與 mapping odometry 有輸出，
   結束後無殘留 process。先前 85 筆 correction 的 60 秒結果屬於舊的臨時
-  landmark 場景，不能當成 Factory 移動建圖精度或裂圖驗收結果。
+  landmark 場景；Factory 移動精度改由版本化 deterministic benchmark
+  獨立驗收。
 
-尚未完成的是移動建圖精度、回環，以及實體 ANYmal-D sensor extrinsic
-驗收；不影響目前靜止端到端 smoke test 的完成狀態。
+尚未完成的是 loop closure、目前 policy 無法穩定完成的高速旋轉軌跡，以及
+實體 ANYmal-D sensor extrinsic 驗收。旋轉軌跡因本體 tilt 超過 15° 判為
+invalid，不能宣稱 LIO-SAM 通過或失敗。
 
 ## 暫時不做
 

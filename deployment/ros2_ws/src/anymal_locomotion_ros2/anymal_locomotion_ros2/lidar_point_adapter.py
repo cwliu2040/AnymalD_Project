@@ -154,7 +154,7 @@ def main(args: Sequence[str] | None = None) -> None:
             node.destroy_node()
             if rclpy.ok():
                 rclpy.shutdown()
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, RuntimeError):
             pass
 
 

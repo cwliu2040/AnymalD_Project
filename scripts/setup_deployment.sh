@@ -52,6 +52,10 @@ done
 
 [[ -f "${ROS_SETUP}" ]] \
     || fail "ROS 2 Humble is missing: ${ROS_SETUP}"
+[[ -x "/opt/ros/humble/bin/iox-roudi" ]] \
+    || fail "Iceoryx RouDi is missing: install ros-humble-iceoryx-posh"
+[[ -f "/opt/ros/humble/lib/librmw_cyclonedds_cpp.so" ]] \
+    || fail "CycloneDDS RMW is missing: install ros-humble-rmw-cyclonedds-cpp"
 [[ -x "${ISAACLAB_PATH}/isaaclab.sh" ]] \
     || fail "Isaac Lab is missing: ${ISAACLAB_PATH}/isaaclab.sh"
 [[ -x "${ISAACLAB_PATH}/_isaac_sim/python.sh" ]] \

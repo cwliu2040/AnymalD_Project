@@ -70,6 +70,11 @@ parser.add_argument(
     help="Keep an interactive external-control session from resetting at the task time limit.",
 )
 parser.add_argument(
+    "--enhanced-determinism",
+    action="store_true",
+    help="Enable PhysX enhanced determinism for repeatable benchmark runs.",
+)
+parser.add_argument(
     "--enable-lio-sam",
     action="store_true",
     help=(
@@ -444,6 +449,7 @@ def main() -> None:
         spawn=PhysicsImuSpawnerCfg(sensor_period=0.005),
     )
     env_cfg.sim.device = args_cli.device
+    env_cfg.sim.physx.enable_enhanced_determinism = args_cli.enhanced_determinism
     env_cfg.seed = 42
     # Isaac Compute Odometry reports orientation relative to the reset pose.
     # The ROS deployment host therefore uses an odom-aligned initial base pose
