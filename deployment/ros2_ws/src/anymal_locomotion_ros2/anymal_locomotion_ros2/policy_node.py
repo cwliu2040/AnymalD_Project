@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -57,7 +59,13 @@ class AnymalPolicyNode(Node):
         self.declare_parameter("expected_odometry_child_frame", "base_link")
         self.declare_parameter("state_timeout_s", 0.1)
         self.declare_parameter("command_timeout_s", 0.5)
+        self.declare_parameter(
+            "inference_trigger",
+            "synchronized_state",
+        )
+        self.declare_parameter("state_sync_tolerance_s", 0.01)
         self.declare_parameter("max_abs_policy_action", 10.0)
+        self.declare_parameter("diagnostics_path", "")
 
         policy_path = str(self.get_parameter("policy_path").value)
         metadata_path = str(self.get_parameter("metadata_path").value)
@@ -79,12 +87,24 @@ class AnymalPolicyNode(Node):
         )
         self._state_timeout = float(self.get_parameter("state_timeout_s").value)
         self._command_timeout = float(self.get_parameter("command_timeout_s").value)
+        self._inference_trigger = str(
+            self.get_parameter("inference_trigger").value
+        ).strip().lower()
+        self._state_sync_tolerance = float(
+            self.get_parameter("state_sync_tolerance_s").value
+        )
         self._expected_imu_frame = str(self.get_parameter("expected_imu_frame").value)
         self._expected_odom_child_frame = str(
             self.get_parameter("expected_odometry_child_frame").value
         )
         if self._state_timeout <= 0.0 or self._command_timeout <= 0.0:
             raise ValueError("State and command timeouts must be positive")
+        if self._inference_trigger not in ("synchronized_state", "timer"):
+            raise ValueError(
+                "inference_trigger must be 'synchronized_state' or 'timer'"
+            )
+        if self._state_sync_tolerance < 0.0:
+            raise ValueError("state_sync_tolerance_s must be non-negative")
 
         self._joint_positions: np.ndarray | None = None
         self._joint_velocities: np.ndarray | None = None
@@ -93,7 +113,18 @@ class AnymalPolicyNode(Node):
         self._projected_gravity: np.ndarray | None = None
         self._command = np.zeros(3, dtype=np.float32)
         self._receipt_times: dict[str, float] = {}
+        self._state_stamps: dict[str, float] = {}
+        self._last_inference_joint_stamp = float("-inf")
         self._warning_times: dict[str, float] = {}
+        diagnostics_path = str(
+            self.get_parameter("diagnostics_path").value
+        ).strip()
+        self._diagnostics_path = (
+            Path(diagnostics_path).expanduser().resolve()
+            if diagnostics_path
+            else None
+        )
+        self._diagnostic_records: list[dict[str, Any]] = []
 
         self.create_subscription(
             JointState,
@@ -124,10 +155,15 @@ class AnymalPolicyNode(Node):
             str(self.get_parameter("joint_command_topic").value),
             10,
         )
-        self.create_timer(self._contract.control_period_s, self._on_policy_tick)
+        if self._inference_trigger == "timer":
+            self.create_timer(
+                self._contract.control_period_s,
+                self._on_policy_tick,
+            )
         self.get_logger().info(
             f"Loaded {backend_name} 48-D -> 12-D policy; "
-            f"control period={self._contract.control_period_s:.3f} s"
+            f"control period={self._contract.control_period_s:.3f} s; "
+            f"trigger={self._inference_trigger}"
         )
 
     def _now_seconds(self) -> float:
@@ -138,6 +174,19 @@ class AnymalPolicyNode(Node):
         if now - self._warning_times.get(key, float("-inf")) >= 1.0:
             self.get_logger().warning(message)
             self._warning_times[key] = now
+
+    @staticmethod
+    def _stamp_seconds(message) -> float:
+        return (
+            float(message.header.stamp.sec)
+            + float(message.header.stamp.nanosec) * 1.0e-9
+        )
+
+    def _state_updated(self, name: str, message) -> None:
+        self._receipt_times[name] = self._now_seconds()
+        self._state_stamps[name] = self._stamp_seconds(message)
+        if self._inference_trigger == "synchronized_state":
+            self._try_synchronized_policy_step()
 
     def _on_joint_state(self, message: JointState) -> None:
         try:
@@ -152,7 +201,7 @@ class AnymalPolicyNode(Node):
             return
         self._joint_positions = positions
         self._joint_velocities = velocities
-        self._receipt_times["joint_state"] = self._now_seconds()
+        self._state_updated("joint_state", message)
 
     def _on_imu(self, message: Imu) -> None:
         if message.header.frame_id != self._expected_imu_frame:
@@ -184,7 +233,7 @@ class AnymalPolicyNode(Node):
             return
         self._base_angular_velocity = angular_velocity
         self._projected_gravity = gravity
-        self._receipt_times["imu"] = self._now_seconds()
+        self._state_updated("imu", message)
 
     def _on_odometry(self, message: Odometry) -> None:
         if message.child_frame_id != self._expected_odom_child_frame:
@@ -209,7 +258,7 @@ class AnymalPolicyNode(Node):
             )
             return
         self._base_linear_velocity = velocity
-        self._receipt_times["odometry"] = self._now_seconds()
+        self._state_updated("odometry", message)
 
     def _on_command(self, message: Twist) -> None:
         command = np.asarray(
@@ -222,7 +271,23 @@ class AnymalPolicyNode(Node):
         self._command = command
         self._receipt_times["command"] = self._now_seconds()
 
+    def _try_synchronized_policy_step(self) -> None:
+        required = ("joint_state", "imu", "odometry")
+        if any(name not in self._state_stamps for name in required):
+            return
+        stamps = [self._state_stamps[name] for name in required]
+        joint_stamp = self._state_stamps["joint_state"]
+        if joint_stamp <= self._last_inference_joint_stamp:
+            return
+        if max(stamps) - min(stamps) > self._state_sync_tolerance:
+            return
+        self._last_inference_joint_stamp = joint_stamp
+        self._run_policy()
+
     def _on_policy_tick(self) -> None:
+        self._run_policy()
+
+    def _run_policy(self) -> None:
         now = self._now_seconds()
         required = ("joint_state", "imu", "odometry")
         missing = [name for name in required if name not in self._receipt_times]
@@ -260,12 +325,39 @@ class AnymalPolicyNode(Node):
         except (RuntimeError, ValueError) as error:
             self._warn_throttled("inference_error", f"No policy output: {error}")
             return
+        if self._diagnostics_path is not None:
+            self._diagnostic_records.append(
+                {
+                    "clock_s": now,
+                    "state_stamps_s": dict(self._state_stamps),
+                    "command": command.astype(float).tolist(),
+                    "observation": result.observation.astype(float).tolist(),
+                    "raw_action": result.raw_action.astype(float).tolist(),
+                }
+            )
 
         output = JointState()
         output.header.stamp = self.get_clock().now().to_msg()
         output.name = list(self._contract.joint_order)
         output.position = result.joint_targets.astype(float).tolist()
         self._joint_command_publisher.publish(output)
+
+    def write_diagnostics(self) -> None:
+        if self._diagnostics_path is None:
+            return
+        self._diagnostics_path.parent.mkdir(parents=True, exist_ok=True)
+        self._diagnostics_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "records": self._diagnostic_records,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
 
 def main(args: list[str] | None = None) -> None:
@@ -279,6 +371,7 @@ def main(args: list[str] | None = None) -> None:
     finally:
         if node is not None:
             try:
+                node.write_diagnostics()
                 node.destroy_node()
             except (KeyboardInterrupt, RuntimeError):
                 pass

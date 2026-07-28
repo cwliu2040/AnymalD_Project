@@ -1,0 +1,31 @@
+schema_version: 1
+
+# Frozen after three deterministic Factory forward_0_5 baselines.  A loaded
+# foot must exceed the speed threshold for two consecutive 50 Hz samples;
+# this excludes normal one-sample touchdown transients.
+classification:
+  stance_min_normal_force_n: 50.0
+  foot_slip_speed_mps: 0.6
+  body_roll_pitch_rad: 0.2617993877991494
+  min_base_height_m: 0.45
+  consecutive_samples: 2
+  coincidence_window_s: 0.1
+
+hard_gate:
+  require_zero_terminations: true
+  require_zero_truncations: true
+  require_finite_samples: true
+  require_no_instability_event: true
+
+tracking_gate:
+  minimum_target_samples: 25
+  maximum_mean_absolute_error:
+    vx_mps: 0.2
+    vy_mps: 0.2
+    wz_radps: 0.25
+  stationary_maximum_mean_absolute_velocity:
+    vx_mps: 0.15
+    vy_mps: 0.15
+    wz_radps: 0.2
+  stationary_maximum_planar_displacement_m: 0.25
+  stationary_maximum_yaw_change_rad: 0.17453292519943295

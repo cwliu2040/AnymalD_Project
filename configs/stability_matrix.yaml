@@ -1,0 +1,34 @@
+schema_version: 1
+repetitions: 3
+
+phases:
+  pure_translation:
+    launch_file: stability_benchmark.launch.py
+    profiles:
+      - stationary
+      - forward_0_5
+      - forward_1_5
+      - forward_3_0
+      - backward_0_5
+      - backward_1_0
+      - backward_2_0
+      - lateral_0_75
+      - lateral_1_5
+      - lateral_right_0_75
+      - lateral_right_1_5
+
+  turning:
+    launch_file: stability_benchmark.launch.py
+    profiles:
+      - yaw_0_5
+      - yaw_left_1_0
+      - yaw_2_0
+      - yaw_right_0_5
+      - yaw_right_1_0
+      - yaw_right_2_0
+      - curve_0_5_left_0_5
+      - curve_0_5_right_0_5
+      - curve_1_5_left_1_0
+      - curve_1_5_right_1_0
+      - curve_3_0_left_0_5
+      - curve_3_0_right_0_5

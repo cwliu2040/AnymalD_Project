@@ -27,6 +27,7 @@ setup(
         "console_scripts": [
             "keyboard_teleop = anymal_locomotion_ros2.keyboard_teleop:main",
             "lio_benchmark = anymal_locomotion_ros2.lio_benchmark_node:main",
+            "stability_benchmark = anymal_locomotion_ros2.stability_benchmark_node:main",
             "lidar_point_adapter = anymal_locomotion_ros2.lidar_point_adapter:main",
             "policy_node = anymal_locomotion_ros2.policy_node:main",
             "motion_deskew = anymal_locomotion_ros2.motion_deskew_node:main",

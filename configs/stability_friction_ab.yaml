@@ -1,0 +1,8 @@
+schema_version: 1
+repetitions: 3
+
+phases:
+  pure_translation:
+    launch_file: stability_benchmark.launch.py
+    profiles:
+      - forward_3_0

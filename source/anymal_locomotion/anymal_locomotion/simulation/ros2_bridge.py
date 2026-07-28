@@ -183,6 +183,7 @@ def create_ros2_policy_bridge(
     imu_target_prim = [usdrt.Sdf.Path(imu_sensor_path)]
     nodes = [
         ("PolicyImpulse", "omni.graph.action.OnImpulseEvent"),
+        ("CommandImpulse", "omni.graph.action.OnImpulseEvent"),
         ("ImuPhysicsStep", "isaacsim.core.nodes.OnPhysicsStep"),
         ("ReadSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
         ("ComputeImuOrientation", "isaacsim.core.nodes.IsaacComputeOdometry"),
@@ -207,6 +208,7 @@ def create_ros2_policy_bridge(
     ]
     values = [
         ("PolicyImpulse.inputs:onlyPlayback", False),
+        ("CommandImpulse.inputs:onlyPlayback", False),
         ("ReadSimTime.inputs:resetOnStop", False),
         ("ComputeImuOrientation.inputs:chassisPrim", target_prim),
         ("ReadImuSensor.inputs:imuPrim", imu_target_prim),
@@ -273,8 +275,11 @@ def create_ros2_policy_bridge(
         ("ReadImuSensor.outputs:sensorTime", "PublishImu.inputs:timeStamp"),
         ("PolicyImpulse.outputs:execOut", "PublishClock.inputs:execIn"),
         ("PolicyImpulse.outputs:execOut", "ComputeOdometry.inputs:execIn"),
-        ("PolicyImpulse.outputs:execOut", "SubscribeTwist.inputs:execIn"),
-        ("PolicyImpulse.outputs:execOut", "SubscribeJointState.inputs:execIn"),
+        ("CommandImpulse.outputs:execOut", "SubscribeTwist.inputs:execIn"),
+        (
+            "CommandImpulse.outputs:execOut",
+            "SubscribeJointState.inputs:execIn",
+        ),
         ("ComputeOdometry.outputs:execOut", "PublishOdometry.inputs:execIn"),
         ("ComputeOdometry.outputs:position", "PublishOdometry.inputs:position"),
         (
@@ -459,6 +464,18 @@ def trigger_policy_step(bridge: Ros2PolicyBridge) -> None:
     )
     if not og.Controller.set(impulse, True):
         raise RuntimeError("Failed to trigger ROS2 policy bridge impulse")
+    og.Controller.evaluate_sync(graph_id=bridge.graph_path)
+
+
+def trigger_command_step(bridge: Ros2PolicyBridge) -> None:
+    """Refresh ROS command subscribers before the next policy-rate step."""
+    import omni.graph.core as og
+
+    impulse = og.Controller.attribute(
+        f"{bridge.graph_path}/CommandImpulse.state:enableImpulse"
+    )
+    if not og.Controller.set(impulse, True):
+        raise RuntimeError("Failed to trigger ROS2 command bridge impulse")
     og.Controller.evaluate_sync(graph_id=bridge.graph_path)
 
 

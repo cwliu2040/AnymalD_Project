@@ -244,6 +244,15 @@ def test_complete_bringup_uses_project_defaults_and_official_teleop() -> None:
     assert "command_safety_node" not in source
     assert "cmd_vel_raw" not in source
     assert "_validate_factory_physics_material" in host_source
+    ground_probe_source = (
+        PROJECT_ROOT
+        / "scripts"
+        / "validation"
+        / "validate_factory_ground_collision.py"
+    ).read_text(encoding="utf-8")
+    assert 'prim.GetTypeName() == "Plane"' in ground_probe_source
+    assert "prim.HasAPI(UsdPhysics.CollisionAPI)" in ground_probe_source
+    assert "RigidObjectCollection" in ground_probe_source
     factory_source = (
         PROJECT_ROOT / "assets" / "maps" / "factory" / "Factory_Layout.usda"
     ).read_text(encoding="utf-8")

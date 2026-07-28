@@ -4,16 +4,21 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import time
 import traceback
 from pathlib import Path
+from typing import Any
 
 from isaaclab.app import AppLauncher
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_FACTORY_USD_PATH = (
     PROJECT_ROOT / "assets" / "maps" / "factory" / "Factory_Layout.usd"
+)
+DEFAULT_STABILITY_CONFIG_PATH = (
+    PROJECT_ROOT / "configs" / "stability_diagnostics.yaml"
 )
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -28,7 +33,10 @@ parser.add_argument(
     "--external-control-warmup-steps",
     type=int,
     default=150,
-    help="Hold the default joint pose while the external policy receives initial state.",
+    help=(
+        "Initial policy steps excluded from controlled timing metrics while "
+        "the external policy history becomes ready."
+    ),
 )
 parser.add_argument(
     "--joint-command-timeout-steps",
@@ -37,9 +45,27 @@ parser.add_argument(
     help="Return to zero raw action after this many 50 Hz steps without a new command.",
 )
 parser.add_argument(
+    "--joint-command-wait-timeout-s",
+    type=float,
+    default=0.02,
+    help=(
+        "Maximum wall time spent refreshing the Action Graph subscriber for "
+        "the next timestamped policy command."
+    ),
+)
+parser.add_argument(
     "--validate-observation-parity",
     action="store_true",
     help="Compare the 48-D Action Graph observation contract with Isaac Lab every controlled step.",
+)
+parser.add_argument(
+    "--policy-parity-artifact",
+    type=Path,
+    default=None,
+    help=(
+        "Optional project-local TorchScript policy used to compare the "
+        "external ROS action against the same prior-step observation."
+    ),
 )
 parser.add_argument(
     "--observation-parity-atol",
@@ -75,6 +101,12 @@ parser.add_argument(
     help="Enable PhysX enhanced determinism for repeatable benchmark runs.",
 )
 parser.add_argument(
+    "--enhanced-determinism-value",
+    choices=("true", "false"),
+    default=None,
+    help="Explicit boolean override used by parameterized launch files.",
+)
+parser.add_argument(
     "--enable-lio-sam",
     action="store_true",
     help=(
@@ -87,6 +119,15 @@ parser.add_argument(
     type=Path,
     default=DEFAULT_FACTORY_USD_PATH,
     help="Project-local Factory USD used instead of the Flat plane.",
+)
+parser.add_argument(
+    "--factory-friction",
+    type=float,
+    default=1.0,
+    help=(
+        "Runtime-only Factory static and dynamic friction override. "
+        "The source USD remains unchanged."
+    ),
 )
 parser.add_argument(
     "--spawn-x",
@@ -106,6 +147,42 @@ parser.add_argument(
     default=0.0,
     help="Initial ANYmal yaw in the Factory map.",
 )
+parser.add_argument(
+    "--locomotion-diagnostics-output",
+    type=Path,
+    default=None,
+    help=(
+        "Optional project-local JSON trace containing four-foot contact, "
+        "stance slip, base attitude and command-tracking diagnostics."
+    ),
+)
+parser.add_argument(
+    "--diagnostics-flush-steps",
+    type=int,
+    default=25,
+    help="Atomically refresh the diagnostic JSON after this many policy steps.",
+)
+parser.add_argument(
+    "--benchmark-completion-file",
+    type=Path,
+    default=None,
+    help=(
+        "Optional project-local file written by a benchmark driver.  The "
+        "simulation exits cleanly after a new version of the file appears."
+    ),
+)
+parser.add_argument(
+    "--locomotion-profile",
+    type=str,
+    default="unspecified",
+    help="Profile label stored in the diagnostic metadata.",
+)
+parser.add_argument(
+    "--stability-diagnostics-config",
+    type=Path,
+    default=DEFAULT_STABILITY_CONFIG_PATH,
+    help="Frozen project-owned event-order thresholds.",
+)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 if args_cli.steps <= 0:
@@ -114,23 +191,82 @@ if args_cli.external_control_warmup_steps < 0:
     parser.error("--external-control-warmup-steps must be non-negative")
 if args_cli.joint_command_timeout_steps <= 0:
     parser.error("--joint-command-timeout-steps must be positive")
+if (
+    not math.isfinite(args_cli.joint_command_wait_timeout_s)
+    or args_cli.joint_command_wait_timeout_s < 0.0
+):
+    parser.error("--joint-command-wait-timeout-s must be finite and non-negative")
 if args_cli.observation_parity_atol <= 0.0:
     parser.error("--observation-parity-atol must be positive")
 if args_cli.imu_observation_parity_atol <= 0.0:
     parser.error("--imu-observation-parity-atol must be positive")
 if args_cli.straight_line_duration_s <= 0.0:
     parser.error("--straight-line-duration-s must be positive")
+if args_cli.diagnostics_flush_steps <= 0:
+    parser.error("--diagnostics-flush-steps must be positive")
 if (args_cli.validate_observation_parity or args_cli.straight_line_check) and not args_cli.external_control:
     parser.error("observation parity and straight-line checks require --external-control")
+if args_cli.locomotion_diagnostics_output is not None and not args_cli.external_control:
+    parser.error("locomotion diagnostics require --external-control")
+if args_cli.policy_parity_artifact is not None and not args_cli.external_control:
+    parser.error("policy action parity requires --external-control")
 args_cli.factory_usd_path = args_cli.factory_usd_path.expanduser().resolve()
 if not args_cli.factory_usd_path.is_file():
     parser.error(f"Factory USD does not exist: {args_cli.factory_usd_path}")
 if not all(math.isfinite(value) for value in (args_cli.spawn_x, args_cli.spawn_y, args_cli.spawn_yaw)):
     parser.error("Factory spawn pose must contain finite values")
+if not math.isfinite(args_cli.factory_friction) or args_cli.factory_friction <= 0.0:
+    parser.error("--factory-friction must be finite and positive")
+if args_cli.locomotion_diagnostics_output is not None:
+    args_cli.locomotion_diagnostics_output = (
+        args_cli.locomotion_diagnostics_output.expanduser().resolve()
+    )
+    if not args_cli.locomotion_diagnostics_output.is_relative_to(PROJECT_ROOT):
+        parser.error(
+            "locomotion diagnostic output must remain inside the project: "
+            f"{args_cli.locomotion_diagnostics_output}"
+        )
+if args_cli.benchmark_completion_file is not None:
+    args_cli.benchmark_completion_file = (
+        args_cli.benchmark_completion_file.expanduser().resolve()
+    )
+    if not args_cli.benchmark_completion_file.is_relative_to(PROJECT_ROOT):
+        parser.error(
+            "benchmark completion file must remain inside the project: "
+            f"{args_cli.benchmark_completion_file}"
+        )
+if args_cli.policy_parity_artifact is not None:
+    args_cli.policy_parity_artifact = (
+        args_cli.policy_parity_artifact.expanduser().resolve()
+    )
+    if (
+        not args_cli.policy_parity_artifact.is_relative_to(PROJECT_ROOT)
+        or not args_cli.policy_parity_artifact.is_file()
+    ):
+        parser.error(
+            "policy parity artifact must be an existing project-local file: "
+            f"{args_cli.policy_parity_artifact}"
+        )
+args_cli.stability_diagnostics_config = (
+    args_cli.stability_diagnostics_config.expanduser().resolve()
+)
+if (
+    args_cli.locomotion_diagnostics_output is not None
+    and not args_cli.stability_diagnostics_config.is_file()
+):
+    parser.error(
+        "stability diagnostic config does not exist: "
+        f"{args_cli.stability_diagnostics_config}"
+    )
 if args_cli.enable_lio_sam:
     # RTX sensors are Hydra render products. Headless Isaac Lab otherwise uses
     # NO_RENDERING and silently creates the sensor without producing frames.
     args_cli.enable_cameras = True
+enhanced_determinism_enabled = (
+    args_cli.enhanced_determinism
+    if args_cli.enhanced_determinism_value is None
+    else args_cli.enhanced_determinism_value == "true"
+)
 required_kit_args = (
     "--enable omni.graph.core "
     "--enable omni.graph.nodes "
@@ -157,6 +293,7 @@ import gymnasium as gym
 import numpy as np
 import omni.usd
 import torch
+import yaml
 from pxr import UsdPhysics, UsdShade
 
 import anymal_locomotion.tasks  # noqa: F401
@@ -173,14 +310,23 @@ from anymal_locomotion.simulation.ros2_bridge import (
     read_imu_state,
     read_joint_position_command,
     read_velocity_command,
+    trigger_command_step,
     trigger_policy_step,
     write_base_orientation,
     write_joint_state,
+)
+from anymal_locomotion.stability_diagnostics import (
+    DiagnosticThresholds,
+    build_diagnostic_report,
+    quaternion_to_rpy_wxyz,
 )
 from anymal_locomotion.tasks.manager_based.locomotion.velocity.config.anymal_d import PLAY_TASK_ID
 from isaaclab.assets import AssetBaseCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab_tasks.utils.parse_cfg import load_cfg_from_registry
+
+
+_FOOT_NAMES = ("LF_FOOT", "RF_FOOT", "LH_FOOT", "RH_FOOT")
 
 
 def _find_articulation_root(env_prim_path: str) -> str:
@@ -196,7 +342,21 @@ def _find_articulation_root(env_prim_path: str) -> str:
     return roots[0]
 
 
-def _validate_factory_physics_material() -> tuple[float, float, str, int]:
+def _set_factory_friction(friction: float) -> None:
+    """Apply a session-layer material override without editing the map asset."""
+    stage = omni.usd.get_context().get_stage()
+    material = stage.GetPrimAtPath(
+        "/World/Factory/terrain/FactoryPhysicsMaterial"
+    )
+    if not material.IsValid():
+        raise RuntimeError("Factory physics material is missing")
+    material.GetAttribute("physics:staticFriction").Set(float(friction))
+    material.GetAttribute("physics:dynamicFriction").Set(float(friction))
+
+
+def _validate_factory_physics_material(
+    expected_friction: float,
+) -> tuple[float, float, str, int]:
     stage = omni.usd.get_context().get_stage()
     terrain_path = "/World/Factory/terrain"
     material_path = f"{terrain_path}/FactoryPhysicsMaterial"
@@ -216,8 +376,18 @@ def _validate_factory_physics_material() -> tuple[float, float, str, int]:
     if (
         static_friction is None
         or dynamic_friction is None
-        or not math.isclose(float(static_friction), 1.0)
-        or not math.isclose(float(dynamic_friction), 1.0)
+        or not math.isclose(
+            float(static_friction),
+            expected_friction,
+            rel_tol=0.0,
+            abs_tol=1.0e-6,
+        )
+        or not math.isclose(
+            float(dynamic_friction),
+            expected_friction,
+            rel_tol=0.0,
+            abs_tol=1.0e-6,
+        )
         or combine_mode != "multiply"
         or [str(path) for path in binding.GetTargets()] != [material_path]
         or binding.GetMetadata("bindMaterialAs") != "strongerThanDescendants"
@@ -433,7 +603,124 @@ def _wrap_angle(angle: float) -> float:
     return math.atan2(math.sin(angle), math.cos(angle))
 
 
+def _write_diagnostic_report(
+    path: Path,
+    *,
+    samples: list[dict[str, Any]],
+    metadata: dict[str, Any],
+    thresholds: DiagnosticThresholds,
+) -> None:
+    report = build_diagnostic_report(
+        samples=samples,
+        metadata=metadata,
+        thresholds=thresholds,
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_name(f".{path.name}.tmp")
+    temporary_path.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary_path.replace(path)
+
+
+def _diagnostic_sample(
+    *,
+    robot,
+    contact_sensor,
+    robot_foot_ids: list[int],
+    contact_foot_ids: list[int],
+    base_contact_id: int,
+    time_s: float,
+    command: np.ndarray,
+    terminated: bool,
+    truncated: bool,
+) -> dict[str, Any]:
+    quaternion = (
+        robot.data.root_quat_w[0].detach().cpu().numpy().astype(np.float64)
+    )
+    roll, pitch, yaw = quaternion_to_rpy_wxyz(quaternion.tolist())
+    actual_velocity = torch.stack(
+        (
+            robot.data.root_lin_vel_b[0, 0],
+            robot.data.root_lin_vel_b[0, 1],
+            robot.data.root_ang_vel_b[0, 2],
+        )
+    ).detach().cpu().numpy()
+    foot_velocities = (
+        robot.data.body_lin_vel_w[0, robot_foot_ids]
+        .detach()
+        .cpu()
+        .numpy()
+        .astype(np.float64)
+    )
+    contact_forces = (
+        contact_sensor.data.net_forces_w[0, contact_foot_ids]
+        .detach()
+        .cpu()
+        .numpy()
+        .astype(np.float64)
+    )
+    base_contact_force = float(
+        torch.linalg.vector_norm(
+            contact_sensor.data.net_forces_w_history[0, :, base_contact_id],
+            dim=-1,
+        )
+        .max()
+        .item()
+    )
+    feet = {}
+    for index, name in enumerate(_FOOT_NAMES):
+        force = contact_forces[index]
+        velocity = foot_velocities[index]
+        feet[name] = {
+            "force_w_n": force.astype(float).tolist(),
+            "normal_force_n": abs(float(force[2])),
+            "tangential_force_n": float(np.linalg.norm(force[:2])),
+            "velocity_w_mps": velocity.astype(float).tolist(),
+            "tangential_speed_mps": float(np.linalg.norm(velocity[:2])),
+        }
+    return {
+        "time_s": float(time_s),
+        "command": command.astype(float).tolist(),
+        "actual_velocity": actual_velocity.astype(float).tolist(),
+        "base_position_w_m": (
+            robot.data.root_pos_w[0]
+            .detach()
+            .cpu()
+            .numpy()
+            .astype(float)
+            .tolist()
+        ),
+        "base_height_m": float(robot.data.root_pos_w[0, 2].item()),
+        "roll_rad": roll,
+        "pitch_rad": pitch,
+        "yaw_rad": yaw,
+        "base_contact_force_n": base_contact_force,
+        "terminated": terminated,
+        "truncated": truncated,
+        "feet": feet,
+    }
+
+
 def main() -> None:
+    diagnostic_thresholds: DiagnosticThresholds | None = None
+    if args_cli.locomotion_diagnostics_output is not None:
+        diagnostic_config = yaml.safe_load(
+            args_cli.stability_diagnostics_config.read_text(encoding="utf-8")
+        )
+        if (
+            not isinstance(diagnostic_config, dict)
+            or diagnostic_config.get("schema_version") != 1
+            or not isinstance(diagnostic_config.get("classification"), dict)
+        ):
+            raise ValueError(
+                "stability diagnostic config must contain schema_version 1 "
+                "and a classification mapping"
+            )
+        diagnostic_thresholds = DiagnosticThresholds.from_mapping(
+            diagnostic_config["classification"]
+        )
     env_cfg = load_cfg_from_registry(PLAY_TASK_ID, "env_cfg_entry_point")
     env_cfg.scene.num_envs = 1
     env_cfg.scene.terrain = TerrainImporterCfg(
@@ -449,8 +736,13 @@ def main() -> None:
         spawn=PhysicsImuSpawnerCfg(sensor_period=0.005),
     )
     env_cfg.sim.device = args_cli.device
-    env_cfg.sim.physx.enable_enhanced_determinism = args_cli.enhanced_determinism
+    env_cfg.sim.physx.enable_enhanced_determinism = (
+        enhanced_determinism_enabled
+    )
     env_cfg.seed = 42
+    if args_cli.locomotion_diagnostics_output is not None:
+        # Preserve one complete 50 Hz control interval of 200 Hz contact data.
+        env_cfg.scene.contact_forces.history_length = 4
     # Isaac Compute Odometry reports orientation relative to the reset pose.
     # The ROS deployment host therefore uses an odom-aligned initial base pose
     # so its 200 Hz world-to-base IMU projection has no hidden yaw offset.
@@ -480,8 +772,41 @@ def main() -> None:
         command_cfg.ranges.ang_vel_z = (0.0, 0.0)
         command_cfg.ranges.heading = None
     env = gym.make(PLAY_TASK_ID, cfg=env_cfg)
+    diagnostic_samples: list[dict[str, Any]] = []
+    diagnostic_metadata: dict[str, Any] = {
+        "factory_usd_path": str(args_cli.factory_usd_path),
+        "seed": 42,
+        "spawn": {
+            "x": args_cli.spawn_x,
+            "y": args_cli.spawn_y,
+            "yaw": args_cli.spawn_yaw,
+        },
+        "enhanced_determinism": enhanced_determinism_enabled,
+        "factory_friction": float(args_cli.factory_friction),
+        "external_control_warmup_steps": args_cli.external_control_warmup_steps,
+        "lio_sam_enabled": bool(args_cli.enable_lio_sam),
+        "profile": args_cli.locomotion_profile,
+        "policy_parity_artifact": (
+            str(args_cli.policy_parity_artifact)
+            if args_cli.policy_parity_artifact is not None
+            else None
+        ),
+        "stability_diagnostics_config": str(
+            args_cli.stability_diagnostics_config
+        ),
+    }
+    completion_file_not_before_wall_s = time.time()
+    benchmark_completion_observed = False
     try:
         base_env = env.unwrapped
+        policy_parity_model = (
+            torch.jit.load(
+                str(args_cli.policy_parity_artifact),
+                map_location=base_env.device,
+            ).eval()
+            if args_cli.policy_parity_artifact is not None
+            else None
+        )
         articulation_root = _find_articulation_root(base_env.scene.env_prim_paths[0])
         lidar = (
             create_rtx_lidar_sensor(articulation_root)
@@ -507,12 +832,13 @@ def main() -> None:
         graph_prim = omni.usd.get_context().get_stage().GetPrimAtPath(bridge.graph_path)
         if not graph_prim.IsValid():
             raise RuntimeError(f"ROS 2 graph was not created: {bridge.graph_path}")
+        _set_factory_friction(args_cli.factory_friction)
         (
             factory_static,
             factory_dynamic,
             factory_combine,
             factory_collision_count,
-        ) = _validate_factory_physics_material()
+        ) = _validate_factory_physics_material(args_cli.factory_friction)
 
         print(f"PASS graph={bridge.graph_path}", flush=True)
         print(f"PASS articulation_root={bridge.articulation_root_path}", flush=True)
@@ -521,7 +847,9 @@ def main() -> None:
         print(
             "PASS factory_physics_material="
             f"static:{factory_static},dynamic:{factory_dynamic},"
-            f"combine:{factory_combine},effective_with_robot:0.8/0.6,"
+            f"combine:{factory_combine},"
+            f"effective_with_robot:"
+            f"{factory_static * 0.8:.3f}/{factory_dynamic * 0.6:.3f},"
             f"resolved_collision_prims:{factory_collision_count}",
             flush=True,
         )
@@ -580,6 +908,35 @@ def main() -> None:
 
         env.reset()
         robot = base_env.scene["robot"]
+        contact_sensor = base_env.scene["contact_forces"]
+        robot_foot_ids, robot_foot_names = robot.find_bodies(
+            list(_FOOT_NAMES),
+            preserve_order=True,
+        )
+        contact_foot_ids, contact_foot_names = contact_sensor.find_bodies(
+            list(_FOOT_NAMES),
+            preserve_order=True,
+        )
+        base_contact_ids, base_contact_names = contact_sensor.find_bodies("base")
+        if (
+            tuple(robot_foot_names) != _FOOT_NAMES
+            or tuple(contact_foot_names) != _FOOT_NAMES
+            or base_contact_names != ["base"]
+        ):
+            raise RuntimeError(
+                "Deterministic diagnostic body mapping failed: "
+                f"robot_feet={robot_foot_names}, "
+                f"contact_feet={contact_foot_names}, "
+                f"base={base_contact_names}"
+            )
+        diagnostic_metadata.update(
+            {
+                "physics_dt_s": float(base_env.sim.get_physics_dt()),
+                "policy_dt_s": float(base_env.step_dt),
+                "foot_names": list(_FOOT_NAMES),
+                "base_contact_name": "base",
+            }
+        )
         canonical_joint_indices = validate_runtime_joint_names(robot.joint_names)
         external_velocity_command = np.zeros(3, dtype=np.float32)
         if args_cli.external_control:
@@ -595,6 +952,7 @@ def main() -> None:
                 bridge,
                 render_lidar=args_cli.enable_lio_sam,
             )
+            trigger_command_step(bridge)
             external_velocity_command = _clamp_external_command(
                 read_velocity_command(bridge)
             )
@@ -612,7 +970,14 @@ def main() -> None:
                 f"received {args_cli.steps}, need at least {straight_line_end_step}"
             )
         received_command_count = 0
+        received_controlled_command_count = 0
         last_command_timestamp = float("-inf")
+        last_applied_command_timestamp: float | None = None
+        controlled_action_age_steps: list[float] = []
+        controlled_command_wait_s: list[float] = []
+        command_wait_timeout_count = 0
+        policy_input_for_next_step: torch.Tensor | None = None
+        policy_action_parity_errors: list[float] = []
         steps_without_new_command = 0
         terminated_count = 0
         truncated_count = 0
@@ -636,10 +1001,98 @@ def main() -> None:
         straight_terminated_count = 0
         straight_truncated_count = 0
         controlled_wall_start: float | None = None
+        completed_step_count = 0
         for step_index in range(args_cli.steps):
             start = time.monotonic()
             if step_index == args_cli.external_control_warmup_steps:
                 controlled_wall_start = start
+            if args_cli.external_control:
+                wait_start = time.monotonic()
+                wait_deadline = (
+                    wait_start + args_cli.joint_command_wait_timeout_s
+                )
+                command = None
+                while True:
+                    trigger_command_step(bridge)
+                    command = read_joint_position_command(bridge)
+                    if (
+                        command is not None
+                        and command.timestamp > last_command_timestamp
+                    ):
+                        break
+                    if time.monotonic() >= wait_deadline:
+                        if (
+                            step_index
+                            >= args_cli.external_control_warmup_steps
+                        ):
+                            command_wait_timeout_count += 1
+                        break
+                    time.sleep(0.0005)
+                if step_index >= args_cli.external_control_warmup_steps:
+                    controlled_command_wait_s.append(
+                        time.monotonic() - wait_start
+                    )
+                external_velocity_command = _clamp_external_command(
+                    read_velocity_command(bridge)
+                )
+                if (
+                    command is not None
+                    and command.timestamp > last_command_timestamp
+                ):
+                    actions = _raw_policy_action(
+                        command.names,
+                        command.positions,
+                        device=base_env.device,
+                    )
+                    last_command_timestamp = command.timestamp
+                    last_applied_command_timestamp = command.timestamp
+                    steps_without_new_command = 0
+                    received_command_count += 1
+                    if (
+                        step_index
+                        >= args_cli.external_control_warmup_steps
+                    ):
+                        received_controlled_command_count += 1
+                else:
+                    steps_without_new_command += 1
+                    if (
+                        steps_without_new_command
+                        >= args_cli.joint_command_timeout_steps
+                    ):
+                        actions.zero_()
+                if (
+                    last_applied_command_timestamp is not None
+                    and step_index
+                    >= args_cli.external_control_warmup_steps
+                ):
+                    controlled_action_age_steps.append(
+                        (
+                            step_index * base_env.step_dt
+                            - last_applied_command_timestamp
+                        )
+                        / base_env.step_dt
+                    )
+                if (
+                    policy_parity_model is not None
+                    and policy_input_for_next_step is not None
+                    and step_index
+                    >= args_cli.external_control_warmup_steps
+                ):
+                    parity_input = policy_input_for_next_step.clone()
+                    parity_input[:, 9:12] = torch.as_tensor(
+                        external_velocity_command,
+                        dtype=parity_input.dtype,
+                        device=parity_input.device,
+                    )
+                    with torch.inference_mode():
+                        expected_action = policy_parity_model(parity_input)
+                    policy_action_parity_errors.append(
+                        float(
+                            torch.max(
+                                torch.abs(actions - expected_action)
+                            ).item()
+                        )
+                    )
             command_for_step = external_velocity_command.copy()
             if args_cli.external_control:
                 _set_internal_velocity_command(base_env, command_for_step)
@@ -651,6 +1104,7 @@ def main() -> None:
                 straight_start_yaw = _yaw_from_wxyz(robot.data.root_quat_w[0])
 
             step_result = env.step(action_for_step)
+            completed_step_count = step_index + 1
             step_terminated = 0
             step_truncated = 0
             if len(step_result) == 5:
@@ -664,6 +1118,18 @@ def main() -> None:
                 ):
                     straight_terminated_count += step_terminated
                     straight_truncated_count += step_truncated
+            if policy_parity_model is not None:
+                observation_group = step_result[0]
+                if (
+                    not isinstance(observation_group, dict)
+                    or "policy" not in observation_group
+                ):
+                    raise RuntimeError(
+                        "Policy action parity requires the policy observation group"
+                    )
+                policy_input_for_next_step = (
+                    observation_group["policy"].detach().clone()
+                )
 
             # The command manager is normally a random command generator. External-control
             # mode overwrites it before Kit renders the green target arrow.
@@ -681,6 +1147,46 @@ def main() -> None:
                 bridge,
                 render_lidar=args_cli.enable_lio_sam,
             )
+            if args_cli.locomotion_diagnostics_output is not None:
+                diagnostic_sample = _diagnostic_sample(
+                    robot=robot,
+                    contact_sensor=contact_sensor,
+                    robot_foot_ids=robot_foot_ids,
+                    contact_foot_ids=contact_foot_ids,
+                    base_contact_id=base_contact_ids[0],
+                    time_s=(step_index + 1) * base_env.step_dt,
+                    command=command_for_step,
+                    terminated=bool(step_terminated),
+                    truncated=bool(step_truncated),
+                )
+                diagnostic_sample["applied_raw_action"] = (
+                    action_for_step[0]
+                    .detach()
+                    .cpu()
+                    .numpy()
+                    .astype(float)
+                    .tolist()
+                )
+                if policy_input_for_next_step is not None:
+                    diagnostic_sample["native_policy_observation"] = (
+                        policy_input_for_next_step[0]
+                        .detach()
+                        .cpu()
+                        .numpy()
+                        .astype(float)
+                        .tolist()
+                    )
+                diagnostic_samples.append(diagnostic_sample)
+                if (
+                    len(diagnostic_samples) % args_cli.diagnostics_flush_steps
+                    == 0
+                ):
+                    _write_diagnostic_report(
+                        args_cli.locomotion_diagnostics_output,
+                        samples=diagnostic_samples,
+                        metadata=diagnostic_metadata,
+                        thresholds=diagnostic_thresholds,
+                    )
             imu_state = read_imu_state(bridge)
             if imu_state.sensor_time <= last_imu_sensor_time:
                 raise RuntimeError(
@@ -798,35 +1304,6 @@ def main() -> None:
                             }
                 parity_samples += 1
 
-            if args_cli.external_control:
-                external_velocity_command = _clamp_external_command(
-                    read_velocity_command(bridge)
-                )
-                _set_internal_velocity_command(base_env, external_velocity_command)
-            if (
-                args_cli.external_control
-                and step_index >= args_cli.external_control_warmup_steps
-            ):
-                command = read_joint_position_command(bridge)
-                if (
-                    command is not None
-                    and command.timestamp > last_command_timestamp
-                ):
-                    actions = _raw_policy_action(
-                        command.names,
-                        command.positions,
-                        device=base_env.device,
-                    )
-                    last_command_timestamp = command.timestamp
-                    steps_without_new_command = 0
-                    received_command_count += 1
-                else:
-                    steps_without_new_command += 1
-                    if (
-                        steps_without_new_command
-                        >= args_cli.joint_command_timeout_steps
-                    ):
-                        actions.zero_()
             if (
                 args_cli.straight_line_check
                 and straight_line_start_step <= step_index < straight_line_end_step
@@ -851,15 +1328,105 @@ def main() -> None:
                 remaining = base_env.step_dt - (time.monotonic() - start)
                 if remaining > 0.0:
                     time.sleep(remaining)
+            if (
+                args_cli.benchmark_completion_file is not None
+                and args_cli.benchmark_completion_file.is_file()
+                and args_cli.benchmark_completion_file.stat().st_mtime
+                >= completion_file_not_before_wall_s
+            ):
+                benchmark_completion_observed = True
+                print(
+                    "PASS benchmark_completion_file="
+                    f"{args_cli.benchmark_completion_file}",
+                    flush=True,
+                )
+                break
+        if (
+            args_cli.benchmark_completion_file is not None
+            and not benchmark_completion_observed
+        ):
+            raise RuntimeError(
+                "Simulation reached --steps before the benchmark completion "
+                f"file was refreshed: {args_cli.benchmark_completion_file}"
+            )
         controlled_wall_seconds = (
             time.monotonic() - controlled_wall_start
             if controlled_wall_start is not None
             else 0.0
         )
+        controlled_steps = max(
+            0,
+            completed_step_count - args_cli.external_control_warmup_steps,
+        )
+        if args_cli.external_control:
+            diagnostic_metadata["external_control_timing"] = {
+                "controlled_steps": controlled_steps,
+                "received_controlled_joint_commands": (
+                    received_controlled_command_count
+                ),
+                "joint_command_freshness_ratio": (
+                    received_controlled_command_count / controlled_steps
+                    if controlled_steps > 0
+                    else None
+                ),
+                "action_age_steps": {
+                    "sample_count": len(controlled_action_age_steps),
+                    "min": (
+                        min(controlled_action_age_steps)
+                        if controlled_action_age_steps
+                        else None
+                    ),
+                    "mean": (
+                        sum(controlled_action_age_steps)
+                        / len(controlled_action_age_steps)
+                        if controlled_action_age_steps
+                        else None
+                    ),
+                    "max": (
+                        max(controlled_action_age_steps)
+                        if controlled_action_age_steps
+                        else None
+                    ),
+                },
+                "fresh_command_wait_s": {
+                    "sample_count": len(controlled_command_wait_s),
+                    "mean": (
+                        sum(controlled_command_wait_s)
+                        / len(controlled_command_wait_s)
+                        if controlled_command_wait_s
+                        else None
+                    ),
+                    "max": (
+                        max(controlled_command_wait_s)
+                        if controlled_command_wait_s
+                        else None
+                    ),
+                    "timeout_count": command_wait_timeout_count,
+                },
+                "action_alignment_probe_max_abs_error": {
+                    "sample_count": len(policy_action_parity_errors),
+                    "mean": (
+                        sum(policy_action_parity_errors)
+                        / len(policy_action_parity_errors)
+                        if policy_action_parity_errors
+                        else None
+                    ),
+                    "max": (
+                        max(policy_action_parity_errors)
+                        if policy_action_parity_errors
+                        else None
+                    ),
+                },
+            }
         if args_cli.external_control and received_command_count == 0:
             raise RuntimeError(
                 "External control was requested, but no fresh /joint_command "
                 "message was received"
+            )
+        if args_cli.external_control and command_wait_timeout_count != 0:
+            raise RuntimeError(
+                "Fresh /joint_command wait timed out during controlled steps: "
+                f"count={command_wait_timeout_count}"
             )
         if args_cli.validate_observation_parity:
             if parity_samples == 0:
@@ -1013,9 +1580,10 @@ def main() -> None:
                 f"PASS received_joint_commands={received_command_count}",
                 flush=True,
             )
-            controlled_steps = max(
-                0,
-                args_cli.steps - args_cli.external_control_warmup_steps,
+            print(
+                "PASS received_controlled_joint_commands="
+                f"{received_controlled_command_count}",
+                flush=True,
             )
             if controlled_steps > 0 and controlled_wall_seconds > 0.0:
                 controlled_sim_seconds = controlled_steps * base_env.step_dt
@@ -1027,6 +1595,25 @@ def main() -> None:
                 print(
                     "PASS controlled_loop_wall_hz="
                     f"{controlled_steps / controlled_wall_seconds:.6f}",
+                    flush=True,
+                )
+                print(
+                    "PASS joint_command_freshness_ratio="
+                    f"{received_controlled_command_count / controlled_steps:.9f}",
+                    flush=True,
+                )
+            if controlled_action_age_steps:
+                print(
+                    "PASS joint_command_action_age_steps="
+                    f"min={min(controlled_action_age_steps):.6f},"
+                    f"mean={sum(controlled_action_age_steps) / len(controlled_action_age_steps):.6f},"
+                    f"max={max(controlled_action_age_steps):.6f}",
+                    flush=True,
+                )
+            if policy_action_parity_errors:
+                print(
+                    "INFO policy_action_alignment_probe_max_abs_error="
+                    f"{max(policy_action_parity_errors):.9g}",
                     flush=True,
                 )
             print(f"PASS terminated_count={terminated_count}", flush=True)
@@ -1046,6 +1633,16 @@ def main() -> None:
             flush=True,
         )
     finally:
+        if (
+            args_cli.locomotion_diagnostics_output is not None
+            and diagnostic_samples
+        ):
+            _write_diagnostic_report(
+                args_cli.locomotion_diagnostics_output,
+                samples=diagnostic_samples,
+                metadata=diagnostic_metadata,
+                thresholds=diagnostic_thresholds,
+            )
         env.close()
 
 
