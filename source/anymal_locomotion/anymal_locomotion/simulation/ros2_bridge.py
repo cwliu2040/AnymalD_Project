@@ -149,6 +149,12 @@ def create_ros2_policy_bridge(
     episode_reset_ack_topic: str = "simulation/episode_reset_ack",
     imu_sensor_name: str = "imu_sensor",
     imu_update_period_s: float = 0.005,
+    initial_base_orientation_wxyz: tuple[float, float, float, float] = (
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+    ),
     domain_id: int | None = None,
     connect_articulation_controller: bool = True,
     publish_ground_truth_tf: bool = True,
@@ -181,6 +187,21 @@ def create_ros2_policy_bridge(
         sensor_name=imu_sensor_name,
         update_period_s=imu_update_period_s,
     )
+    if len(initial_base_orientation_wxyz) != 4 or not all(
+        math.isfinite(value) for value in initial_base_orientation_wxyz
+    ):
+        raise ValueError(
+            "initial_base_orientation_wxyz must contain four finite values"
+        )
+    initial_orientation_norm = math.sqrt(
+        sum(value * value for value in initial_base_orientation_wxyz)
+    )
+    if initial_orientation_norm < 1.0e-9:
+        raise ValueError("initial_base_orientation_wxyz has near-zero norm")
+    initial_w, initial_x, initial_y, initial_z = (
+        value / initial_orientation_norm
+        for value in initial_base_orientation_wxyz
+    )
 
     keys = og.Controller.Keys
     target_prim = [usdrt.Sdf.Path(articulation_root_path)]
@@ -192,6 +213,11 @@ def create_ros2_policy_bridge(
         ("ImuPhysicsStep", "isaacsim.core.nodes.OnPhysicsStep"),
         ("ReadSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
         ("ComputeImuOrientation", "isaacsim.core.nodes.IsaacComputeOdometry"),
+        ("InitialImuOrientation", "omni.graph.nodes.ConstantQuatd"),
+        ("InitialImuIdentityMatrix", "omni.graph.nodes.ConstantMatrix4d"),
+        ("InitialImuOrientationMatrix", "omni.graph.nodes.SetMatrix4Rotation"),
+        ("ComposeImuOrientation", "omni.graph.nodes.MatrixMultiply"),
+        ("ExtractImuOrientation", "omni.graph.nodes.GetMatrix4Quaternion"),
         ("ReadImuSensor", "isaacsim.sensors.physics.IsaacReadIMU"),
         ("ImuIdentityMatrix", "omni.graph.nodes.ConstantMatrix4d"),
         ("ImuOrientationMatrix", "omni.graph.nodes.SetMatrix4Rotation"),
@@ -219,6 +245,10 @@ def create_ros2_policy_bridge(
         ("ResetImpulse.inputs:onlyPlayback", False),
         ("ReadSimTime.inputs:resetOnStop", False),
         ("ComputeImuOrientation.inputs:chassisPrim", target_prim),
+        (
+            "InitialImuOrientation.inputs:value",
+            (initial_x, initial_y, initial_z, initial_w),
+        ),
         ("ReadImuSensor.inputs:imuPrim", imu_target_prim),
         ("ReadImuSensor.inputs:readGravity", True),
         ("ReadImuSensor.inputs:useLatestData", True),
@@ -257,7 +287,27 @@ def create_ros2_policy_bridge(
         ),
         ("ReadImuSensor.outputs:execOut", "PublishImu.inputs:execIn"),
         (
-            "ComputeImuOrientation.outputs:orientation",
+            "InitialImuIdentityMatrix.inputs:value",
+            "InitialImuOrientationMatrix.inputs:matrix",
+        ),
+        (
+            "InitialImuOrientation.inputs:value",
+            "InitialImuOrientationMatrix.inputs:rotationAngle",
+        ),
+        (
+            "ImuOrientationMatrix.outputs:matrix",
+            "ComposeImuOrientation.inputs:a",
+        ),
+        (
+            "InitialImuOrientationMatrix.outputs:matrix",
+            "ComposeImuOrientation.inputs:b",
+        ),
+        (
+            "ComposeImuOrientation.outputs:output",
+            "ExtractImuOrientation.inputs:matrix",
+        ),
+        (
+            "ExtractImuOrientation.outputs:quaternion",
             "PublishImu.inputs:orientation",
         ),
         (
@@ -269,7 +319,7 @@ def create_ros2_policy_bridge(
             "ImuOrientationMatrix.inputs:rotationAngle",
         ),
         (
-            "ImuOrientationMatrix.outputs:matrix",
+            "ComposeImuOrientation.outputs:output",
             "ImuInverseOrientation.inputs:matrix",
         ),
         (
@@ -626,7 +676,7 @@ def read_imu_state(bridge: Ros2PolicyBridge) -> Ros2ImuState:
     )
     orientation = og.Controller.get(
         og.Controller.attribute(
-            f"{bridge.graph_path}/ComputeImuOrientation.outputs:orientation"
+            f"{bridge.graph_path}/ExtractImuOrientation.outputs:quaternion"
         )
     )
     sensor_time = og.Controller.get(

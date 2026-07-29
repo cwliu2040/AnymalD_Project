@@ -760,8 +760,8 @@ def main() -> None:
         # Preserve one complete 50 Hz control interval of 200 Hz contact data.
         env_cfg.scene.contact_forces.history_length = 4
     # Isaac Compute Odometry reports orientation relative to the reset pose.
-    # The ROS deployment host therefore uses an odom-aligned initial base pose
-    # so its 200 Hz world-to-base IMU projection has no hidden yaw offset.
+    # The ROS bridge composes this pose with the configured initial base
+    # orientation before its 200 Hz world-to-base IMU projection.
     env_cfg.events.reset_base.params["pose_range"] = {
         "x": (args_cli.spawn_x, args_cli.spawn_x),
         "y": (args_cli.spawn_y, args_cli.spawn_y),
@@ -831,6 +831,12 @@ def main() -> None:
         )
         bridge = create_ros2_policy_bridge(
             articulation_root,
+            initial_base_orientation_wxyz=(
+                math.cos(0.5 * args_cli.spawn_yaw),
+                0.0,
+                0.0,
+                math.sin(0.5 * args_cli.spawn_yaw),
+            ),
             connect_articulation_controller=not args_cli.external_control,
             publish_ground_truth_tf=not args_cli.enable_lio_sam,
         )
@@ -1008,6 +1014,9 @@ def main() -> None:
         imu_timestamp_step_error = 0.0
         imu_angular_velocity_max_error = 0.0
         imu_projected_gravity_max_error = 0.0
+        imu_reset_transient_angular_velocity_max_error = 0.0
+        imu_reset_transient_projected_gravity_max_error = 0.0
+        imu_reset_grace_steps_remaining = 0
         imu_orientation_norm_max_error = 0.0
         final_imu_state = None
         straight_start_position: np.ndarray | None = None
@@ -1246,39 +1255,57 @@ def main() -> None:
             last_imu_sensor_time = imu_state.sensor_time
             imu_sensor_samples += 1
             final_imu_state = imu_state
-            if step_terminated == 0 and step_truncated == 0:
+            angular_velocity_error = float(
+                np.max(
+                    np.abs(
+                        np.asarray(
+                            imu_state.angular_velocity,
+                            dtype=np.float32,
+                        )
+                        - robot.data.root_ang_vel_b[0]
+                        .detach()
+                        .cpu()
+                        .numpy()
+                    )
+                )
+            )
+            projected_gravity_error = float(
+                np.max(
+                    np.abs(
+                        _projected_gravity_from_xyzw(
+                            imu_state.orientation_xyzw
+                        )
+                        - robot.data.projected_gravity_b[0]
+                        .detach()
+                        .cpu()
+                        .numpy()
+                    )
+                )
+            )
+            if step_terminated != 0 or step_truncated != 0:
+                # PhysX IMU data can retain the pre-reset sample for one
+                # physics tick after the articulation has reset.  Keep that
+                # boundary visible as a separate metric and require the normal
+                # contract again immediately after that one-tick grace window.
+                imu_reset_grace_steps_remaining = 1
+            elif imu_reset_grace_steps_remaining > 0:
+                imu_reset_transient_angular_velocity_max_error = max(
+                    imu_reset_transient_angular_velocity_max_error,
+                    angular_velocity_error,
+                )
+                imu_reset_transient_projected_gravity_max_error = max(
+                    imu_reset_transient_projected_gravity_max_error,
+                    projected_gravity_error,
+                )
+                imu_reset_grace_steps_remaining -= 1
+            else:
                 imu_angular_velocity_max_error = max(
                     imu_angular_velocity_max_error,
-                    float(
-                        np.max(
-                            np.abs(
-                                np.asarray(
-                                    imu_state.angular_velocity,
-                                    dtype=np.float32,
-                                )
-                                - robot.data.root_ang_vel_b[0]
-                                .detach()
-                                .cpu()
-                                .numpy()
-                            )
-                        )
-                    ),
+                    angular_velocity_error,
                 )
                 imu_projected_gravity_max_error = max(
                     imu_projected_gravity_max_error,
-                    float(
-                        np.max(
-                            np.abs(
-                                _projected_gravity_from_xyzw(
-                                    imu_state.orientation_xyzw
-                                )
-                                - robot.data.projected_gravity_b[0]
-                                .detach()
-                                .cpu()
-                                .numpy()
-                            )
-                        )
-                    ),
+                    projected_gravity_error,
                 )
             imu_orientation_norm_max_error = max(
                 imu_orientation_norm_max_error,
@@ -1589,6 +1616,16 @@ def main() -> None:
         print(
             "PASS imu_projected_gravity_max_error="
             f"{imu_projected_gravity_max_error:.9g}",
+            flush=True,
+        )
+        print(
+            "INFO imu_reset_transient_angular_velocity_max_error="
+            f"{imu_reset_transient_angular_velocity_max_error:.9g}",
+            flush=True,
+        )
+        print(
+            "INFO imu_reset_transient_projected_gravity_max_error="
+            f"{imu_reset_transient_projected_gravity_max_error:.9g}",
             flush=True,
         )
         print(

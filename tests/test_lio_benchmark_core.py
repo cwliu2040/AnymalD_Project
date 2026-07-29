@@ -91,13 +91,66 @@ def test_stability_profiles_reach_declared_target(
 def test_warehouse_mapping_stress_replays_turns_then_exercises_watchdog() -> None:
     profile = get_motion_profile("warehouse_mapping_stress")
 
-    assert profile.duration_s == pytest.approx(39.02)
-    assert profile.command_at(5.50) == pytest.approx((2.3, 0.0, 2.0))
-    assert profile.command_at(16.02) == pytest.approx((2.3, 0.0, -2.0))
-    assert profile.command_at(29.00) == pytest.approx((2.3, 0.0, 2.0))
-    assert profile.should_publish_command(29.00)
-    assert not profile.should_publish_command(29.02)
-    assert profile.command_at(29.50) == (0.0, 0.0, 0.0)
+    assert profile.duration_s == pytest.approx(41.80)
+    assert profile.command_at(7.70) == pytest.approx((2.3, 0.0, 2.0))
+    assert profile.command_at(8.70) == (0.0, 0.0, 0.0)
+    assert profile.command_at(18.82) == pytest.approx((2.3, 0.0, -2.0))
+    assert profile.command_at(28.84) == pytest.approx((2.3, 0.0, 2.0))
+    assert profile.should_publish_command(31.79)
+    assert not profile.should_publish_command(31.80)
+    assert profile.command_at(32.00) == (0.0, 0.0, 0.0)
+
+
+def test_warehouse_final_turn_isolates_reported_failure_maneuver() -> None:
+    profile = get_motion_profile("warehouse_final_turn")
+
+    assert profile.duration_s == pytest.approx(17.96)
+    assert profile.command_at(4.99) == (0.0, 0.0, 0.0)
+    assert profile.command_at(5.00) == pytest.approx((2.3, 0.0, 2.0))
+    assert profile.should_publish_command(7.95)
+    assert not profile.should_publish_command(7.96)
+    assert profile.command_at(8.00) == (0.0, 0.0, 0.0)
+
+
+def test_warehouse_refinery_exit_replays_local_failure_sequence() -> None:
+    profile = get_motion_profile("warehouse_refinery_exit")
+
+    assert profile.duration_s == pytest.approx(21.90)
+    assert profile.command_at(5.00) == pytest.approx((2.3, 0.0, -2.0))
+    assert profile.command_at(5.181) == pytest.approx((2.3, 0.0, 0.0))
+    assert profile.command_at(8.941) == pytest.approx((2.3, 0.0, 2.0))
+    assert not profile.should_publish_command(11.90)
+
+
+def test_refinery_fix_trace_replay_preserves_failure_timing() -> None:
+    profile = get_motion_profile("refinery_fix_trace_replay")
+
+    assert profile.duration_s == pytest.approx(42.1)
+    assert profile.command_at(2.46) == pytest.approx(
+        (1.898749, 0.0, 0.817349)
+    )
+    assert profile.command_at(15.56) == pytest.approx(
+        (0.0, 0.0, 0.0)
+    )
+    assert profile.command_at(23.14) == pytest.approx(
+        (0.0, 0.0, 0.0)
+    )
+    assert profile.command_at(24.52) == pytest.approx(
+        (0.0, 0.0, 0.817349)
+    )
+    assert not profile.should_publish_command(29.58)
+
+
+def test_refinery_received_trace_replay_preserves_watchdog_gaps() -> None:
+    profile = get_motion_profile("refinery_fix_received_trace_replay")
+
+    assert profile.command_at(15.60) == pytest.approx((1.898749, 0.0, 0.0))
+    assert not profile.should_publish_command(15.60)
+    assert profile.should_publish_command(16.10)
+    assert profile.command_at(23.50) == pytest.approx((1.898749, 0.0, 0.0))
+    assert not profile.should_publish_command(23.50)
+    assert profile.should_publish_command(24.60)
+    assert not profile.should_publish_command(30.00)
 
 
 def test_trajectory_evaluation_aligns_initial_pose() -> None:

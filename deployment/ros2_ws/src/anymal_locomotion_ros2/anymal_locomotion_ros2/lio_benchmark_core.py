@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
@@ -43,6 +43,7 @@ class MotionProfile:
         ...,
     ] = ()
     command_publish_until_s: float | None = None
+    command_publish_windows_s: tuple[tuple[float, float], ...] = ()
 
     @property
     def duration_s(self) -> float:
@@ -83,9 +84,15 @@ class MotionProfile:
 
     def should_publish_command(self, elapsed_s: float) -> bool:
         """Return whether the driver should refresh /cmd_vel at this time."""
-        return (
+        before_final_cutoff = (
             self.command_publish_until_s is None
             or elapsed_s < self.command_publish_until_s
+        )
+        if not self.command_publish_windows_s:
+            return before_final_cutoff
+        return before_final_cutoff and any(
+            start_s <= elapsed_s < end_s
+            for start_s, end_s in self.command_publish_windows_s
         )
 
 
@@ -387,29 +394,121 @@ _PROFILES = {
         hold_s=0.0,
         settle_s=0.0,
         sequence=(
-            (5.00, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
-            (0.50, (0.0, 0.0, 0.0), (2.3, 0.0, 2.0)),
-            (0.94, (2.3, 0.0, 2.0), (2.3, 0.0, 2.0)),
-            (0.02, (2.3, 0.0, 2.0), (2.3, 0.0, 0.0)),
-            (9.54, (2.3, 0.0, 0.0), (2.3, 0.0, 0.0)),
-            (0.02, (2.3, 0.0, 0.0), (2.3, 0.0, -2.0)),
-            (0.16, (2.3, 0.0, -2.0), (2.3, 0.0, -2.0)),
-            (0.02, (2.3, 0.0, -2.0), (2.3, 0.0, 0.0)),
-            (5.92, (2.3, 0.0, 0.0), (2.3, 0.0, 0.0)),
-            (0.02, (2.3, 0.0, 0.0), (2.3, 0.0, -2.0)),
-            (0.16, (2.3, 0.0, -2.0), (2.3, 0.0, -2.0)),
-            (0.02, (2.3, 0.0, -2.0), (2.3, 0.0, 0.0)),
-            (3.74, (2.3, 0.0, 0.0), (2.3, 0.0, 0.0)),
-            (0.02, (2.3, 0.0, 0.0), (2.3, 0.0, 2.0)),
-            (2.94, (2.3, 0.0, 2.0), (2.3, 0.0, 2.0)),
+            # Exact command plateaus from warehouse_fall_01.  In particular,
+            # preserve the initial wait and the zero-command pause after the
+            # first left turn; omitting either sends the robot down a different
+            # Factory aisle before it reaches the reported y=13 area.
+            (7.70, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+            (0.96, (2.3, 0.0, 2.0), (2.3, 0.0, 2.0)),
+            (0.56, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+            (9.56, (2.3, 0.0, 0.0), (2.3, 0.0, 0.0)),
+            (0.18, (2.3, 0.0, -2.0), (2.3, 0.0, -2.0)),
+            (5.94, (2.3, 0.0, 0.0), (2.3, 0.0, 0.0)),
+            (0.18, (2.3, 0.0, -2.0), (2.3, 0.0, -2.0)),
+            (3.76, (2.3, 0.0, 0.0), (2.3, 0.0, 0.0)),
+            (2.96, (2.3, 0.0, 2.0), (2.3, 0.0, 2.0)),
             (10.00, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
         ),
         # Stop refreshing /cmd_vel at the last high-speed left turn.  The
         # policy watchdog therefore owns the transition to the final 10 s
         # zero-command recovery interval, matching interactive teleoperation.
-        command_publish_until_s=29.02,
+        command_publish_until_s=31.80,
+    ),
+    "warehouse_final_turn": MotionProfile(
+        "warehouse_final_turn",
+        (2.3, 0.0, 2.0),
+        warmup_s=0.0,
+        ramp_s=0.0,
+        hold_s=0.0,
+        settle_s=0.0,
+        sequence=(
+            (5.00, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+            (2.96, (2.3, 0.0, 2.0), (2.3, 0.0, 2.0)),
+            (10.00, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+        ),
+        command_publish_until_s=7.96,
+    ),
+    "warehouse_refinery_exit": MotionProfile(
+        "warehouse_refinery_exit",
+        (2.3, 0.0, 2.0),
+        warmup_s=0.0,
+        ramp_s=0.0,
+        hold_s=0.0,
+        settle_s=0.0,
+        sequence=(
+            (5.00, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+            (0.18, (2.3, 0.0, -2.0), (2.3, 0.0, -2.0)),
+            (3.76, (2.3, 0.0, 0.0), (2.3, 0.0, 0.0)),
+            (2.96, (2.3, 0.0, 2.0), (2.3, 0.0, 2.0)),
+            (10.00, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+        ),
+        command_publish_until_s=11.90,
+    ),
+    "refinery_fix_trace_replay": MotionProfile(
+        "refinery_fix_trace_replay",
+        (1.898749, 0.0, 0.817349),
+        warmup_s=0.0,
+        ramp_s=0.0,
+        hold_s=0.0,
+        settle_s=0.0,
+        sequence=(
+            # Effective policy commands captured in refinery_fix_01, including
+            # the two watchdog-zero intervals that the simulator's raw command
+            # trace cannot see.
+            (1.46, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+            (0.60, (0.5, 0.0, 0.0), (1.898749, 0.0, 0.0)),
+            (0.40, (1.898749, 0.0, 0.0), (1.898749, 0.0, 0.0)),
+            (0.44, (1.898749, 0.0, 0.817349), (1.898749, 0.0, 0.817349)),
+            (1.02, (1.898749, 0.0, 0.0), (1.898749, 0.0, 0.0)),
+            (0.18, (1.898749, 0.0, 0.817349), (1.898749, 0.0, 0.817349)),
+            (2.80, (1.898749, 0.0, 0.0), (1.898749, 0.0, 0.0)),
+            (0.12, (1.898749, 0.0, 0.817349), (1.898749, 0.0, 0.817349)),
+            (4.18, (1.898749, 0.0, 0.0), (1.898749, 0.0, 0.0)),
+            (0.18, (1.898749, 0.0, 0.817349), (1.898749, 0.0, 0.817349)),
+            (0.50, (1.898749, 0.0, 0.0), (1.898749, 0.0, 0.0)),
+            (0.52, (1.898749, 0.0, 0.817349), (1.898749, 0.0, 0.817349)),
+            (0.28, (1.898749, 0.0, 0.0), (1.898749, 0.0, 0.0)),
+            (0.22, (1.898749, 0.0, 0.817349), (1.898749, 0.0, 0.817349)),
+            (2.62, (1.898749, 0.0, 0.0), (1.898749, 0.0, 0.0)),
+            (0.50, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+            (2.32, (1.898749, 0.0, 0.0), (1.898749, 0.0, 0.0)),
+            (0.10, (1.898749, 0.0, -0.817349), (1.898749, 0.0, -0.817349)),
+            (0.70, (1.898749, 0.0, 0.0), (1.898749, 0.0, 0.0)),
+            (0.16, (1.898749, 0.0, -0.817349), (1.898749, 0.0, -0.817349)),
+            (3.80, (1.898749, 0.0, 0.0), (1.898749, 0.0, 0.0)),
+            (1.38, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+            (1.38, (0.0, 0.0, 0.817349), (0.0, 0.0, 0.817349)),
+            (3.72, (1.898749, 0.0, 0.0), (1.898749, 0.0, 0.0)),
+            (12.52, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+        ),
+        command_publish_until_s=29.58,
     ),
 }
+
+# Replay the received /cmd_vel history rather than the already-conditioned
+# effective command. The silent windows reproduce the two long keyboard
+# refresh gaps so watchdog behavior can be changed without changing the route.
+_refinery_effective_profile = _PROFILES["refinery_fix_trace_replay"]
+_refinery_received_sequence = list(_refinery_effective_profile.sequence)
+for _segment_index in (15, 21):
+    _duration_s, _, _ = _refinery_received_sequence[_segment_index]
+    _forward = (1.898749, 0.0, 0.0)
+    _refinery_received_sequence[_segment_index] = (
+        _duration_s,
+        _forward,
+        _forward,
+    )
+_PROFILES["refinery_fix_received_trace_replay"] = replace(
+    _refinery_effective_profile,
+    name="refinery_fix_received_trace_replay",
+    sequence=tuple(_refinery_received_sequence),
+    command_publish_until_s=None,
+    command_publish_windows_s=(
+        (0.0, 15.02),
+        (16.02, 22.60),
+        (24.48, 29.62),
+    ),
+)
 
 
 def get_motion_profile(name: str) -> MotionProfile:

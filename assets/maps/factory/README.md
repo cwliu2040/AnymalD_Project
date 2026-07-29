@@ -24,3 +24,11 @@ asset path。以下相容層：
 
 2026-07-27 的 Isaac Sim 驗證共解析 135 個 used layer，沒有指向舊 workspace
 或其他外部絕對路徑，並找到 2,082 個啟用 collision 的 prim。
+
+2026-07-29 發現 refinery 原始 mesh 含一塊
+`x=±15.123 m、y=±11.775 m、z=0` 的矩形地板，與
+`/World/GroundPlane/CollisionPlane` 共面。ANYmal 跨過其 `y=±11.775 m`
+邊緣時可能因重疊接觸 seam 卡住，隨後在轉向時跌倒。
+`source/source_without_coplanar_floor.usdc` 只移除構成該矩形的兩個
+三角形，保留 refinery 其餘 visual 與 collision faces；可用
+`scripts/validation/build_factory_refinery_fix.py` 從原始 source 重建。

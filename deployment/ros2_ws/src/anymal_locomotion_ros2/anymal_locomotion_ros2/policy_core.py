@@ -159,6 +159,30 @@ def clamp_command(command: Sequence[float] | np.ndarray, contract: PolicyContrac
     return np.clip(command_vector, lower, upper)
 
 
+def decelerate_command_toward_zero(
+    command: Sequence[float] | np.ndarray,
+    elapsed_s: float,
+    linear_deceleration: float,
+    angular_deceleration: float,
+) -> np.ndarray:
+    """Slew a body velocity command toward zero without changing its sign."""
+    values = _vector(command, 3, "velocity_command")
+    if elapsed_s < 0.0:
+        raise ValueError("elapsed_s must be non-negative")
+    if linear_deceleration <= 0.0 or angular_deceleration <= 0.0:
+        raise ValueError("deceleration limits must be positive")
+    maximum_change = np.asarray(
+        [
+            linear_deceleration * elapsed_s,
+            linear_deceleration * elapsed_s,
+            angular_deceleration * elapsed_s,
+        ],
+        dtype=np.float32,
+    )
+    magnitude = np.maximum(np.abs(values) - maximum_change, 0.0)
+    return np.copysign(magnitude, values).astype(np.float32, copy=False)
+
+
 def build_observation(
     state: RobotState,
     command: Sequence[float] | np.ndarray,

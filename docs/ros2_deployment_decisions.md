@@ -160,8 +160,13 @@ Isaac Sim 5.1 的已知限制：
   `IsaacComputeOdometry` 取得；不是低頻 base state 重播。
 - `IsaacReadIMU` 的 angular velocity 是 world frame，graph 以同一筆
   orientation 轉為 `base_link`。
-- `IsaacComputeOdometry` orientation 相對 reset pose；deployment host 將
-  初始 pose 與 velocity 設為 odom-aligned 零值，避免隱藏的初始 yaw offset。
+- `IsaacComputeOdometry` orientation 相對 reset pose；bridge 會先合成
+  configured initial base orientation，再把 world-frame angular velocity
+  轉到 `base_link`。非零 spawn yaw `+90°` 的實測 angular velocity parity
+  最大誤差為 `3.17e-4`。
+- Episode reset 後 PhysX IMU 可能保留一個 physics tick 的 pre-reset
+  sample；validator 將這一 tick 明列為 reset transient metric，正常 contract
+  從下一 tick 立即恢復檢查，不把 transient 混成行走期間 warning。
 - 真實 sensor 取樣相對 policy state 有一個 physics-step 等級的差異，因此
   IMU angular velocity 與 projected gravity 的 parity tolerance 使用
   `2e-3`；啟用 RTX off-screen rendering 的 LIO-SAM 驗證使用 `1e-2`
@@ -279,9 +284,10 @@ Runtime 驗收結果：
   enabled/disabled 都沒有誤閉環。每個 source bag 都以 fresh LIO graph
   各 replay 兩次。
 
-仍未完成的是實體 ANYmal-D sensor extrinsic、實體 low-level interface，
-以及模擬 host 的 200 Hz IMU `angular_velocity` contract 警告釐清。該警告
-沒有被放寬或隱藏，且不改動 upstream LIO-SAM。
+仍未完成的是實體 ANYmal-D sensor extrinsic 與實體 low-level interface。
+模擬 host 的 200 Hz IMU `angular_velocity` warning 已拆成並修正非零初始
+yaw frame contract，episode-reset 的單 tick transient 另行量測；沒有改動
+upstream LIO-SAM。
 
 ## 暫時不做
 

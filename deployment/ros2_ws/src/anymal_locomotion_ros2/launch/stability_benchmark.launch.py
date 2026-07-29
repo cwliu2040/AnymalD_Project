@@ -83,6 +83,12 @@ def generate_launch_description() -> LaunchDescription:
     spawn_y = LaunchConfiguration("spawn_y")
     spawn_yaw = LaunchConfiguration("spawn_yaw")
     enhanced_determinism = LaunchConfiguration("enhanced_determinism")
+    watchdog_linear_deceleration = LaunchConfiguration(
+        "watchdog_linear_deceleration"
+    )
+    watchdog_angular_deceleration = LaunchConfiguration(
+        "watchdog_angular_deceleration"
+    )
 
     project_python_path = [
         PathJoinSubstitution([project_root, "deployment", "python_vendor"]),
@@ -102,6 +108,8 @@ def generate_launch_description() -> LaunchDescription:
                 "backend": "onnx",
                 "policy_path": policy_path,
                 "metadata_path": metadata_path,
+                "watchdog_linear_deceleration": watchdog_linear_deceleration,
+                "watchdog_angular_deceleration": watchdog_angular_deceleration,
                 "diagnostics_path": PathJoinSubstitution(
                     [output_dir, "policy_diagnostics.json"]
                 ),
@@ -261,6 +269,14 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "enhanced_determinism",
                 default_value="true",
+            ),
+            DeclareLaunchArgument(
+                "watchdog_linear_deceleration",
+                default_value="0.0",
+            ),
+            DeclareLaunchArgument(
+                "watchdog_angular_deceleration",
+                default_value="0.0",
             ),
             SetEnvironmentVariable("ROS_DOMAIN_ID", ros_domain_id),
             SetEnvironmentVariable("ROS_LOCALHOST_ONLY", "1"),

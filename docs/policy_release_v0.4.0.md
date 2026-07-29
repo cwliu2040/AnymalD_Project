@@ -56,6 +56,8 @@ TorchScript 最大誤差為 0；checkpoint 與 ONNX 最大絕對誤差
 
 ## 已知限制
 
-- 模擬 host 的 200 Hz IMU `angular_velocity` contract 警告仍待釐清。
+- Release 當時的模擬 host 200 Hz IMU `angular_velocity` warning，後續確認
+  包含非零初始 yaw 未合成與 episode-reset 單 tick transient；deployment
+  bridge／validator 已修正，policy artifact 本身未變更。
 - 實體 sensor extrinsic 與 low-level interface 尚未完成。
 - 此結果是模擬 qualification，不是實體 ANYmal-D 安全速度宣告。

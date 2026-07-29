@@ -181,6 +181,7 @@ def test_ros2_policy_node_stays_outside_training_and_uses_bridge_topics() -> Non
 
 def test_isaac_ros2_bridge_uses_action_graph_and_name_based_commands() -> None:
     source = ROS2_BRIDGE.read_text(encoding="utf-8")
+    host_source = ROS2_BRIDGE_HOST.read_text(encoding="utf-8")
     for node_type in (
         "ConstantQuatd",
         "ConstantMatrix4d",
@@ -207,6 +208,20 @@ def test_isaac_ros2_bridge_uses_action_graph_and_name_based_commands() -> None:
     assert "ReadImuSensor.outputs:sensorTime" in source
     assert "ReadImuSensor.outputs:angVel" in source
     assert "ReadImuSensor.outputs:linAcc" in source
+    assert (
+        '"ExtractImuOrientation.outputs:quaternion",\n'
+        '            "PublishImu.inputs:orientation"'
+    ) in source
+    assert (
+        '"ComposeImuOrientation.outputs:output",\n'
+        '            "ImuInverseOrientation.inputs:matrix"'
+    ) in source
+    assert "ComputeImuOrientation" in source
+    assert "InitialImuOrientation" in source
+    assert "imu_reset_grace_steps_remaining = 1" in host_source
+    assert "imu_reset_transient_angular_velocity_max_error" in host_source
+    assert "MatrixMultiply" in source
+    assert "GetMatrix4Quaternion" in source
     assert 'imu_topic: str = "imu/data"' in source
     assert "imu_update_period_s: float = 0.005" in source
     assert '("PublishOdometry.inputs:publishRawVelocities", True)' in source
@@ -329,6 +344,15 @@ def test_complete_bringup_uses_project_defaults_and_official_teleop() -> None:
     assert "float physics:staticFriction = 1" in factory_source
     assert "float physics:dynamicFriction = 1" in factory_source
     assert 'token physxMaterial:frictionCombineMode = "multiply"' in factory_source
+    assert "source_without_coplanar_floor.usdc" in factory_source
+    refinery_builder = (
+        PROJECT_ROOT
+        / "scripts"
+        / "validation"
+        / "build_factory_refinery_fix.py"
+    ).read_text(encoding="utf-8")
+    assert "REMOVED_FACE_INDICES = (46822, 46823)" in refinery_builder
+    assert "corrected_face_count != 50344" in refinery_builder
     assert "from teleop_twist_keyboard import main as teleop_main" in teleop_source
     assert "tkinter" not in teleop_source
 

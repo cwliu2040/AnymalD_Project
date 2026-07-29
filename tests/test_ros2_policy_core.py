@@ -14,6 +14,7 @@ from anymal_locomotion_ros2.policy_core import (
     build_observation,
     canonical_joint_state,
     clamp_command,
+    decelerate_command_toward_zero,
     projected_gravity_from_quaternion,
 )
 
@@ -95,6 +96,34 @@ def test_observation_layout_and_command_clamp(contract: PolicyContract) -> None:
     np.testing.assert_array_equal(observation[12:24], np.zeros(12))
     np.testing.assert_array_equal(observation[24:36], np.arange(12))
     np.testing.assert_array_equal(observation[36:48], np.full(12, 0.25))
+
+
+def test_watchdog_deceleration_slews_each_command_axis_toward_zero() -> None:
+    actual = decelerate_command_toward_zero(
+        [1.9, -0.4, 0.8],
+        elapsed_s=0.2,
+        linear_deceleration=2.0,
+        angular_deceleration=2.0,
+    )
+    np.testing.assert_allclose(actual, [1.5, 0.0, 0.4], atol=1.0e-6)
+
+
+@pytest.mark.parametrize(
+    ("elapsed_s", "linear_deceleration", "angular_deceleration"),
+    [(-0.1, 2.0, 2.0), (0.1, 0.0, 2.0), (0.1, 2.0, 0.0)],
+)
+def test_watchdog_deceleration_rejects_invalid_limits(
+    elapsed_s: float,
+    linear_deceleration: float,
+    angular_deceleration: float,
+) -> None:
+    with pytest.raises(ValueError):
+        decelerate_command_toward_zero(
+            [1.0, 0.0, 0.0],
+            elapsed_s,
+            linear_deceleration,
+            angular_deceleration,
+        )
 
 
 def test_runtime_scales_actions_and_remembers_previous_action(contract: PolicyContract) -> None:

@@ -21,6 +21,7 @@ from anymal_locomotion_ros2.policy_core import (
     PolicyRuntime,
     RobotState,
     canonical_joint_state,
+    decelerate_command_toward_zero,
     projected_gravity_from_quaternion,
 )
 from anymal_locomotion_ros2.onnx_backend import OnnxBackend
@@ -66,6 +67,8 @@ class AnymalPolicyNode(Node):
         self.declare_parameter("expected_odometry_child_frame", "base_link")
         self.declare_parameter("state_timeout_s", 0.1)
         self.declare_parameter("command_timeout_s", 0.5)
+        self.declare_parameter("watchdog_linear_deceleration", 0.0)
+        self.declare_parameter("watchdog_angular_deceleration", 0.0)
         self.declare_parameter(
             "inference_trigger",
             "synchronized_state",
@@ -94,6 +97,12 @@ class AnymalPolicyNode(Node):
         )
         self._state_timeout = float(self.get_parameter("state_timeout_s").value)
         self._command_timeout = float(self.get_parameter("command_timeout_s").value)
+        self._watchdog_linear_deceleration = float(
+            self.get_parameter("watchdog_linear_deceleration").value
+        )
+        self._watchdog_angular_deceleration = float(
+            self.get_parameter("watchdog_angular_deceleration").value
+        )
         self._inference_trigger = str(
             self.get_parameter("inference_trigger").value
         ).strip().lower()
@@ -106,6 +115,19 @@ class AnymalPolicyNode(Node):
         )
         if self._state_timeout <= 0.0 or self._command_timeout <= 0.0:
             raise ValueError("State and command timeouts must be positive")
+        watchdog_decelerations = (
+            self._watchdog_linear_deceleration,
+            self._watchdog_angular_deceleration,
+        )
+        if any(value < 0.0 for value in watchdog_decelerations):
+            raise ValueError("Watchdog decelerations must be non-negative")
+        if (watchdog_decelerations[0] == 0.0) != (
+            watchdog_decelerations[1] == 0.0
+        ):
+            raise ValueError(
+                "Watchdog linear and angular decelerations must both be zero "
+                "or both be positive"
+            )
         if self._inference_trigger not in ("synchronized_state", "timer"):
             raise ValueError(
                 "inference_trigger must be 'synchronized_state' or 'timer'"
@@ -119,6 +141,8 @@ class AnymalPolicyNode(Node):
         self._base_angular_velocity: np.ndarray | None = None
         self._projected_gravity: np.ndarray | None = None
         self._command = np.zeros(3, dtype=np.float32)
+        self._effective_command = np.zeros(3, dtype=np.float32)
+        self._last_policy_time: float | None = None
         self._receipt_times: dict[str, float] = {}
         self._state_stamps: dict[str, float] = {}
         self._last_inference_joint_stamp = float("-inf")
@@ -301,6 +325,8 @@ class AnymalPolicyNode(Node):
             return
         if sequence > self._last_reset_sequence:
             self._runtime.reset()
+            self._effective_command.fill(0.0)
+            self._last_policy_time = None
             self._last_reset_sequence = sequence
             self._reset_events.append(
                 {
@@ -353,11 +379,27 @@ class AnymalPolicyNode(Node):
             "command", float("-inf")
         )
         watchdog_timed_out = command_age_s > self._command_timeout
-        effective_command = (
-            np.zeros(3, dtype=np.float32)
-            if watchdog_timed_out
-            else received_command
+        policy_elapsed_s = (
+            0.0
+            if self._last_policy_time is None
+            else max(now - self._last_policy_time, 0.0)
         )
+        self._last_policy_time = now
+        watchdog_deceleration_enabled = (
+            self._watchdog_linear_deceleration > 0.0
+        )
+        if not watchdog_timed_out:
+            effective_command = received_command.copy()
+        elif watchdog_deceleration_enabled:
+            effective_command = decelerate_command_toward_zero(
+                self._effective_command,
+                policy_elapsed_s,
+                self._watchdog_linear_deceleration,
+                self._watchdog_angular_deceleration,
+            )
+        else:
+            effective_command = np.zeros(3, dtype=np.float32)
+        self._effective_command = effective_command
 
         assert self._base_linear_velocity is not None
         assert self._base_angular_velocity is not None
@@ -389,6 +431,9 @@ class AnymalPolicyNode(Node):
                         else float(command_age_s)
                     ),
                     "watchdog_timed_out": watchdog_timed_out,
+                    "watchdog_deceleration_enabled": (
+                        watchdog_deceleration_enabled
+                    ),
                     "observation": result.observation.astype(float).tolist(),
                     "raw_action": result.raw_action.astype(float).tolist(),
                 }
