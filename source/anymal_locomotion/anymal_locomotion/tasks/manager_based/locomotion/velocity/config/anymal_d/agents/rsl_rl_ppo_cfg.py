@@ -34,3 +34,16 @@ class AnymalDLocomotionRobustPPORunnerCfg(
             use_data_augmentation=True,
             data_augmentation_func=mdp.compute_symmetric_states,
         )
+
+
+@configclass
+class AnymalDLocomotionRecoveryPPORunnerCfg(
+    AnymalDLocomotionFlatPPORunnerCfg
+):
+    """Low-drift fine-tuning configuration for zero-command recovery."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.max_iterations = 200
+        self.algorithm.learning_rate = 1.0e-4
+        self.algorithm.entropy_coef = 0.001

@@ -61,11 +61,14 @@ def test_loop_profiles_integrate_declared_displacement(
         ("yaw_right_1_0", (0.0, 0.0, -1.0)),
         ("yaw_right_2_0", (0.0, 0.0, -2.0)),
         ("curve_0_5_left_0_5", (0.5, 0.0, 0.5)),
+        ("curve_0_5_left_0_25_long", (0.5, 0.0, 0.25)),
+        ("curve_0_5_left_0_25_long_shifted", (0.5, 0.0, 0.25)),
         ("curve_0_5_right_0_5", (0.5, 0.0, -0.5)),
         ("curve_1_5_left_1_0", (1.5, 0.0, 1.0)),
         ("curve_1_5_right_1_0", (1.5, 0.0, -1.0)),
         ("curve_3_0_left_0_5", (3.0, 0.0, 0.5)),
         ("curve_3_0_right_0_5", (3.0, 0.0, -0.5)),
+        ("combined_long", (1.5, 0.0, 1.0)),
     ),
 )
 def test_stability_profiles_reach_declared_target(

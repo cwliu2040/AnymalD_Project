@@ -241,6 +241,12 @@ def test_complete_bringup_uses_project_defaults_and_official_teleop() -> None:
     assert '"--disable-episode-timeout"' in source
     assert '"Factory_Layout.usd"' in source
     assert '"cmd_vel:=/cmd_vel"' in source
+    assert '"enable_locomotion_diagnostics"' in source
+    assert 'default_value="false"' in source
+    assert '"--locomotion-diagnostics-output"' in source
+    assert '"locomotion_diagnostics.json"' in source
+    assert "UnlessCondition(enable_locomotion_diagnostics)" in source
+    assert "IfCondition(enable_locomotion_diagnostics)" in source
     assert "command_safety_node" not in source
     assert "cmd_vel_raw" not in source
     assert "_validate_factory_physics_material" in host_source

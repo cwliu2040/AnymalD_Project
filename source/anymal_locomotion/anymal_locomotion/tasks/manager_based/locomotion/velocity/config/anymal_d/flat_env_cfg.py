@@ -116,3 +116,14 @@ class AnymalDLocomotionRobustEnvCfg(AnymalDLocomotionFlatEnvCfg):
                 heading=None,
             ),
         )
+
+
+@configclass
+class AnymalDLocomotionRecoveryEnvCfg(AnymalDLocomotionFlatEnvCfg):
+    """Fine-tuning task with frequent moving-to-standing transitions."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        command = self.commands.base_velocity
+        command.resampling_time_range = (5.0, 5.0)
+        command.rel_standing_envs = 0.2

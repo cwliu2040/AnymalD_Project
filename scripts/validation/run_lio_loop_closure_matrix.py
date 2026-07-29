@@ -22,6 +22,16 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--matrix", type=Path, default=DEFAULT_MATRIX)
 parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
 parser.add_argument(
+    "--policy-path",
+    type=Path,
+    help="Project-local ONNX policy used while capturing each source bag.",
+)
+parser.add_argument(
+    "--metadata-path",
+    type=Path,
+    help="Project-local policy metadata used while capturing each source bag.",
+)
+parser.add_argument(
     "--rerun",
     action="store_true",
     help="Rerun passed stages; existing rosbag directories are never removed.",
@@ -60,6 +70,18 @@ def _run(command: tuple[str, ...], environment: dict[str, str]) -> int:
 def main() -> None:
     matrix_path = _project_path(args.matrix, file_required=True)
     output_root = _project_path(args.output_root)
+    policy_path = (
+        _project_path(args.policy_path, file_required=True)
+        if args.policy_path is not None
+        else None
+    )
+    metadata_path = (
+        _project_path(args.metadata_path, file_required=True)
+        if args.metadata_path is not None
+        else None
+    )
+    if (policy_path is None) != (metadata_path is None):
+        parser.error("--policy-path and --metadata-path must be provided together")
     matrix = yaml.safe_load(matrix_path.read_text(encoding="utf-8"))
     if matrix.get("schema_version") != 1:
         raise ValueError("loop matrix schema_version must be 1")
@@ -85,6 +107,14 @@ def main() -> None:
         f"loop_search_keyframes:={int(search['neighboring_keyframes'])}",
         "loop_fitness_score:="
         f"{float(search['maximum_icp_fitness_score'])}",
+    )
+    capture_policy_args = (
+        (
+            f"policy_path:={policy_path}",
+            f"metadata_path:={metadata_path}",
+        )
+        if policy_path is not None and metadata_path is not None
+        else ()
     )
 
     results: list[dict] = []
@@ -121,6 +151,7 @@ def main() -> None:
                         "record_bag:=true",
                         "loop_closure_enable:=false",
                         "loop_closure_expectation:=disabled",
+                        *capture_policy_args,
                         *common_loop_args,
                     ),
                     environment,
@@ -208,6 +239,10 @@ def main() -> None:
         "schema_version": 1,
         "matrix_path": str(matrix_path),
         "output_root": str(output_root),
+        "policy_path": str(policy_path) if policy_path is not None else None,
+        "metadata_path": (
+            str(metadata_path) if metadata_path is not None else None
+        ),
         "expected_run_count": expected_runs,
         "passed_run_count": passed_runs,
         "failed_run_count": expected_runs - passed_runs,

@@ -122,8 +122,8 @@ export PYTHONPATH="${ANYMAL_PROJECT_ROOT}/deployment/python_vendor:${PYTHONPATH}
 ros2 run anymal_locomotion_ros2 policy_node --ros-args \
   -p use_sim_time:=true \
   -p backend:=onnx \
-  -p policy_path:="${ANYMAL_PROJECT_ROOT}/exported/anymal_d_locomotion_v1/high_speed_v0.2.0/policy.onnx" \
-  -p metadata_path:="${ANYMAL_PROJECT_ROOT}/exported/anymal_d_locomotion_v1/high_speed_v0.2.0/policy_metadata.yaml"
+  -p policy_path:="${ANYMAL_PROJECT_ROOT}/exported/anymal_d_locomotion_v1/recovery_v0.4.0/policy.onnx" \
+  -p metadata_path:="${ANYMAL_PROJECT_ROOT}/exported/anymal_d_locomotion_v1/recovery_v0.4.0/policy_metadata.yaml"
 ```
 
 也保留 `backend:=torchscript`，但必須在外部 ROS 2 Python 另裝 PyTorch，並
@@ -147,6 +147,22 @@ source deployment/ros2_ws/install/setup.bash
 echo "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-未設定}"
 ros2 launch anymal_locomotion_ros2 bringup.launch.py
 ```
+
+若要重現長時間行走後停止仍持續搖晃的問題，可只在該次正式 bringup
+開啟 project-owned locomotion diagnostics（預設關閉）：
+
+```bash
+ros2 launch anymal_locomotion_ros2 bringup.launch.py \
+  enable_locomotion_diagnostics:=true
+```
+
+診斷會寫入
+`logs/formal_bringup/latest/locomotion_diagnostics.json`。此檔在執行期間每
+25 個 policy step 原子更新，包含實際 command、base roll／pitch、四腳
+contact force、stance tangential speed 與 simulation 實際套用的 policy raw
+action。需要保留多次測試時，請用
+`locomotion_diagnostics_dir:=<repository 內的新目錄>` 避免覆寫；repository
+外的路徑會由 simulation host 拒絕。
 
 所有 launch argument 都有正式預設值，正常使用不必傳入參數：
 

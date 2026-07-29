@@ -267,9 +267,21 @@ Runtime 驗收結果：
   landmark 場景；Factory 移動精度改由版本化 deterministic benchmark
   獨立驗收。
 
-尚未完成的是 loop closure、目前 policy 無法穩定完成的高速旋轉軌跡，以及
-實體 ANYmal-D sensor extrinsic 驗收。旋轉軌跡因本體 tilt 超過 15° 判為
-invalid，不能宣稱 LIO-SAM 通過或失敗。
+2026-07-29 完成 Recovery v0.4.0 qualification：
+
+- model 1450 在 RTX/LIO 負載下完成 23 秒 `0.5 m/s + 0.25 rad/s` 圓周，
+  停止後 10 秒可恢復站姿；最後 5 秒平面位移 `0.00010 m`、yaw 變化
+  `0.00038 rad`，最大 roll/pitch 分別 `0.195/0.106 rad`。
+- 正式 turning matrix 36/36 通過：純 yaw `±0.5/±1/±2 rad/s`，以及左右
+  `0.5/1.5/3.0 m/s` 曲線，每個 profile 三次。
+- true loop-closure qualification 12/12 通過。兩種閉合路徑三次皆在
+  enabled replay 產生 constraint、disabled replay 為零；兩種開放路徑
+  enabled/disabled 都沒有誤閉環。每個 source bag 都以 fresh LIO graph
+  各 replay 兩次。
+
+仍未完成的是實體 ANYmal-D sensor extrinsic、實體 low-level interface，
+以及模擬 host 的 200 Hz IMU `angular_velocity` contract 警告釐清。該警告
+沒有被放寬或隱藏，且不改動 upstream LIO-SAM。
 
 ## 暫時不做
 

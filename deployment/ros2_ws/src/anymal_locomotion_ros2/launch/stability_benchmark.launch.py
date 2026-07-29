@@ -204,7 +204,7 @@ def generate_launch_description() -> LaunchDescription:
                         project_root,
                         "exported",
                         "anymal_d_locomotion_v1",
-                        "high_speed_v0.2.0",
+                        "recovery_v0.4.0",
                         "policy.onnx",
                     ]
                 ),
@@ -216,7 +216,7 @@ def generate_launch_description() -> LaunchDescription:
                         project_root,
                         "exported",
                         "anymal_d_locomotion_v1",
-                        "high_speed_v0.2.0",
+                        "recovery_v0.4.0",
                         "policy_metadata.yaml",
                     ]
                 ),
@@ -228,7 +228,7 @@ def generate_launch_description() -> LaunchDescription:
                         project_root,
                         "exported",
                         "anymal_d_locomotion_v1",
-                        "high_speed_v0.2.0",
+                        "recovery_v0.4.0",
                         "policy.pt",
                     ]
                 ),

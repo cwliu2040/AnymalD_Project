@@ -460,8 +460,10 @@ PYTHONPATH=source/anymal_locomotion \
 匯出產物放在 `exported/anymal_d_locomotion_v1/`，包含 TorchScript、ONNX
 與 `policy_metadata.yaml`。
 
-目前提升為 deployment candidate 的 High-Speed v0.2.0 checkpoint、artifact
-hash 與 checkpoint／JIT／ONNX output parity 結果見
+目前正式 deployment 預設為 Recovery v0.4.0；它保留 High-Speed v0.2.0
+速度範圍，並通過長時序停止恢復、36 組轉彎與 12 組 true loop-closure
+qualification。Checkpoint、artifact hash 與 parity 結果見
+[Recovery Policy v0.4.0](docs/policy_release_v0.4.0.md)。舊版基準仍記錄於
 [High-Speed Policy v0.2.0](docs/policy_release_v0.2.0.md)。
 
 ## 架構限制

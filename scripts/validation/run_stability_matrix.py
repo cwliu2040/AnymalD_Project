@@ -29,6 +29,16 @@ parser.add_argument(
 parser.add_argument("--matrix", type=Path, default=DEFAULT_MATRIX)
 parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
 parser.add_argument(
+    "--policy-path",
+    type=Path,
+    help="Optional project-local ONNX policy override.",
+)
+parser.add_argument(
+    "--metadata-path",
+    type=Path,
+    help="Optional project-local policy metadata override.",
+)
+parser.add_argument(
     "--factory-friction",
     type=float,
     default=1.0,
@@ -87,6 +97,18 @@ def main() -> None:
         parser.error("--factory-friction must be finite and positive")
     matrix_path = _project_path(args.matrix, must_exist=True)
     output_root = _project_path(args.output_root, must_exist=False)
+    if (args.policy_path is None) != (args.metadata_path is None):
+        parser.error("--policy-path and --metadata-path must be provided together")
+    policy_path = (
+        _project_path(args.policy_path, must_exist=True)
+        if args.policy_path is not None
+        else None
+    )
+    metadata_path = (
+        _project_path(args.metadata_path, must_exist=True)
+        if args.metadata_path is not None
+        else None
+    )
     matrix = yaml.safe_load(matrix_path.read_text(encoding="utf-8"))
     if matrix.get("schema_version") != 1:
         raise ValueError("stability matrix schema_version must be 1")
@@ -145,16 +167,26 @@ def main() -> None:
                 continue
 
             print(f"RUN {profile} repetition {repetition:02d}", flush=True)
+            launch_arguments = [
+                f"profile:={profile}",
+                f"output_dir:={run_dir}",
+                f"factory_friction:={args.factory_friction}",
+                f"enhanced_determinism:={args.enhanced_determinism}",
+            ]
+            if policy_path is not None and metadata_path is not None:
+                launch_arguments.extend(
+                    (
+                        f"policy_path:={policy_path}",
+                        f"metadata_path:={metadata_path}",
+                    )
+                )
             launch = subprocess.run(
                 (
                     "ros2",
                     "launch",
                     "anymal_locomotion_ros2",
                     launch_file,
-                    f"profile:={profile}",
-                    f"output_dir:={run_dir}",
-                    f"factory_friction:={args.factory_friction}",
-                    f"enhanced_determinism:={args.enhanced_determinism}",
+                    *launch_arguments,
                 ),
                 cwd=ROS2_WORKSPACE,
                 env=environment,
@@ -215,6 +247,10 @@ def main() -> None:
         "output_root": str(output_root),
         "factory_friction": args.factory_friction,
         "enhanced_determinism": args.enhanced_determinism == "true",
+        "policy_path": str(policy_path) if policy_path is not None else None,
+        "metadata_path": (
+            str(metadata_path) if metadata_path is not None else None
+        ),
         "expected_run_count": len(profiles) * repetitions,
         "completed_run_count": len(results),
         "passed_run_count": len(results) - len(failed),

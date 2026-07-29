@@ -7,7 +7,7 @@ ROS_SETUP="/opt/ros/humble/setup.bash"
 ROS_WORKSPACE="${PROJECT_ROOT}/deployment/ros2_ws"
 LIO_SAM_ROOT="${ROS_WORKSPACE}/src/lio_sam"
 PYTHON_VENDOR="${PROJECT_ROOT}/deployment/python_vendor"
-POLICY_ROOT="${PROJECT_ROOT}/exported/anymal_d_locomotion_v1/high_speed_v0.2.0"
+POLICY_ROOT="${PROJECT_ROOT}/exported/anymal_d_locomotion_v1/recovery_v0.4.0"
 FACTORY_USD="${PROJECT_ROOT}/assets/maps/factory/Factory_Layout.usd"
 ISAACLAB_PATH="${ISAACLAB_ROOT:-${HOME}/IsaacLab}"
 EXPECTED_LIO_SAM_COMMIT="08af3f32f01725372d4269838dc44c19c6d9e76b"
@@ -119,10 +119,10 @@ git -C "${PROJECT_ROOT}" lfs fsck
 (
     cd "${PROJECT_ROOT}"
     printf '%s  %s\n' \
-        "e83a150970838dad16f4015618f799eb1f1bcb9ad174a70fa9caa80cac06cea0" \
-        "exported/anymal_d_locomotion_v1/high_speed_v0.2.0/policy.onnx" \
-        "869ad3ccf60375dd9cff2e3f2abe16493a234310e9c6da22f1ab626de9697dc6" \
-        "exported/anymal_d_locomotion_v1/high_speed_v0.2.0/policy.pt" \
+        "721a918533cd00e605cf6edfcd8bf8bba9cbd56f26e22c2eda26604f03ee54c0" \
+        "exported/anymal_d_locomotion_v1/recovery_v0.4.0/policy.onnx" \
+        "95f20f7618adc9be808d9b3d424d61116abf52012d88b3e92c9c0ff6e55cfe5b" \
+        "exported/anymal_d_locomotion_v1/recovery_v0.4.0/policy.pt" \
         | sha256sum --check --status
 ) || fail "Deployment policy checksum mismatch"
 

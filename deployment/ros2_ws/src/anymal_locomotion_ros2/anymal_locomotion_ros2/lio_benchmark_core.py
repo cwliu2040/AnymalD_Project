@@ -261,6 +261,22 @@ _PROFILES = {
         hold_s=5.0,
         settle_s=3.0,
     ),
+    "curve_0_5_left_0_25_long": MotionProfile(
+        "curve_0_5_left_0_25_long",
+        (0.5, 0.0, 0.25),
+        warmup_s=5.0,
+        ramp_s=2.0,
+        hold_s=23.0,
+        settle_s=10.0,
+    ),
+    "curve_0_5_left_0_25_long_shifted": MotionProfile(
+        "curve_0_5_left_0_25_long_shifted",
+        (0.5, 0.0, 0.25),
+        warmup_s=5.9,
+        ramp_s=2.0,
+        hold_s=23.0,
+        settle_s=10.0,
+    ),
     "curve_0_5_right_0_5": MotionProfile(
         "curve_0_5_right_0_5",
         (0.5, 0.0, -0.5),
@@ -346,6 +362,14 @@ _PROFILES = {
         ramp_s=2.0,
         hold_s=5.0,
         settle_s=3.0,
+    ),
+    "combined_long": MotionProfile(
+        "combined_long",
+        (1.5, 0.0, 1.0),
+        warmup_s=5.0,
+        ramp_s=2.0,
+        hold_s=20.0,
+        settle_s=10.0,
     ),
 }
 

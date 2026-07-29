@@ -14,7 +14,7 @@ from launch.actions import (
     SetEnvironmentVariable,
     TimerAction,
 )
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (
     EnvironmentVariable,
@@ -69,6 +69,12 @@ def generate_launch_description() -> LaunchDescription:
     factory_usd_path = LaunchConfiguration("factory_usd_path")
     use_rviz = LaunchConfiguration("use_rviz")
     open_teleop_terminal = LaunchConfiguration("open_teleop_terminal")
+    enable_locomotion_diagnostics = LaunchConfiguration(
+        "enable_locomotion_diagnostics"
+    )
+    locomotion_diagnostics_dir = LaunchConfiguration(
+        "locomotion_diagnostics_dir"
+    )
 
     project_python_path = [
         PathJoinSubstitution([project_root, "deployment", "python_vendor"]),
@@ -111,27 +117,42 @@ def generate_launch_description() -> LaunchDescription:
         }.items(),
     )
 
+    simulation_command = [
+        PathJoinSubstitution([isaaclab_root, "isaaclab.sh"]),
+        "-p",
+        PathJoinSubstitution(
+            [project_root, "scripts", "validation", "validate_ros2_bridge.py"]
+        ),
+        "--device",
+        device,
+        "--steps",
+        "1000000",
+        "--real-time",
+        "--external-control",
+        "--disable-episode-timeout",
+        "--enhanced-determinism",
+        "--enable-lio-sam",
+        "--imu-observation-parity-atol",
+        "0.01",
+        "--factory-usd-path",
+        factory_usd_path,
+    ]
     simulation = ExecuteProcess(
+        cmd=simulation_command,
+        condition=UnlessCondition(enable_locomotion_diagnostics),
+        output="screen",
+    )
+    diagnostic_simulation = ExecuteProcess(
         cmd=[
-            PathJoinSubstitution([isaaclab_root, "isaaclab.sh"]),
-            "-p",
+            *simulation_command,
+            "--locomotion-diagnostics-output",
             PathJoinSubstitution(
-                [project_root, "scripts", "validation", "validate_ros2_bridge.py"]
+                [locomotion_diagnostics_dir, "locomotion_diagnostics.json"]
             ),
-            "--device",
-            device,
-            "--steps",
-            "1000000",
-            "--real-time",
-            "--external-control",
-            "--disable-episode-timeout",
-            "--enhanced-determinism",
-            "--enable-lio-sam",
-            "--imu-observation-parity-atol",
-            "0.01",
-            "--factory-usd-path",
-            factory_usd_path,
+            "--locomotion-profile",
+            "formal_bringup",
         ],
+        condition=IfCondition(enable_locomotion_diagnostics),
         output="screen",
     )
 
@@ -204,7 +225,7 @@ def generate_launch_description() -> LaunchDescription:
                         project_root,
                         "exported",
                         "anymal_d_locomotion_v1",
-                        "high_speed_v0.2.0",
+                        "recovery_v0.4.0",
                         "policy.onnx",
                     ]
                 ),
@@ -217,7 +238,7 @@ def generate_launch_description() -> LaunchDescription:
                         project_root,
                         "exported",
                         "anymal_d_locomotion_v1",
-                        "high_speed_v0.2.0",
+                        "recovery_v0.4.0",
                         "policy_metadata.yaml",
                     ]
                 ),
@@ -246,6 +267,29 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="true",
                 description="Open the official teleop_twist_keyboard in GNOME Terminal",
             ),
+            DeclareLaunchArgument(
+                "enable_locomotion_diagnostics",
+                default_value="false",
+                description=(
+                    "Record project-local locomotion and policy traces; disabled "
+                    "by default"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "locomotion_diagnostics_dir",
+                default_value=PathJoinSubstitution(
+                    [
+                        project_root,
+                        "logs",
+                        "formal_bringup",
+                        "latest",
+                    ]
+                ),
+                description=(
+                    "Project-local output directory used only when locomotion "
+                    "diagnostics are enabled"
+                ),
+            ),
             SetEnvironmentVariable("ROS_DOMAIN_ID", ros_domain_id),
             SetEnvironmentVariable(
                 "RMW_IMPLEMENTATION",
@@ -264,7 +308,10 @@ def generate_launch_description() -> LaunchDescription:
                     policy_node,
                     lio_sam,
                     teleop,
-                    TimerAction(period=2.0, actions=[simulation]),
+                    TimerAction(
+                        period=2.0,
+                        actions=[simulation, diagnostic_simulation],
+                    ),
                 ],
             ),
         ]
