@@ -4,6 +4,12 @@
 ANYmal-D locomotion External Project。目標是建立乾淨、可維護，並能逐步
 延伸至實體 ANYmal-D 的 sim-to-real 系統。
 
+跨對話補充知識記錄在
+[Current project knowledge](docs/project_knowledge.md)。Work locally
+的新對話應直接閱讀 repository，並以該文件補充目前正式 policy、近期診斷、
+驗證狀態與未完成工作；詳細依據仍在程式碼及其他 architecture、release 與
+validation 文件。
+
 Flat Locomotion v1 以官方 ANYmal-D Flat task 為基準，採用
 Manager-Based workflow 與 48 維 proprioceptive observation。LiDAR、
 RGB-D、SLAM 與 navigation 不放入 v1 policy observation；LIO-SAM 是獨立的
