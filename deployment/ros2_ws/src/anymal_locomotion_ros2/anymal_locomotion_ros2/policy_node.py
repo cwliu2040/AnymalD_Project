@@ -14,6 +14,7 @@ from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Imu, JointState
+from std_msgs.msg import UInt64
 
 from anymal_locomotion_ros2.policy_core import (
     PolicyContract,
@@ -55,6 +56,12 @@ class AnymalPolicyNode(Node):
         self.declare_parameter("odometry_topic", "/odom")
         self.declare_parameter("command_topic", "/cmd_vel")
         self.declare_parameter("joint_command_topic", "/joint_command")
+        self.declare_parameter(
+            "episode_reset_topic", "/simulation/episode_reset"
+        )
+        self.declare_parameter(
+            "episode_reset_ack_topic", "/simulation/episode_reset_ack"
+        )
         self.declare_parameter("expected_imu_frame", "base_link")
         self.declare_parameter("expected_odometry_child_frame", "base_link")
         self.declare_parameter("state_timeout_s", 0.1)
@@ -125,6 +132,8 @@ class AnymalPolicyNode(Node):
             else None
         )
         self._diagnostic_records: list[dict[str, Any]] = []
+        self._reset_events: list[dict[str, Any]] = []
+        self._last_reset_sequence = 0
 
         self.create_subscription(
             JointState,
@@ -148,6 +157,17 @@ class AnymalPolicyNode(Node):
             Twist,
             str(self.get_parameter("command_topic").value),
             self._on_command,
+            10,
+        )
+        self.create_subscription(
+            UInt64,
+            str(self.get_parameter("episode_reset_topic").value),
+            self._on_episode_reset,
+            10,
+        )
+        self._episode_reset_ack_publisher = self.create_publisher(
+            UInt64,
+            str(self.get_parameter("episode_reset_ack_topic").value),
             10,
         )
         self._joint_command_publisher = self.create_publisher(
@@ -271,6 +291,30 @@ class AnymalPolicyNode(Node):
         self._command = command
         self._receipt_times["command"] = self._now_seconds()
 
+    def _on_episode_reset(self, message: UInt64) -> None:
+        sequence = int(message.data)
+        if sequence <= 0:
+            self._warn_throttled(
+                "episode_reset_invalid",
+                f"Ignoring non-positive episode reset sequence {sequence}",
+            )
+            return
+        if sequence > self._last_reset_sequence:
+            self._runtime.reset()
+            self._last_reset_sequence = sequence
+            self._reset_events.append(
+                {
+                    "clock_s": self._now_seconds(),
+                    "sequence": sequence,
+                }
+            )
+            self.get_logger().info(
+                f"Reset policy action history for simulator episode {sequence}"
+            )
+        acknowledgement = UInt64()
+        acknowledgement.data = sequence
+        self._episode_reset_ack_publisher.publish(acknowledgement)
+
     def _try_synchronized_policy_step(self) -> None:
         required = ("joint_state", "imu", "odometry")
         if any(name not in self._state_stamps for name in required):
@@ -304,9 +348,16 @@ class AnymalPolicyNode(Node):
             )
             return
 
-        command = self._command
-        if now - self._receipt_times.get("command", float("-inf")) > self._command_timeout:
-            command = np.zeros(3, dtype=np.float32)
+        received_command = self._command
+        command_age_s = now - self._receipt_times.get(
+            "command", float("-inf")
+        )
+        watchdog_timed_out = command_age_s > self._command_timeout
+        effective_command = (
+            np.zeros(3, dtype=np.float32)
+            if watchdog_timed_out
+            else received_command
+        )
 
         assert self._base_linear_velocity is not None
         assert self._base_angular_velocity is not None
@@ -321,7 +372,7 @@ class AnymalPolicyNode(Node):
             joint_velocities=self._joint_velocities,
         )
         try:
-            result = self._runtime.step(state, command)
+            result = self._runtime.step(state, effective_command)
         except (RuntimeError, ValueError) as error:
             self._warn_throttled("inference_error", f"No policy output: {error}")
             return
@@ -330,7 +381,14 @@ class AnymalPolicyNode(Node):
                 {
                     "clock_s": now,
                     "state_stamps_s": dict(self._state_stamps),
-                    "command": command.astype(float).tolist(),
+                    "received_command": received_command.astype(float).tolist(),
+                    "effective_command": effective_command.astype(float).tolist(),
+                    "command_age_s": (
+                        None
+                        if not np.isfinite(command_age_s)
+                        else float(command_age_s)
+                    ),
+                    "watchdog_timed_out": watchdog_timed_out,
                     "observation": result.observation.astype(float).tolist(),
                     "raw_action": result.raw_action.astype(float).tolist(),
                 }
@@ -349,8 +407,9 @@ class AnymalPolicyNode(Node):
         self._diagnostics_path.write_text(
             json.dumps(
                 {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "records": self._diagnostic_records,
+                    "reset_events": self._reset_events,
                 },
                 indent=2,
                 sort_keys=True,

@@ -88,6 +88,18 @@ def test_stability_profiles_reach_declared_target(
     assert profile.command_at(profile.duration_s) == (0.0, 0.0, 0.0)
 
 
+def test_warehouse_mapping_stress_replays_turns_then_exercises_watchdog() -> None:
+    profile = get_motion_profile("warehouse_mapping_stress")
+
+    assert profile.duration_s == pytest.approx(39.02)
+    assert profile.command_at(5.50) == pytest.approx((2.3, 0.0, 2.0))
+    assert profile.command_at(16.02) == pytest.approx((2.3, 0.0, -2.0))
+    assert profile.command_at(29.00) == pytest.approx((2.3, 0.0, 2.0))
+    assert profile.should_publish_command(29.00)
+    assert not profile.should_publish_command(29.02)
+    assert profile.command_at(29.50) == (0.0, 0.0, 0.0)
+
+
 def test_trajectory_evaluation_aligns_initial_pose() -> None:
     truth = [
         PoseSample(0.0, 10.0, -3.0, 0.5, 0.2),

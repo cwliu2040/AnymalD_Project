@@ -26,6 +26,8 @@ class Ros2PolicyBridge:
     odometry_topic: str
     tf_topic: str
     joint_command_topic: str
+    episode_reset_topic: str
+    episode_reset_ack_topic: str
     domain_id: int
     uses_articulation_controller: bool
     publishes_ground_truth_tf: bool
@@ -143,6 +145,8 @@ def create_ros2_policy_bridge(
     odometry_topic: str = "odom",
     tf_topic: str = "tf",
     joint_command_topic: str = "joint_command",
+    episode_reset_topic: str = "simulation/episode_reset",
+    episode_reset_ack_topic: str = "simulation/episode_reset_ack",
     imu_sensor_name: str = "imu_sensor",
     imu_update_period_s: float = 0.005,
     domain_id: int | None = None,
@@ -184,6 +188,7 @@ def create_ros2_policy_bridge(
     nodes = [
         ("PolicyImpulse", "omni.graph.action.OnImpulseEvent"),
         ("CommandImpulse", "omni.graph.action.OnImpulseEvent"),
+        ("ResetImpulse", "omni.graph.action.OnImpulseEvent"),
         ("ImuPhysicsStep", "isaacsim.core.nodes.OnPhysicsStep"),
         ("ReadSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
         ("ComputeImuOrientation", "isaacsim.core.nodes.IsaacComputeOdometry"),
@@ -205,10 +210,13 @@ def create_ros2_policy_bridge(
         ("PublishImu", "isaacsim.ros2.bridge.ROS2PublishImu"),
         ("SubscribeTwist", "isaacsim.ros2.bridge.ROS2SubscribeTwist"),
         ("SubscribeJointState", "isaacsim.ros2.bridge.ROS2SubscribeJointState"),
+        ("PublishEpisodeReset", "isaacsim.ros2.bridge.ROS2Publisher"),
+        ("SubscribeEpisodeResetAck", "isaacsim.ros2.bridge.ROS2Subscriber"),
     ]
     values = [
         ("PolicyImpulse.inputs:onlyPlayback", False),
         ("CommandImpulse.inputs:onlyPlayback", False),
+        ("ResetImpulse.inputs:onlyPlayback", False),
         ("ReadSimTime.inputs:resetOnStop", False),
         ("ComputeImuOrientation.inputs:chassisPrim", target_prim),
         ("ReadImuSensor.inputs:imuPrim", imu_target_prim),
@@ -229,6 +237,14 @@ def create_ros2_policy_bridge(
         ("PublishImu.inputs:frameId", "base_link"),
         ("SubscribeTwist.inputs:topicName", command_topic),
         ("SubscribeJointState.inputs:topicName", joint_command_topic),
+        ("PublishEpisodeReset.inputs:messagePackage", "std_msgs"),
+        ("PublishEpisodeReset.inputs:messageSubfolder", "msg"),
+        ("PublishEpisodeReset.inputs:messageName", "UInt64"),
+        ("PublishEpisodeReset.inputs:topicName", episode_reset_topic),
+        ("SubscribeEpisodeResetAck.inputs:messagePackage", "std_msgs"),
+        ("SubscribeEpisodeResetAck.inputs:messageSubfolder", "msg"),
+        ("SubscribeEpisodeResetAck.inputs:messageName", "UInt64"),
+        ("SubscribeEpisodeResetAck.inputs:topicName", episode_reset_ack_topic),
     ]
     connections = [
         (
@@ -280,6 +296,14 @@ def create_ros2_policy_bridge(
             "CommandImpulse.outputs:execOut",
             "SubscribeJointState.inputs:execIn",
         ),
+        (
+            "CommandImpulse.outputs:execOut",
+            "SubscribeEpisodeResetAck.inputs:execIn",
+        ),
+        (
+            "ResetImpulse.outputs:execOut",
+            "PublishEpisodeReset.inputs:execIn",
+        ),
         ("ComputeOdometry.outputs:execOut", "PublishOdometry.inputs:execIn"),
         ("ComputeOdometry.outputs:position", "PublishOdometry.inputs:position"),
         (
@@ -328,6 +352,8 @@ def create_ros2_policy_bridge(
         ("Context.outputs:context", "PublishImu.inputs:context"),
         ("Context.outputs:context", "SubscribeTwist.inputs:context"),
         ("Context.outputs:context", "SubscribeJointState.inputs:context"),
+        ("Context.outputs:context", "PublishEpisodeReset.inputs:context"),
+        ("Context.outputs:context", "SubscribeEpisodeResetAck.inputs:context"),
     ]
     if publish_ground_truth_tf:
         nodes.append(
@@ -419,6 +445,16 @@ def create_ros2_policy_bridge(
         raise RuntimeError(
             "ROS2 generic JointState publisher did not create its message fields"
         )
+    reset_data = og.Controller.attribute(
+        f"{graph_path}/PublishEpisodeReset.inputs:data"
+    )
+    reset_ack_data = og.Controller.attribute(
+        f"{graph_path}/SubscribeEpisodeResetAck.outputs:data"
+    )
+    if not reset_data.is_valid() or not reset_ack_data.is_valid():
+        raise RuntimeError(
+            "ROS2 generic UInt64 reset handshake did not create its message fields"
+        )
     if not og.Controller.set(
         og.Controller.attribute(
             f"{graph_path}/PublishJointState.inputs:header:frame_id"
@@ -449,6 +485,8 @@ def create_ros2_policy_bridge(
         odometry_topic=f"/{odometry_topic.lstrip('/')}",
         tf_topic=f"/{tf_topic.lstrip('/')}",
         joint_command_topic=f"/{joint_command_topic.lstrip('/')}",
+        episode_reset_topic=f"/{episode_reset_topic.lstrip('/')}",
+        episode_reset_ack_topic=f"/{episode_reset_ack_topic.lstrip('/')}",
         domain_id=domain_id,
         uses_articulation_controller=connect_articulation_controller,
         publishes_ground_truth_tf=publish_ground_truth_tf,
@@ -477,6 +515,40 @@ def trigger_command_step(bridge: Ros2PolicyBridge) -> None:
     if not og.Controller.set(impulse, True):
         raise RuntimeError("Failed to trigger ROS2 command bridge impulse")
     og.Controller.evaluate_sync(graph_id=bridge.graph_path)
+
+
+def publish_episode_reset(
+    bridge: Ros2PolicyBridge,
+    sequence: int,
+) -> None:
+    """Publish one explicit simulator episode-reset sequence."""
+    import omni.graph.core as og
+
+    if sequence <= 0:
+        raise ValueError("Episode reset sequence must be positive")
+    data = og.Controller.attribute(
+        f"{bridge.graph_path}/PublishEpisodeReset.inputs:data"
+    )
+    impulse = og.Controller.attribute(
+        f"{bridge.graph_path}/ResetImpulse.state:enableImpulse"
+    )
+    if not og.Controller.set(data, int(sequence)):
+        raise RuntimeError("Failed to set episode reset sequence")
+    if not og.Controller.set(impulse, True):
+        raise RuntimeError("Failed to trigger episode reset publisher")
+    og.Controller.evaluate_sync(graph_id=bridge.graph_path)
+
+
+def read_episode_reset_ack(bridge: Ros2PolicyBridge) -> int:
+    """Read the latest external-policy reset acknowledgement sequence."""
+    import omni.graph.core as og
+
+    value = og.Controller.get(
+        og.Controller.attribute(
+            f"{bridge.graph_path}/SubscribeEpisodeResetAck.outputs:data"
+        )
+    )
+    return 0 if value is None else int(value)
 
 
 def read_velocity_command(bridge: Ros2PolicyBridge) -> Ros2VelocityCommand:

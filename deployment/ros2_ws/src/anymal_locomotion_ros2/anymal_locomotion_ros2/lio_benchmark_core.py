@@ -42,6 +42,7 @@ class MotionProfile:
         ],
         ...,
     ] = ()
+    command_publish_until_s: float | None = None
 
     @property
     def duration_s(self) -> float:
@@ -79,6 +80,13 @@ class MotionProfile:
             smooth = phase * phase * (3.0 - 2.0 * phase)
             scale = 1.0 - smooth
         return tuple(scale * value for value in self.target)
+
+    def should_publish_command(self, elapsed_s: float) -> bool:
+        """Return whether the driver should refresh /cmd_vel at this time."""
+        return (
+            self.command_publish_until_s is None
+            or elapsed_s < self.command_publish_until_s
+        )
 
 
 def _out_and_back_sequence(
@@ -370,6 +378,36 @@ _PROFILES = {
         ramp_s=2.0,
         hold_s=20.0,
         settle_s=10.0,
+    ),
+    "warehouse_mapping_stress": MotionProfile(
+        "warehouse_mapping_stress",
+        (2.3, 0.0, 2.0),
+        warmup_s=0.0,
+        ramp_s=0.0,
+        hold_s=0.0,
+        settle_s=0.0,
+        sequence=(
+            (5.00, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+            (0.50, (0.0, 0.0, 0.0), (2.3, 0.0, 2.0)),
+            (0.94, (2.3, 0.0, 2.0), (2.3, 0.0, 2.0)),
+            (0.02, (2.3, 0.0, 2.0), (2.3, 0.0, 0.0)),
+            (9.54, (2.3, 0.0, 0.0), (2.3, 0.0, 0.0)),
+            (0.02, (2.3, 0.0, 0.0), (2.3, 0.0, -2.0)),
+            (0.16, (2.3, 0.0, -2.0), (2.3, 0.0, -2.0)),
+            (0.02, (2.3, 0.0, -2.0), (2.3, 0.0, 0.0)),
+            (5.92, (2.3, 0.0, 0.0), (2.3, 0.0, 0.0)),
+            (0.02, (2.3, 0.0, 0.0), (2.3, 0.0, -2.0)),
+            (0.16, (2.3, 0.0, -2.0), (2.3, 0.0, -2.0)),
+            (0.02, (2.3, 0.0, -2.0), (2.3, 0.0, 0.0)),
+            (3.74, (2.3, 0.0, 0.0), (2.3, 0.0, 0.0)),
+            (0.02, (2.3, 0.0, 0.0), (2.3, 0.0, 2.0)),
+            (2.94, (2.3, 0.0, 2.0), (2.3, 0.0, 2.0)),
+            (10.00, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+        ),
+        # Stop refreshing /cmd_vel at the last high-speed left turn.  The
+        # policy watchdog therefore owns the transition to the final 10 s
+        # zero-command recovery interval, matching interactive teleoperation.
+        command_publish_until_s=29.02,
     ),
 }
 

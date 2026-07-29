@@ -84,18 +84,33 @@ def generate_launch_description() -> LaunchDescription:
         EnvironmentVariable("PYTHONPATH", default_value=""),
     ]
 
+    policy_parameters = {
+        "use_sim_time": True,
+        "backend": "onnx",
+        "policy_path": policy_path,
+        "metadata_path": metadata_path,
+    }
     policy_node = Node(
+        package="anymal_locomotion_ros2",
+        executable="policy_node",
+        name="anymal_policy",
+        parameters=[policy_parameters],
+        condition=UnlessCondition(enable_locomotion_diagnostics),
+        output="screen",
+    )
+    diagnostic_policy_node = Node(
         package="anymal_locomotion_ros2",
         executable="policy_node",
         name="anymal_policy",
         parameters=[
             {
-                "use_sim_time": True,
-                "backend": "onnx",
-                "policy_path": policy_path,
-                "metadata_path": metadata_path,
+                **policy_parameters,
+                "diagnostics_path": PathJoinSubstitution(
+                    [locomotion_diagnostics_dir, "policy_diagnostics.json"]
+                ),
             }
         ],
+        condition=IfCondition(enable_locomotion_diagnostics),
         output="screen",
     )
 
@@ -306,6 +321,7 @@ def generate_launch_description() -> LaunchDescription:
                 period=1.0,
                 actions=[
                     policy_node,
+                    diagnostic_policy_node,
                     lio_sam,
                     teleop,
                     TimerAction(

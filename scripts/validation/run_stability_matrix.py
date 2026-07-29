@@ -39,6 +39,11 @@ parser.add_argument(
     help="Optional project-local policy metadata override.",
 )
 parser.add_argument(
+    "--policy-parity-path",
+    type=Path,
+    help="Optional project-local TorchScript parity artifact override.",
+)
+parser.add_argument(
     "--factory-friction",
     type=float,
     default=1.0,
@@ -97,8 +102,18 @@ def main() -> None:
         parser.error("--factory-friction must be finite and positive")
     matrix_path = _project_path(args.matrix, must_exist=True)
     output_root = _project_path(args.output_root, must_exist=False)
-    if (args.policy_path is None) != (args.metadata_path is None):
-        parser.error("--policy-path and --metadata-path must be provided together")
+    policy_override_values = (
+        args.policy_path,
+        args.metadata_path,
+        args.policy_parity_path,
+    )
+    if any(value is not None for value in policy_override_values) and not all(
+        value is not None for value in policy_override_values
+    ):
+        parser.error(
+            "--policy-path, --metadata-path, and --policy-parity-path "
+            "must be provided together"
+        )
     policy_path = (
         _project_path(args.policy_path, must_exist=True)
         if args.policy_path is not None
@@ -107,6 +122,11 @@ def main() -> None:
     metadata_path = (
         _project_path(args.metadata_path, must_exist=True)
         if args.metadata_path is not None
+        else None
+    )
+    policy_parity_path = (
+        _project_path(args.policy_parity_path, must_exist=True)
+        if args.policy_parity_path is not None
         else None
     )
     matrix = yaml.safe_load(matrix_path.read_text(encoding="utf-8"))
@@ -173,11 +193,16 @@ def main() -> None:
                 f"factory_friction:={args.factory_friction}",
                 f"enhanced_determinism:={args.enhanced_determinism}",
             ]
-            if policy_path is not None and metadata_path is not None:
+            if (
+                policy_path is not None
+                and metadata_path is not None
+                and policy_parity_path is not None
+            ):
                 launch_arguments.extend(
                     (
                         f"policy_path:={policy_path}",
                         f"metadata_path:={metadata_path}",
+                        f"policy_parity_path:={policy_parity_path}",
                     )
                 )
             launch = subprocess.run(
@@ -250,6 +275,11 @@ def main() -> None:
         "policy_path": str(policy_path) if policy_path is not None else None,
         "metadata_path": (
             str(metadata_path) if metadata_path is not None else None
+        ),
+        "policy_parity_path": (
+            str(policy_parity_path)
+            if policy_parity_path is not None
+            else None
         ),
         "expected_run_count": len(profiles) * repetitions,
         "completed_run_count": len(results),

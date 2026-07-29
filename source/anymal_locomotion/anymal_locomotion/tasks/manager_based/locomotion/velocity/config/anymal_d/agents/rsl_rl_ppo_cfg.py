@@ -47,3 +47,20 @@ class AnymalDLocomotionRecoveryPPORunnerCfg(
         self.max_iterations = 200
         self.algorithm.learning_rate = 1.0e-4
         self.algorithm.entropy_coef = 0.001
+
+
+@configclass
+class AnymalDLocomotionRecoveryV05PPORunnerCfg(
+    AnymalDLocomotionFlatPPORunnerCfg
+):
+    """Symmetric low-drift fine-tuning for high-speed turn recovery."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.max_iterations = 300
+        self.algorithm.learning_rate = 5.0e-5
+        self.algorithm.entropy_coef = 0.001
+        self.algorithm.symmetry_cfg = RslRlSymmetryCfg(
+            use_data_augmentation=True,
+            data_augmentation_func=mdp.compute_symmetric_states,
+        )

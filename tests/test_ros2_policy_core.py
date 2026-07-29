@@ -126,6 +126,26 @@ def test_runtime_scales_actions_and_remembers_previous_action(contract: PolicyCo
     np.testing.assert_array_equal(second.raw_action, np.full(12, 0.5))
 
 
+def test_runtime_reset_clears_previous_action(contract: PolicyContract) -> None:
+    def backend(_observations: np.ndarray) -> np.ndarray:
+        return np.full((1, 12), 0.75, dtype=np.float32)
+
+    runtime = PolicyRuntime(contract, backend)
+    state = RobotState(
+        base_linear_velocity=np.zeros(3),
+        base_angular_velocity=np.zeros(3),
+        projected_gravity=np.asarray([0.0, 0.0, -1.0]),
+        joint_positions=np.asarray(contract.default_joint_positions),
+        joint_velocities=np.zeros(12),
+    )
+    runtime.step(state, [0.0, 0.0, 0.0])
+    runtime.reset()
+
+    result = runtime.step(state, [0.0, 0.0, 0.0])
+
+    np.testing.assert_array_equal(result.observation[36:48], np.zeros(12))
+
+
 def test_runtime_rejects_non_finite_policy_output(contract: PolicyContract) -> None:
     def invalid_backend(_observations: np.ndarray) -> np.ndarray:
         return np.full((1, 12), np.nan, dtype=np.float32)

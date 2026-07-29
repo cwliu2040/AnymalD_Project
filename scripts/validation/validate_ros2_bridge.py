@@ -54,6 +54,15 @@ parser.add_argument(
     ),
 )
 parser.add_argument(
+    "--episode-reset-ack-timeout-s",
+    type=float,
+    default=2.0,
+    help=(
+        "Maximum wall time for the external policy to acknowledge an explicit "
+        "simulator episode reset."
+    ),
+)
+parser.add_argument(
     "--validate-observation-parity",
     action="store_true",
     help="Compare the 48-D Action Graph observation contract with Isaac Lab every controlled step.",
@@ -196,6 +205,11 @@ if (
     or args_cli.joint_command_wait_timeout_s < 0.0
 ):
     parser.error("--joint-command-wait-timeout-s must be finite and non-negative")
+if (
+    not math.isfinite(args_cli.episode_reset_ack_timeout_s)
+    or args_cli.episode_reset_ack_timeout_s <= 0.0
+):
+    parser.error("--episode-reset-ack-timeout-s must be finite and positive")
 if args_cli.observation_parity_atol <= 0.0:
     parser.error("--observation-parity-atol must be positive")
 if args_cli.imu_observation_parity_atol <= 0.0:
@@ -306,7 +320,9 @@ from anymal_locomotion.simulation.physics_imu import PhysicsImuSpawnerCfg
 from anymal_locomotion.simulation.rtx_lidar import create_rtx_lidar_sensor
 from anymal_locomotion.simulation.ros2_bridge import (
     create_ros2_policy_bridge,
+    publish_episode_reset,
     read_base_state,
+    read_episode_reset_ack,
     read_imu_state,
     read_joint_position_command,
     read_velocity_command,
@@ -981,6 +997,7 @@ def main() -> None:
         steps_without_new_command = 0
         terminated_count = 0
         truncated_count = 0
+        episode_reset_sequence = 0
         parity_max_errors = {name: 0.0 for name, _, _ in _OBSERVATION_TERMS}
         parity_worst_values: dict[str, tuple[list[float], list[float]]] = {}
         parity_angular_debug: dict[str, list[float]] = {}
@@ -1130,6 +1147,29 @@ def main() -> None:
                 policy_input_for_next_step = (
                     observation_group["policy"].detach().clone()
                 )
+
+            if (
+                args_cli.external_control
+                and (step_terminated != 0 or step_truncated != 0)
+            ):
+                episode_reset_sequence += 1
+                reset_deadline = (
+                    time.monotonic() + args_cli.episode_reset_ack_timeout_s
+                )
+                while True:
+                    publish_episode_reset(bridge, episode_reset_sequence)
+                    trigger_command_step(bridge)
+                    if (
+                        read_episode_reset_ack(bridge)
+                        >= episode_reset_sequence
+                    ):
+                        break
+                    if time.monotonic() >= reset_deadline:
+                        raise RuntimeError(
+                            "External policy did not acknowledge simulator "
+                            f"episode reset {episode_reset_sequence}"
+                        )
+                    time.sleep(0.001)
 
             # The command manager is normally a random command generator. External-control
             # mode overwrites it before Kit renders the green target arrow.

@@ -79,6 +79,9 @@ def generate_launch_description() -> LaunchDescription:
     metadata_path = LaunchConfiguration("metadata_path")
     factory_usd_path = LaunchConfiguration("factory_usd_path")
     factory_friction = LaunchConfiguration("factory_friction")
+    spawn_x = LaunchConfiguration("spawn_x")
+    spawn_y = LaunchConfiguration("spawn_y")
+    spawn_yaw = LaunchConfiguration("spawn_yaw")
     enhanced_determinism = LaunchConfiguration("enhanced_determinism")
 
     project_python_path = [
@@ -149,6 +152,12 @@ def generate_launch_description() -> LaunchDescription:
             factory_usd_path,
             "--factory-friction",
             factory_friction,
+            "--spawn-x",
+            spawn_x,
+            "--spawn-y",
+            spawn_y,
+            "--spawn-yaw",
+            spawn_yaw,
             "--locomotion-diagnostics-output",
             PathJoinSubstitution([output_dir, "locomotion_diagnostics.json"]),
             "--locomotion-profile",
@@ -246,6 +255,9 @@ def generate_launch_description() -> LaunchDescription:
                 ),
             ),
             DeclareLaunchArgument("factory_friction", default_value="1.0"),
+            DeclareLaunchArgument("spawn_x", default_value="0.0"),
+            DeclareLaunchArgument("spawn_y", default_value="-18.0"),
+            DeclareLaunchArgument("spawn_yaw", default_value="0.0"),
             DeclareLaunchArgument(
                 "enhanced_determinism",
                 default_value="true",

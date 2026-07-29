@@ -473,7 +473,8 @@ class LioBenchmarkNode(Node):
             return
 
         elapsed_s = now_s - self._start_time_s
-        self._publish_command(self._profile.command_at(elapsed_s))
+        if self._profile.should_publish_command(elapsed_s):
+            self._publish_command(self._profile.command_at(elapsed_s))
         if elapsed_s >= self._profile.duration_s:
             self._finish()
 

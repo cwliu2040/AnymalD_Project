@@ -112,6 +112,59 @@ def test_evaluation_uses_public_fixed_command_configuration() -> None:
     assert 'LOG_ROOT / "evaluation"' in source
 
 
+def test_recovery_v05_samples_high_combined_stop_and_long_horizons() -> None:
+    command_source = (
+        PROJECT_ROOT
+        / "source"
+        / "anymal_locomotion"
+        / "anymal_locomotion"
+        / "tasks"
+        / "manager_based"
+        / "locomotion"
+        / "velocity"
+        / "config"
+        / "anymal_d"
+        / "mdp"
+        / "commands.py"
+    ).read_text(encoding="utf-8")
+    env_source = (
+        PROJECT_ROOT
+        / "source"
+        / "anymal_locomotion"
+        / "anymal_locomotion"
+        / "tasks"
+        / "manager_based"
+        / "locomotion"
+        / "velocity"
+        / "config"
+        / "anymal_d"
+        / "flat_env_cfg.py"
+    ).read_text(encoding="utf-8")
+
+    assert "RecoveryV05VelocityCommand" in command_source
+    assert "previous_high_combined" in command_source
+    assert "previous_high_straight" in command_source
+    assert "high_combined_stop_probability" in command_source
+    assert "high_combined_straight_probability" in command_source
+    assert "combined_to_reverse" in command_source
+    assert "straight_to_burst" in command_source
+    assert "warehouse_sequence_probability" in command_source
+    assert "warehouse_durations_s" in command_source
+    assert "turning_regression_probability" in command_source
+    assert "turning_profiles" in command_source
+    assert "low_yaw_profile_probability" in command_source
+    assert "low_curve_profile_probability" in command_source
+    assert "high_curve_profile_probability" in command_source
+    assert "self.episode_length_s = 40.0" in env_source
+    assert "resampling_time_range=(6.0, 12.0)" in env_source
+    assert "AnymalDLocomotionRobustEnvCfg" in env_source
+    assert "high_combined_flat_orientation_l2" in env_source
+    assert "high_combined_feet_slide" in env_source
+    assert "low_yaw_track_ang_vel_z_exp" in env_source
+    assert "low_curve_track_lin_vel_xy_exp" in env_source
+    assert "high_curve_track_lin_vel_xy_exp" in env_source
+
+
 def test_ros2_policy_node_stays_outside_training_and_uses_bridge_topics() -> None:
     source = ROS2_POLICY_NODE.read_text(encoding="utf-8")
     assert "import rclpy" in source
@@ -120,6 +173,8 @@ def test_ros2_policy_node_stays_outside_training_and_uses_bridge_topics() -> Non
     assert "JointState" in source
     assert '"/imu/data"' in source
     assert '"/joint_command"' in source
+    assert '"/simulation/episode_reset"' in source
+    assert '"/simulation/episode_reset_ack"' in source
     assert "socket" not in source
     assert "udp" not in source.lower()
 
@@ -137,6 +192,7 @@ def test_isaac_ros2_bridge_uses_action_graph_and_name_based_commands() -> None:
         "IsaacReadIMU",
         "ROS2PublishClock",
         "ROS2Publisher",
+        "ROS2Subscriber",
         "ROS2PublishOdometry",
         "ROS2PublishRawTransformTree",
         "ROS2PublishImu",
@@ -163,6 +219,8 @@ def test_isaac_ros2_bridge_uses_action_graph_and_name_based_commands() -> None:
     assert "Context.inputs:domain_id" in source
     assert "read_joint_position_command" in source
     assert "read_velocity_command" in source
+    assert "publish_episode_reset" in source
+    assert "read_episode_reset_ack" in source
     assert "read_imu_state" in source
     assert "write_base_orientation" in source
     assert "write_joint_state" in source
@@ -240,11 +298,16 @@ def test_complete_bringup_uses_project_defaults_and_official_teleop() -> None:
     assert '"--enable-lio-sam"' in source
     assert '"--disable-episode-timeout"' in source
     assert '"Factory_Layout.usd"' in source
+    assert '"--spawn-x"' in host_source
+    assert '"--spawn-y"' in host_source
+    assert '"--spawn-yaw"' in host_source
     assert '"cmd_vel:=/cmd_vel"' in source
     assert '"enable_locomotion_diagnostics"' in source
     assert 'default_value="false"' in source
     assert '"--locomotion-diagnostics-output"' in source
     assert '"locomotion_diagnostics.json"' in source
+    assert '"diagnostics_path": PathJoinSubstitution' in source
+    assert '"policy_diagnostics.json"' in source
     assert "UnlessCondition(enable_locomotion_diagnostics)" in source
     assert "IfCondition(enable_locomotion_diagnostics)" in source
     assert "command_safety_node" not in source

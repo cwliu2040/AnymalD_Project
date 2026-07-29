@@ -85,6 +85,9 @@ def generate_launch_description() -> LaunchDescription:
     policy_path = LaunchConfiguration("policy_path")
     metadata_path = LaunchConfiguration("metadata_path")
     factory_usd_path = LaunchConfiguration("factory_usd_path")
+    spawn_x = LaunchConfiguration("spawn_x")
+    spawn_y = LaunchConfiguration("spawn_y")
+    spawn_yaw = LaunchConfiguration("spawn_yaw")
     record_bag = LaunchConfiguration("record_bag")
     motion_deskew_apply_translation = LaunchConfiguration(
         "motion_deskew_apply_translation"
@@ -195,6 +198,12 @@ def generate_launch_description() -> LaunchDescription:
             "0.01",
             "--factory-usd-path",
             factory_usd_path,
+            "--spawn-x",
+            spawn_x,
+            "--spawn-y",
+            spawn_y,
+            "--spawn-yaw",
+            spawn_yaw,
             "--locomotion-diagnostics-output",
             PathJoinSubstitution(
                 [output_dir, "locomotion_diagnostics.json"]
@@ -338,6 +347,9 @@ def generate_launch_description() -> LaunchDescription:
                     ]
                 ),
             ),
+            DeclareLaunchArgument("spawn_x", default_value="0.0"),
+            DeclareLaunchArgument("spawn_y", default_value="-18.0"),
+            DeclareLaunchArgument("spawn_yaw", default_value="0.0"),
             SetEnvironmentVariable("ROS_DOMAIN_ID", ros_domain_id),
             SetEnvironmentVariable("ROS_LOCALHOST_ONLY", "1"),
             SetEnvironmentVariable(

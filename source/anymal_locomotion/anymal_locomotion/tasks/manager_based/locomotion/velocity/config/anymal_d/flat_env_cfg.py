@@ -119,6 +119,77 @@ class AnymalDLocomotionRobustEnvCfg(AnymalDLocomotionFlatEnvCfg):
 
 
 @configclass
+class AnymalDLocomotionRecoveryV05RewardsCfg(
+    AnymalDLocomotionRobustRewardsCfg
+):
+    """Base rewards plus penalties scoped to the observed failure envelope."""
+
+    high_combined_flat_orientation_l2 = RewTerm(
+        func=mdp.high_combined_flat_orientation_l2,
+        weight=-3.0,
+        params={
+            "command_name": "base_velocity",
+            "min_forward_speed": 2.0,
+            "min_yaw_speed": 1.5,
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
+    )
+    high_combined_feet_slide = RewTerm(
+        func=mdp.high_combined_feet_slide,
+        weight=-0.1,
+        params={
+            "command_name": "base_velocity",
+            "min_forward_speed": 2.0,
+            "min_yaw_speed": 1.5,
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces",
+                body_names=".*FOOT",
+            ),
+            "asset_cfg": SceneEntityCfg(
+                "robot",
+                body_names=".*FOOT",
+            ),
+        },
+    )
+    low_yaw_track_ang_vel_z_exp = RewTerm(
+        func=mdp.low_yaw_track_ang_vel_z_exp,
+        weight=4.0,
+        params={
+            "command_name": "base_velocity",
+            "std": 0.5,
+            "target_yaw_speed": 0.5,
+            "yaw_tolerance": 0.1,
+            "max_planar_speed": 0.1,
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
+    )
+    low_curve_track_lin_vel_xy_exp = RewTerm(
+        func=mdp.low_curve_track_lin_vel_xy_exp,
+        weight=4.0,
+        params={
+            "command_name": "base_velocity",
+            "std": 0.5,
+            "target_forward_speed": 0.5,
+            "target_yaw_speed": 0.5,
+            "command_tolerance": 0.1,
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
+    )
+    high_curve_track_lin_vel_xy_exp = RewTerm(
+        func=mdp.high_curve_track_lin_vel_xy_exp,
+        weight=16.0,
+        params={
+            "command_name": "base_velocity",
+            "std": 0.5,
+            "target_forward_speed": 3.0,
+            "target_yaw_speed": 0.5,
+            "command_tolerance": 0.1,
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
+    )
+
+
+@configclass
 class AnymalDLocomotionRecoveryEnvCfg(AnymalDLocomotionFlatEnvCfg):
     """Fine-tuning task with frequent moving-to-standing transitions."""
 
@@ -127,3 +198,54 @@ class AnymalDLocomotionRecoveryEnvCfg(AnymalDLocomotionFlatEnvCfg):
         command = self.commands.base_velocity
         command.resampling_time_range = (5.0, 5.0)
         command.rel_standing_envs = 0.2
+
+
+@configclass
+class AnymalDLocomotionRecoveryV05EnvCfg(
+    AnymalDLocomotionRobustEnvCfg
+):
+    """Long-horizon high-combined locomotion and stop-recovery fine-tuning."""
+
+    rewards: AnymalDLocomotionRecoveryV05RewardsCfg = (
+        AnymalDLocomotionRecoveryV05RewardsCfg()
+    )
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.episode_length_s = 40.0
+        # The full RTX/LIO stack exposed sensitivity to small state deviations
+        # while executing the warehouse high-combined sequence.  Train through
+        # those deviations without changing the deployment friction contract.
+        self.events.push_robot.interval_range_s = (5.0, 10.0)
+        self.events.push_robot.params["velocity_range"] = {
+            "x": (-0.75, 0.75),
+            "y": (-0.75, 0.75),
+            "yaw": (-0.5, 0.5),
+        }
+        # Preserve baseline turning behavior by applying the additional
+        # anti-tilt and anti-slide costs only inside the high-combined
+        # warehouse failure envelope.
+        self.rewards.ang_vel_xy_l2.weight = -0.1
+        self.rewards.track_ang_vel_z_exp.weight = 1.0
+        self.commands.base_velocity = mdp.RecoveryV05VelocityCommandCfg(
+            asset_name="robot",
+            resampling_time_range=(6.0, 12.0),
+            rel_standing_envs=0.15,
+            rel_heading_envs=0.0,
+            heading_command=False,
+            debug_vis=True,
+            high_combined_probability=0.80,
+            high_combined_stop_probability=0.25,
+            high_combined_straight_probability=0.50,
+            warehouse_sequence_probability=0.40,
+            turning_regression_probability=0.45,
+            low_yaw_profile_probability=0.25,
+            low_curve_profile_probability=0.25,
+            high_curve_profile_probability=0.25,
+            ranges=mdp.RecoveryV05VelocityCommandCfg.Ranges(
+                lin_vel_x=(-2.0, 3.0),
+                lin_vel_y=(-1.5, 1.5),
+                ang_vel_z=(-2.0, 2.0),
+                heading=None,
+            ),
+        )
