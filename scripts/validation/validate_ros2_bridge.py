@@ -157,6 +157,16 @@ parser.add_argument(
     help="Initial ANYmal yaw in the Factory map.",
 )
 parser.add_argument(
+    "--state-transplant-manifest",
+    type=str,
+    default="",
+    help=(
+        "Optional project-local state manifest. Its z/orientation, body "
+        "velocities, canonical joint state and policy history are restored; "
+        "--spawn-x/--spawn-y select the target world location."
+    ),
+)
+parser.add_argument(
     "--locomotion-diagnostics-output",
     type=Path,
     default=None,
@@ -240,6 +250,32 @@ if args_cli.locomotion_diagnostics_output is not None:
             "locomotion diagnostic output must remain inside the project: "
             f"{args_cli.locomotion_diagnostics_output}"
         )
+if args_cli.state_transplant_manifest:
+    args_cli.state_transplant_manifest = (
+        Path(args_cli.state_transplant_manifest).expanduser().resolve()
+    )
+    if (
+        not args_cli.state_transplant_manifest.is_relative_to(PROJECT_ROOT)
+        or not args_cli.state_transplant_manifest.is_file()
+    ):
+        parser.error(
+            "state transplant manifest must be an existing project-local file: "
+            f"{args_cli.state_transplant_manifest}"
+        )
+else:
+    args_cli.state_transplant_manifest = None
+action_replay_rendering_required = False
+if args_cli.state_transplant_manifest is not None:
+    early_transplant_document = json.loads(
+        args_cli.state_transplant_manifest.read_text(encoding="utf-8")
+    )
+    early_replay = early_transplant_document.get(
+        "deterministic_action_replay"
+    )
+    action_replay_rendering_required = bool(
+        isinstance(early_replay, dict)
+        and early_replay.get("lio_sam_enabled", False)
+    )
 if args_cli.benchmark_completion_file is not None:
     args_cli.benchmark_completion_file = (
         args_cli.benchmark_completion_file.expanduser().resolve()
@@ -272,7 +308,7 @@ if (
         "stability diagnostic config does not exist: "
         f"{args_cli.stability_diagnostics_config}"
     )
-if args_cli.enable_lio_sam:
+if args_cli.enable_lio_sam or action_replay_rendering_required:
     # RTX sensors are Hydra render products. Headless Isaac Lab otherwise uses
     # NO_RENDERING and silently creates the sensor without producing frames.
     args_cli.enable_cameras = True
@@ -290,7 +326,7 @@ required_kit_args = (
     "--enable isaacsim.ros2.bridge "
     "--/exts/isaacsim.ros2.bridge/ros_distro=system_default"
 )
-if args_cli.enable_lio_sam:
+if args_cli.enable_lio_sam or action_replay_rendering_required:
     # Isaac Sim 5.1 disables Motion BVH by default. A rotating LiDAR mounted
     # on a moving robot needs it for correct intra-scan motion effects.
     required_kit_args += (
@@ -336,6 +372,7 @@ from anymal_locomotion.stability_diagnostics import (
     build_diagnostic_report,
     quaternion_to_rpy_wxyz,
 )
+from anymal_locomotion.state_transplant import load_state_transplant
 from anymal_locomotion.tasks.manager_based.locomotion.velocity.config.anymal_d import PLAY_TASK_ID
 from isaaclab.assets import AssetBaseCfg
 from isaaclab.terrains import TerrainImporterCfg
@@ -589,6 +626,53 @@ def _build_bridge_observation(
     return observation, base_state, imu_state
 
 
+def _read_raw_imu_angular_velocity(bridge) -> list[float]:
+    """Read the untransformed IsaacReadIMU angular-velocity output."""
+    import omni.graph.core as og
+
+    value = og.Controller.get(
+        og.Controller.attribute(
+            f"{bridge.graph_path}/ReadImuSensor.outputs:angVel"
+        )
+    )
+    if value is None or len(value) != 3:
+        raise RuntimeError("Physics IMU node did not produce raw angVel")
+    return [float(component) for component in value]
+
+
+def _build_native_transplant_observation(
+    robot,
+    canonical_joint_indices: tuple[int, ...],
+    command: np.ndarray,
+    previous_action: tuple[float, ...],
+) -> np.ndarray:
+    defaults = np.asarray(
+        [joint["default_position"] for joint in POLICY_CONTRACT["joints"]],
+        dtype=np.float32,
+    )
+    canonical_ids = list(canonical_joint_indices)
+    return np.concatenate(
+        (
+            robot.data.root_lin_vel_b[0].detach().cpu().numpy(),
+            robot.data.root_ang_vel_b[0].detach().cpu().numpy(),
+            robot.data.projected_gravity_b[0].detach().cpu().numpy(),
+            command,
+            (
+                robot.data.joint_pos[0, canonical_ids]
+                .detach()
+                .cpu()
+                .numpy()
+                - defaults
+            ),
+            robot.data.joint_vel[0, canonical_ids]
+            .detach()
+            .cpu()
+            .numpy(),
+            np.asarray(previous_action, dtype=np.float32),
+        )
+    ).astype(np.float32, copy=False)
+
+
 _OBSERVATION_TERMS = (
     ("base_linear_velocity", 0, 3),
     ("base_angular_velocity", 3, 6),
@@ -617,6 +701,23 @@ def _yaw_from_wxyz(quaternion: torch.Tensor) -> float:
 
 def _wrap_angle(angle: float) -> float:
     return math.atan2(math.sin(angle), math.cos(angle))
+
+
+def _rotate_body_vector_to_world(
+    vector: tuple[float, float, float],
+    quaternion_wxyz: tuple[float, float, float, float],
+) -> np.ndarray:
+    """Rotate one body-frame vector with a normalized wxyz quaternion."""
+    quaternion = np.asarray(quaternion_wxyz, dtype=np.float64)
+    quaternion /= np.linalg.norm(quaternion)
+    w = quaternion[0]
+    xyz = quaternion[1:]
+    body = np.asarray(vector, dtype=np.float64)
+    return (
+        body
+        + 2.0 * w * np.cross(xyz, body)
+        + 2.0 * np.cross(xyz, np.cross(xyz, body))
+    )
 
 
 def _write_diagnostic_report(
@@ -719,7 +820,73 @@ def _diagnostic_sample(
     }
 
 
+def _actuator_lstm_checkpoint(robot) -> dict[str, Any] | None:
+    """Capture public ActuatorNetLSTM recurrent buffers at one policy boundary."""
+    checkpoints: dict[str, Any] = {}
+    for name, actuator in robot.actuators.items():
+        if not (
+            hasattr(actuator, "sea_hidden_state_per_env")
+            and hasattr(actuator, "sea_cell_state_per_env")
+        ):
+            continue
+        checkpoints[name] = {
+            "hidden_state": (
+                actuator.sea_hidden_state_per_env[:, 0]
+                .detach()
+                .cpu()
+                .numpy()
+                .astype(float)
+                .tolist()
+            ),
+            "cell_state": (
+                actuator.sea_cell_state_per_env[:, 0]
+                .detach()
+                .cpu()
+                .numpy()
+                .astype(float)
+                .tolist()
+            ),
+        }
+    return checkpoints or None
+
+
+def _restore_actuator_lstm_checkpoint(robot, checkpoint: dict[str, Any]) -> None:
+    """Restore public ActuatorNetLSTM buffers captured from the same task."""
+    if set(checkpoint) != {
+        name
+        for name, actuator in robot.actuators.items()
+        if hasattr(actuator, "sea_hidden_state_per_env")
+        and hasattr(actuator, "sea_cell_state_per_env")
+    }:
+        raise RuntimeError(
+            "state-transplant actuator names do not match the runtime task: "
+            f"manifest={sorted(checkpoint)}, runtime={sorted(robot.actuators)}"
+        )
+    for name, state in checkpoint.items():
+        actuator = robot.actuators[name]
+        for key, target in (
+            ("hidden_state", actuator.sea_hidden_state_per_env[:, 0]),
+            ("cell_state", actuator.sea_cell_state_per_env[:, 0]),
+        ):
+            source = torch.as_tensor(
+                state[key],
+                dtype=target.dtype,
+                device=target.device,
+            )
+            if source.shape != target.shape:
+                raise RuntimeError(
+                    f"actuator {name} {key} shape differs: "
+                    f"manifest={tuple(source.shape)}, runtime={tuple(target.shape)}"
+                )
+            target.copy_(source)
+
+
 def main() -> None:
+    transplant = (
+        load_state_transplant(args_cli.state_transplant_manifest)
+        if args_cli.state_transplant_manifest is not None
+        else None
+    )
     diagnostic_thresholds: DiagnosticThresholds | None = None
     if args_cli.locomotion_diagnostics_output is not None:
         diagnostic_config = yaml.safe_load(
@@ -810,6 +977,11 @@ def main() -> None:
         "stability_diagnostics_config": str(
             args_cli.stability_diagnostics_config
         ),
+        "state_transplant_manifest": (
+            str(args_cli.state_transplant_manifest)
+            if args_cli.state_transplant_manifest is not None
+            else None
+        ),
     }
     completion_file_not_before_wall_s = time.time()
     benchmark_completion_observed = False
@@ -827,15 +999,29 @@ def main() -> None:
         lidar = (
             create_rtx_lidar_sensor(articulation_root)
             if args_cli.enable_lio_sam
+            or action_replay_rendering_required
             else None
         )
         bridge = create_ros2_policy_bridge(
             articulation_root,
             initial_base_orientation_wxyz=(
-                math.cos(0.5 * args_cli.spawn_yaw),
-                0.0,
-                0.0,
-                math.sin(0.5 * args_cli.spawn_yaw),
+                (
+                    math.cos(0.5 * transplant.replay_spawn[2]),
+                    0.0,
+                    0.0,
+                    math.sin(0.5 * transplant.replay_spawn[2]),
+                )
+                if transplant is not None
+                and transplant.action_history
+                and transplant.replay_spawn is not None
+                else transplant.base_orientation_wxyz
+                if transplant is not None
+                else (
+                    math.cos(0.5 * args_cli.spawn_yaw),
+                    0.0,
+                    0.0,
+                    math.sin(0.5 * args_cli.spawn_yaw),
+                )
             ),
             connect_articulation_controller=not args_cli.external_control,
             publish_ground_truth_tf=not args_cli.enable_lio_sam,
@@ -960,29 +1146,222 @@ def main() -> None:
             }
         )
         canonical_joint_indices = validate_runtime_joint_names(robot.joint_names)
+        if transplant is not None and transplant.action_history:
+            if transplant.replay_spawn is None:
+                raise RuntimeError(
+                    "action-history transplant is missing its source spawn"
+                )
+            replay_offset = (
+                args_cli.spawn_x - transplant.replay_spawn[0],
+                args_cli.spawn_y - transplant.replay_spawn[1],
+            )
+            replay_terminated_count = 0
+            replay_truncated_count = 0
+            for replay_action in transplant.action_history:
+                replay_result = env.step(
+                    torch.as_tensor(
+                        [replay_action],
+                        dtype=torch.float32,
+                        device=base_env.device,
+                    )
+                )
+                if len(replay_result) == 5:
+                    replay_terminated_count += int(
+                        replay_result[2].sum().item()
+                    )
+                    replay_truncated_count += int(
+                        replay_result[3].sum().item()
+                    )
+                if transplant.action_replay_lio_sam_enabled:
+                    base_env.sim.render()
+            if replay_terminated_count or replay_truncated_count:
+                raise RuntimeError(
+                    "deterministic action pre-rollout reset unexpectedly: "
+                    f"terminated={replay_terminated_count}, "
+                    f"truncated={replay_truncated_count}"
+                )
+            expected_position = np.asarray(
+                (
+                    transplant.base_position_w_m[0] + replay_offset[0],
+                    transplant.base_position_w_m[1] + replay_offset[1],
+                    transplant.base_position_w_m[2],
+                ),
+                dtype=np.float32,
+            )
+            replay_position_error = float(
+                np.max(
+                    np.abs(
+                        robot.data.root_pos_w[0]
+                        .detach()
+                        .cpu()
+                        .numpy()
+                        - expected_position
+                    )
+                )
+            )
+            print(
+                "PASS state_transplant_action_history_steps="
+                f"{len(transplant.action_history)}",
+                flush=True,
+            )
+            print(
+                "INFO state_transplant_action_replay_position_max_abs_error="
+                f"{replay_position_error:.9g}",
+                flush=True,
+            )
+        elif transplant is not None:
+            root_state = robot.data.root_state_w.clone()
+            root_state[0, :3] = torch.as_tensor(
+                (
+                    args_cli.spawn_x,
+                    args_cli.spawn_y,
+                    transplant.base_position_w_m[2],
+                ),
+                dtype=root_state.dtype,
+                device=root_state.device,
+            )
+            root_state[0, 3:7] = torch.as_tensor(
+                transplant.base_orientation_wxyz,
+                dtype=root_state.dtype,
+                device=root_state.device,
+            )
+            root_state[0, 7:10] = torch.as_tensor(
+                _rotate_body_vector_to_world(
+                    transplant.base_linear_velocity_b_mps,
+                    transplant.base_orientation_wxyz,
+                ),
+                dtype=root_state.dtype,
+                device=root_state.device,
+            )
+            root_state[0, 10:13] = torch.as_tensor(
+                _rotate_body_vector_to_world(
+                    transplant.base_angular_velocity_b_rps,
+                    transplant.base_orientation_wxyz,
+                ),
+                dtype=root_state.dtype,
+                device=root_state.device,
+            )
+            joint_positions = robot.data.joint_pos.clone()
+            joint_velocities = robot.data.joint_vel.clone()
+            canonical_ids = list(canonical_joint_indices)
+            joint_positions[0, canonical_ids] = torch.as_tensor(
+                transplant.joint_positions,
+                dtype=joint_positions.dtype,
+                device=joint_positions.device,
+            )
+            joint_velocities[0, canonical_ids] = torch.as_tensor(
+                transplant.joint_velocities,
+                dtype=joint_velocities.dtype,
+                device=joint_velocities.device,
+            )
+            robot.write_root_state_to_sim(root_state)
+            robot.write_joint_state_to_sim(
+                joint_positions,
+                joint_velocities,
+            )
+            if transplant.actuator_lstm_state is not None:
+                _restore_actuator_lstm_checkpoint(
+                    robot,
+                    transplant.actuator_lstm_state,
+                )
+            base_env.sim.forward()
+        if transplant is not None:
+            initial_observation = _build_native_transplant_observation(
+                robot,
+                canonical_joint_indices,
+                np.asarray(
+                    transplant.effective_command,
+                    dtype=np.float32,
+                ),
+                transplant.previous_action,
+            )
+            initial_observation_error = float(
+                np.max(
+                    np.abs(
+                        initial_observation
+                        - np.asarray(
+                            transplant.initial_observation,
+                            dtype=np.float32,
+                        )
+                    )
+                )
+            )
+            if (
+                not transplant.action_history
+                and initial_observation_error > 2.0e-4
+            ):
+                raise RuntimeError(
+                    "state-transplant initial 48-D policy input parity failed: "
+                    f"max_abs_error={initial_observation_error}, atol=0.0002"
+                )
+            print(
+                "PASS state_transplant="
+                f"source_time:{transplant.source_time_s},"
+                f"policy_clock:{transplant.policy_clock_s},"
+                f"target_xy:({args_cli.spawn_x},{args_cli.spawn_y})",
+                flush=True,
+            )
+            print(
+                (
+                    "INFO"
+                    if transplant.action_history
+                    else "PASS"
+                )
+                + " state_transplant_initial_observation_max_abs_error="
+                f"{initial_observation_error:.9g}",
+                flush=True,
+            )
+            print(
+                "PASS state_transplant_actuator_lstm_state_restored="
+                f"{transplant.actuator_lstm_state is not None}",
+                flush=True,
+            )
         external_velocity_command = np.zeros(3, dtype=np.float32)
+        bridge_time_offset_s = (
+            transplant.source_time_s
+            if transplant is not None and transplant.action_history
+            else 0.0
+        )
         if args_cli.external_control:
+            if transplant is not None:
+                external_velocity_command = np.asarray(
+                    transplant.effective_command,
+                    dtype=np.float32,
+                )
+            else:
+                trigger_command_step(bridge)
+                external_velocity_command = _clamp_external_command(
+                    read_velocity_command(bridge)
+                )
+            _set_internal_velocity_command(
+                base_env,
+                external_velocity_command,
+            )
             write_base_orientation(bridge, robot.data.root_quat_w[0])
             _write_bridge_joint_state(
                 bridge,
                 robot,
                 canonical_joint_indices,
-                timestamp_s=0.0,
+                timestamp_s=bridge_time_offset_s,
             )
             _tick_action_graph(
                 base_env,
                 bridge,
-                render_lidar=args_cli.enable_lio_sam,
+                render_lidar=(
+                    args_cli.enable_lio_sam
+                    or action_replay_rendering_required
+                ),
             )
-            trigger_command_step(bridge)
-            external_velocity_command = _clamp_external_command(
-                read_velocity_command(bridge)
-            )
-            _set_internal_velocity_command(base_env, external_velocity_command)
         actions = torch.zeros(
             (base_env.num_envs, base_env.action_manager.total_action_dim),
             device=base_env.device,
         )
+        if transplant is not None and not transplant.action_history:
+            actions[0] = torch.as_tensor(
+                transplant.bootstrap_action,
+                dtype=actions.dtype,
+                device=actions.device,
+            )
         straight_line_steps = math.ceil(args_cli.straight_line_duration_s / base_env.step_dt)
         straight_line_start_step = args_cli.external_control_warmup_steps
         straight_line_end_step = straight_line_start_step + straight_line_steps
@@ -1122,6 +1501,15 @@ def main() -> None:
             command_for_step = external_velocity_command.copy()
             if args_cli.external_control:
                 _set_internal_velocity_command(base_env, command_for_step)
+            if (
+                transplant is not None
+                and step_index < len(transplant.bridge_bootstrap_actions)
+            ):
+                actions[0] = torch.as_tensor(
+                    transplant.bridge_bootstrap_actions[step_index],
+                    dtype=actions.dtype,
+                    device=actions.device,
+                )
             action_for_step = actions.clone()
             if args_cli.straight_line_check and step_index == straight_line_start_step:
                 straight_start_position = (
@@ -1189,12 +1577,18 @@ def main() -> None:
                     bridge,
                     robot,
                     canonical_joint_indices,
-                    timestamp_s=(step_index + 1) * base_env.step_dt,
+                    timestamp_s=(
+                        bridge_time_offset_s
+                        + (step_index + 1) * base_env.step_dt
+                    ),
                 )
             _tick_action_graph(
                 base_env,
                 bridge,
-                render_lidar=args_cli.enable_lio_sam,
+                render_lidar=(
+                    args_cli.enable_lio_sam
+                    or action_replay_rendering_required
+                ),
             )
             if args_cli.locomotion_diagnostics_output is not None:
                 diagnostic_sample = _diagnostic_sample(
@@ -1216,6 +1610,16 @@ def main() -> None:
                     .astype(float)
                     .tolist()
                 )
+                if (
+                    (len(diagnostic_samples) + 1)
+                    % args_cli.diagnostics_flush_steps
+                    == 0
+                ):
+                    actuator_checkpoint = _actuator_lstm_checkpoint(robot)
+                    if actuator_checkpoint is not None:
+                        diagnostic_sample["actuator_lstm_state"] = (
+                            actuator_checkpoint
+                        )
                 if policy_input_for_next_step is not None:
                     diagnostic_sample["native_policy_observation"] = (
                         policy_input_for_next_step[0]
@@ -1282,13 +1686,13 @@ def main() -> None:
                     )
                 )
             )
+            imu_reset_transient_sample = False
             if step_terminated != 0 or step_truncated != 0:
                 # PhysX IMU data can retain the pre-reset sample for one
-                # physics tick after the articulation has reset.  Keep that
-                # boundary visible as a separate metric and require the normal
-                # contract again immediately after that one-tick grace window.
-                imu_reset_grace_steps_remaining = 1
-            elif imu_reset_grace_steps_remaining > 0:
+                # or more policy ticks after the articulation has reset under
+                # RTX rendering load. Keep the termination sample visible as a
+                # separate metric and start the bounded post-reset window.
+                imu_reset_grace_steps_remaining = 4
                 imu_reset_transient_angular_velocity_max_error = max(
                     imu_reset_transient_angular_velocity_max_error,
                     angular_velocity_error,
@@ -1297,7 +1701,25 @@ def main() -> None:
                     imu_reset_transient_projected_gravity_max_error,
                     projected_gravity_error,
                 )
-                imu_reset_grace_steps_remaining -= 1
+            elif imu_reset_grace_steps_remaining > 0:
+                if (
+                    angular_velocity_error
+                    <= args_cli.imu_observation_parity_atol
+                    and projected_gravity_error
+                    <= args_cli.imu_observation_parity_atol
+                ):
+                    imu_reset_grace_steps_remaining = 0
+                else:
+                    imu_reset_transient_sample = True
+                    imu_reset_transient_angular_velocity_max_error = max(
+                        imu_reset_transient_angular_velocity_max_error,
+                        angular_velocity_error,
+                    )
+                    imu_reset_transient_projected_gravity_max_error = max(
+                        imu_reset_transient_projected_gravity_max_error,
+                        projected_gravity_error,
+                    )
+                    imu_reset_grace_steps_remaining -= 1
             else:
                 imu_angular_velocity_max_error = max(
                     imu_angular_velocity_max_error,
@@ -1319,6 +1741,7 @@ def main() -> None:
                 and step_index >= args_cli.external_control_warmup_steps
                 and step_terminated == 0
                 and step_truncated == 0
+                and not imu_reset_transient_sample
             ):
                 (
                     bridge_observation,
@@ -1355,13 +1778,19 @@ def main() -> None:
                         )
                         if name == "base_angular_velocity":
                             parity_angular_debug = {
+                                "step_index": [float(step_index)],
                                 "compute_odometry": list(
                                     bridge_base_state.world_angular_velocity
                                 ),
                                 "orientation_xyzw": list(
                                     bridge_imu_state.orientation_xyzw
                                 ),
-                                "imu_sensor_time": [bridge_imu_state.sensor_time],
+                                "imu_sensor_time": [
+                                    bridge_imu_state.sensor_time
+                                ],
+                                "raw_imu_angular_velocity": (
+                                    _read_raw_imu_angular_velocity(bridge)
+                                ),
                                 "isaac_world": robot.data.root_ang_vel_w[0]
                                 .detach()
                                 .cpu()

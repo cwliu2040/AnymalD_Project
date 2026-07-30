@@ -93,6 +93,16 @@ class RecoveryV05VelocityCommand(UniformVelocityCommand):
             dtype=torch.long,
             device=self.device,
         )
+        self._refinery_replay_mode = torch.zeros(
+            self.num_envs,
+            dtype=torch.bool,
+            device=self.device,
+        )
+        self._refinery_replay_phase = torch.zeros(
+            self.num_envs,
+            dtype=torch.long,
+            device=self.device,
+        )
         self._turning_regression_mode = torch.zeros(
             self.num_envs,
             dtype=torch.bool,
@@ -118,6 +128,10 @@ class RecoveryV05VelocityCommand(UniformVelocityCommand):
             (
                 "warehouse_sequence_probability",
                 cfg.warehouse_sequence_probability,
+            ),
+            (
+                "refinery_replay_probability",
+                cfg.refinery_replay_probability,
             ),
             (
                 "turning_regression_probability",
@@ -148,6 +162,7 @@ class RecoveryV05VelocityCommand(UniformVelocityCommand):
                 )
         if (
             cfg.warehouse_sequence_probability
+            + cfg.refinery_replay_probability
             + cfg.turning_regression_probability
             > 1.0
         ):
@@ -178,16 +193,24 @@ class RecoveryV05VelocityCommand(UniformVelocityCommand):
             self._warehouse_mode[initial_ids] = (
                 replay_draw < self.cfg.warehouse_sequence_probability
             )
+            refinery_lower = self.cfg.warehouse_sequence_probability
+            refinery_upper = (
+                refinery_lower + self.cfg.refinery_replay_probability
+            )
+            self._refinery_replay_mode[initial_ids] = (
+                replay_draw >= refinery_lower
+            ) & (replay_draw < refinery_upper)
             self._turning_regression_mode[initial_ids] = (
-                replay_draw >= self.cfg.warehouse_sequence_probability
+                replay_draw >= refinery_upper
             ) & (
                 replay_draw
                 < (
-                    self.cfg.warehouse_sequence_probability
+                    refinery_upper
                     + self.cfg.turning_regression_probability
                 )
             )
             self._warehouse_phase[initial_ids] = 0
+            self._refinery_replay_phase[initial_ids] = 0
             self._turning_regression_phase[initial_ids] = 0
             self._turning_regression_profile[initial_ids] = torch.randint(
                 0,
@@ -300,6 +323,57 @@ class RecoveryV05VelocityCommand(UniformVelocityCommand):
             if not standing:
                 self.vel_command_b[selected, 0] = 2.3
                 self.vel_command_b[selected, 2] = yaw_command
+
+        refinery_ids = ids[self._refinery_replay_mode[ids]]
+        continuing_refinery_ids = refinery_ids[
+            self.command_counter[refinery_ids] > 0
+        ]
+        # Exact effective-command history from the formal refinery_fix_01 run.
+        # The zero phases at indices 15 and 21 are watchdog-effective gaps in
+        # that trace; the final three phases are the reproduced failure tail.
+        refinery_sequence = (
+            (1.46, (0.0, 0.0, 0.0)),
+            (0.60, (0.5, 0.0, 0.0)),
+            (0.40, (1.898749, 0.0, 0.0)),
+            (0.44, (1.898749, 0.0, 0.817349)),
+            (1.02, (1.898749, 0.0, 0.0)),
+            (0.18, (1.898749, 0.0, 0.817349)),
+            (2.80, (1.898749, 0.0, 0.0)),
+            (0.12, (1.898749, 0.0, 0.817349)),
+            (4.18, (1.898749, 0.0, 0.0)),
+            (0.18, (1.898749, 0.0, 0.817349)),
+            (0.50, (1.898749, 0.0, 0.0)),
+            (0.52, (1.898749, 0.0, 0.817349)),
+            (0.28, (1.898749, 0.0, 0.0)),
+            (0.22, (1.898749, 0.0, 0.817349)),
+            (2.62, (1.898749, 0.0, 0.0)),
+            (0.50, (0.0, 0.0, 0.0)),
+            (2.32, (1.898749, 0.0, 0.0)),
+            (0.10, (1.898749, 0.0, -0.817349)),
+            (0.70, (1.898749, 0.0, 0.0)),
+            (0.16, (1.898749, 0.0, -0.817349)),
+            (3.80, (1.898749, 0.0, 0.0)),
+            (1.38, (0.0, 0.0, 0.0)),
+            (1.38, (0.0, 0.0, 0.817349)),
+            (3.72, (1.898749, 0.0, 0.0)),
+            (12.52, (0.0, 0.0, 0.0)),
+        )
+        if continuing_refinery_ids.numel() > 0:
+            self._refinery_replay_phase[continuing_refinery_ids] = (
+                self._refinery_replay_phase[continuing_refinery_ids] + 1
+            ) % len(refinery_sequence)
+        for phase, (duration_s, command) in enumerate(refinery_sequence):
+            selected = refinery_ids[
+                self._refinery_replay_phase[refinery_ids] == phase
+            ]
+            if selected.numel() == 0:
+                continue
+            self.vel_command_b[selected] = torch.tensor(
+                command,
+                device=self.device,
+            )
+            self.is_standing_env[selected] = command == (0.0, 0.0, 0.0)
+            self.time_left[selected] = duration_s
 
         turning_ids = ids[self._turning_regression_mode[ids]]
         continuing_turning_ids = turning_ids[
@@ -419,6 +493,7 @@ class RecoveryV05VelocityCommand(UniformVelocityCommand):
         ids = ids[
             ~(
                 self._warehouse_mode[ids]
+                | self._refinery_replay_mode[ids]
                 | self._turning_regression_mode[ids]
             )
         ]
@@ -562,8 +637,9 @@ class RecoveryV05VelocityCommandCfg(UniformVelocityCommandCfg):
     high_combined_probability: float = 0.65
     high_combined_stop_probability: float = 0.35
     high_combined_straight_probability: float = 0.40
-    warehouse_sequence_probability: float = 0.40
-    turning_regression_probability: float = 0.45
+    warehouse_sequence_probability: float = 0.35
+    refinery_replay_probability: float = 0.15
+    turning_regression_probability: float = 0.40
     low_yaw_profile_probability: float = 0.25
     low_curve_profile_probability: float = 0.25
     high_curve_profile_probability: float = 0.25

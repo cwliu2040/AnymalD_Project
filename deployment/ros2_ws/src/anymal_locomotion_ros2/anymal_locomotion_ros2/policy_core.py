@@ -227,6 +227,18 @@ class PolicyRuntime:
     def reset(self) -> None:
         self.previous_action.fill(0.0)
 
+    def seed_previous_action(
+        self,
+        previous_action: Sequence[float] | np.ndarray,
+    ) -> None:
+        """Restore the action-history term for a diagnostic state transplant."""
+        restored = _vector(
+            previous_action,
+            self.contract.action_dimension,
+            "previous_action",
+        )
+        self.previous_action = restored.copy()
+
     def step(self, state: RobotState, command: Sequence[float] | np.ndarray) -> InferenceResult:
         observation = build_observation(state, command, self.previous_action, self.contract)
         backend_output = np.asarray(self.backend(observation[None, :]), dtype=np.float32)

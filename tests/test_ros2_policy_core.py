@@ -175,6 +175,23 @@ def test_runtime_reset_clears_previous_action(contract: PolicyContract) -> None:
     np.testing.assert_array_equal(result.observation[36:48], np.zeros(12))
 
 
+def test_runtime_can_seed_previous_action_for_state_transplant(
+    contract: PolicyContract,
+) -> None:
+    runtime = PolicyRuntime(
+        contract,
+        lambda observations: np.zeros(
+            (observations.shape[0], 12),
+            dtype=np.float32,
+        ),
+    )
+    previous_action = np.linspace(-0.6, 0.6, 12, dtype=np.float32)
+
+    runtime.seed_previous_action(previous_action)
+
+    np.testing.assert_allclose(runtime.previous_action, previous_action)
+
+
 def test_runtime_rejects_non_finite_policy_output(contract: PolicyContract) -> None:
     def invalid_backend(_observations: np.ndarray) -> np.ndarray:
         return np.full((1, 12), np.nan, dtype=np.float32)

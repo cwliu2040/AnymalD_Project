@@ -21,6 +21,38 @@ def _high_combined_command_mask(
     )
 
 
+def _refinery_command_mask(
+    env,
+    command_name: str,
+    target_forward_speed: float,
+    target_yaw_speed: float,
+    command_tolerance: float,
+) -> torch.Tensor:
+    """Select the moving phases in the reproduced refinery command trace."""
+    command = env.command_manager.get_command(command_name)
+    forward_match = (
+        torch.abs(command[:, 0] - target_forward_speed)
+        <= command_tolerance
+    )
+    yaw_match = (
+        torch.abs(torch.abs(command[:, 2]) - target_yaw_speed)
+        <= command_tolerance
+    )
+    straight_match = (
+        forward_match
+        & (torch.abs(command[:, 2]) <= command_tolerance)
+    )
+    pivot_match = (
+        (torch.abs(command[:, 0]) <= command_tolerance)
+        & yaw_match
+    )
+    combined_match = forward_match & yaw_match
+    return (
+        (torch.abs(command[:, 1]) <= command_tolerance)
+        & (straight_match | pivot_match | combined_match)
+    )
+
+
 def high_combined_feet_slide(
     env,
     command_name: str,
@@ -43,6 +75,30 @@ def high_combined_feet_slide(
     )
 
 
+def refinery_feet_slide(
+    env,
+    command_name: str,
+    target_forward_speed: float,
+    target_yaw_speed: float,
+    command_tolerance: float,
+    sensor_cfg: SceneEntityCfg,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize slip throughout the reproduced refinery moving phases."""
+    penalty = feet_slide(
+        env,
+        sensor_cfg=sensor_cfg,
+        asset_cfg=asset_cfg,
+    )
+    return penalty * _refinery_command_mask(
+        env,
+        command_name,
+        target_forward_speed,
+        target_yaw_speed,
+        command_tolerance,
+    )
+
+
 def high_combined_flat_orientation_l2(
     env,
     command_name: str,
@@ -57,6 +113,25 @@ def high_combined_flat_orientation_l2(
         command_name,
         min_forward_speed,
         min_yaw_speed,
+    )
+
+
+def refinery_flat_orientation_l2(
+    env,
+    command_name: str,
+    target_forward_speed: float,
+    target_yaw_speed: float,
+    command_tolerance: float,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize tilt throughout the reproduced refinery moving phases."""
+    penalty = isaac_mdp.flat_orientation_l2(env, asset_cfg=asset_cfg)
+    return penalty * _refinery_command_mask(
+        env,
+        command_name,
+        target_forward_speed,
+        target_yaw_speed,
+        command_tolerance,
     )
 
 

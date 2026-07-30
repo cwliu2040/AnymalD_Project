@@ -76,6 +76,7 @@ class AnymalPolicyNode(Node):
         self.declare_parameter("state_sync_tolerance_s", 0.01)
         self.declare_parameter("max_abs_policy_action", 10.0)
         self.declare_parameter("diagnostics_path", "")
+        self.declare_parameter("state_transplant_manifest_path", "")
 
         policy_path = str(self.get_parameter("policy_path").value)
         metadata_path = str(self.get_parameter("metadata_path").value)
@@ -95,6 +96,79 @@ class AnymalPolicyNode(Node):
             backend,
             max_abs_policy_action=float(self.get_parameter("max_abs_policy_action").value),
         )
+        transplant_manifest_path = str(
+            self.get_parameter("state_transplant_manifest_path").value
+        ).strip()
+        self._transplant_expected_observation: np.ndarray | None = None
+        self._transplant_observation_checked = False
+        self._transplant_observation_parity: dict[str, float] | None = None
+        self._transplant_action_replay = False
+        self._transplant_initial_command_pending = False
+        transplant_initial_command: np.ndarray | None = None
+        if transplant_manifest_path:
+            transplant_document = json.loads(
+                Path(transplant_manifest_path)
+                .expanduser()
+                .resolve()
+                .read_text(encoding="utf-8")
+            )
+            transplant_state = transplant_document.get("state")
+            if (
+                transplant_document.get("schema_version") != 1
+                or not isinstance(transplant_state, dict)
+            ):
+                raise ValueError(
+                    "state transplant manifest must contain schema_version 1 "
+                    "and a state mapping"
+                )
+            action_replay_available = bool(
+                transplant_document.get("deterministic_action_replay")
+            )
+            self._transplant_action_replay = action_replay_available
+            self._transplant_initial_command_pending = (
+                action_replay_available
+            )
+            self._runtime.seed_previous_action(
+                (
+                    transplant_document["deterministic_action_replay"][
+                        "expected_observation"
+                    ][36:48]
+                    if action_replay_available
+                    else transplant_state.get("bootstrap_action")
+                )
+            )
+            expected_observation = np.asarray(
+                (
+                    transplant_document["deterministic_action_replay"][
+                        "expected_observation"
+                    ]
+                    if action_replay_available
+                    else transplant_state.get("expected_observation")
+                ),
+                dtype=np.float32,
+            )
+            if (
+                expected_observation.shape
+                != (self._contract.observation_dimension,)
+                or not np.all(np.isfinite(expected_observation))
+            ):
+                raise ValueError(
+                    "state transplant expected_observation must contain "
+                    f"{self._contract.observation_dimension} finite values"
+                )
+            self._transplant_expected_observation = expected_observation
+            transplant_initial_command = np.asarray(
+                transplant_state.get("effective_command"),
+                dtype=np.float32,
+            )
+            if (
+                transplant_initial_command.shape != (3,)
+                or not np.all(np.isfinite(transplant_initial_command))
+            ):
+                raise ValueError(
+                    "state transplant effective_command must contain "
+                    "3 finite values"
+                )
         self._state_timeout = float(self.get_parameter("state_timeout_s").value)
         self._command_timeout = float(self.get_parameter("command_timeout_s").value)
         self._watchdog_linear_deceleration = float(
@@ -144,6 +218,11 @@ class AnymalPolicyNode(Node):
         self._effective_command = np.zeros(3, dtype=np.float32)
         self._last_policy_time: float | None = None
         self._receipt_times: dict[str, float] = {}
+        if transplant_initial_command is not None:
+            self._command = transplant_initial_command
+            # Sim time is zero until the bridge publishes its first /clock.
+            # This keeps the restored command fresh for the first inference.
+            self._receipt_times["command"] = 0.0
         self._state_stamps: dict[str, float] = {}
         self._last_inference_joint_stamp = float("-inf")
         self._warning_times: dict[str, float] = {}
@@ -359,6 +438,9 @@ class AnymalPolicyNode(Node):
 
     def _run_policy(self) -> None:
         now = self._now_seconds()
+        if self._transplant_initial_command_pending:
+            self._receipt_times["command"] = now
+            self._transplant_initial_command_pending = False
         required = ("joint_state", "imu", "odometry")
         missing = [name for name in required if name not in self._receipt_times]
         stale = [
@@ -418,6 +500,39 @@ class AnymalPolicyNode(Node):
         except (RuntimeError, ValueError) as error:
             self._warn_throttled("inference_error", f"No policy output: {error}")
             return
+        if (
+            self._transplant_expected_observation is not None
+            and not self._transplant_observation_checked
+        ):
+            errors = np.abs(
+                result.observation - self._transplant_expected_observation
+            )
+            term_slices = {
+                "base_linear_velocity": slice(0, 3),
+                "base_angular_velocity": slice(3, 6),
+                "projected_gravity": slice(6, 9),
+                "velocity_command": slice(9, 12),
+                "joint_position": slice(12, 24),
+                "joint_velocity": slice(24, 36),
+                "previous_action": slice(36, 48),
+            }
+            term_errors = {
+                name: float(np.max(errors[term_slice]))
+                for name, term_slice in term_slices.items()
+            }
+            self._transplant_observation_checked = True
+            self._transplant_observation_parity = term_errors
+            self.get_logger().info(
+                (
+                    "Action-history replay first external observation max errors: "
+                    if self._transplant_action_replay
+                    else (
+                        "State-transplant post-bootstrap observation max errors "
+                        "(physics contact cache unavailable): "
+                    )
+                )
+                + f"{term_errors}"
+            )
         if self._diagnostics_path is not None:
             self._diagnostic_records.append(
                 {
@@ -455,6 +570,9 @@ class AnymalPolicyNode(Node):
                     "schema_version": 2,
                     "records": self._diagnostic_records,
                     "reset_events": self._reset_events,
+                    "state_transplant_post_bootstrap_observation_max_errors": (
+                        self._transplant_observation_parity
+                    ),
                 },
                 indent=2,
                 sort_keys=True,

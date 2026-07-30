@@ -44,6 +44,7 @@ class MotionProfile:
     ] = ()
     command_publish_until_s: float | None = None
     command_publish_windows_s: tuple[tuple[float, float], ...] = ()
+    start_immediately: bool = False
 
     @property
     def duration_s(self) -> float:
@@ -443,6 +444,26 @@ _PROFILES = {
             (10.00, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
         ),
         command_publish_until_s=11.90,
+    ),
+    "refinery_fix_t25_transplant": MotionProfile(
+        "refinery_fix_t25_transplant",
+        (1.898749, 0.0, 0.817349),
+        warmup_s=0.0,
+        ramp_s=0.0,
+        hold_s=0.0,
+        settle_s=0.0,
+        sequence=(
+            # Remaining received-command plateaus after the formal 25.00 s
+            # joint-state sample. Start immediately so the policy's first
+            # post-transplant observation sees the captured yaw command.
+            (0.86, (0.0, 0.0, 0.817349), (0.0, 0.0, 0.817349)),
+            (3.72, (1.898749, 0.0, 0.0), (1.898749, 0.0, 0.0)),
+            (12.52, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+        ),
+        # Publish the zero segment once at 4.58 s, matching the final formal
+        # /cmd_vel packet, then leave watchdog age behavior unforced.
+        command_publish_until_s=4.60,
+        start_immediately=True,
     ),
     "refinery_fix_trace_replay": MotionProfile(
         "refinery_fix_trace_replay",

@@ -1,6 +1,6 @@
 # Current project knowledge
 
-更新日期：2026-07-29
+更新日期：2026-07-30
 
 這份文件保存跨對話補充知識，讓 Work locally 模式的新對話在直接閱讀
 repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產物、近期
@@ -11,10 +11,11 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
 
 - 專案根目錄：`/home/ros/anymal_locomotion`
 - Branch：`main`
-- 目前 baseline：
-  `6624ded 文件：加入跨對話專案知識`。
-- 本節所述 2026-07-29 場景與 IMU 修正尚未 commit；不可把它們當成
-  `origin/main` 已包含的內容。
+- 本次實作 commit：
+  `修正：更正 IMU 座標並加入狀態回放診斷`；其 parent 為
+  `b9db4d2 修正：改善 Factory 接觸與行走失穩診斷`。
+- State-transplant、reset/IMU grace、IMU frame fix 與 targeted
+  Recovery v0.5 訓練設定已包含在上述 commit；尚未 push。
 - 根目錄 `AGENTS.md` 是 `.gitignore` 中的本機工作規則，不可 stage 或
   push。本文件是可由 repository 共享的跨對話補充知識。
 - Nested upstream LIO-SAM 位於
@@ -129,6 +130,95 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   本身不是充分條件。尚待分辨的是高速轉向歷史、精確 gait phase、命令
   refresh discontinuity 與局部接觸的組合。
 
+## t=25 state-transplant result
+
+已從 `refinery_fix_01` 自動建立 t=25.00 s transplant manifest：
+
+`logs/formal_bringup/refinery_fix_01/state_transplant_t25.json`
+
+關鍵結論：
+
+- 瞬時 transplant 可以恢復 base、canonical joints 與 policy
+  `previous_action`，pre-rollout 48-D 誤差為 `1.45941973e-4`；但第一個
+  physics step 後會因 actuator recurrent state 與 PhysX contact cache
+  遺失而分岔。早期的 Factory/GroundPlane `no_instability` 結果
+  `factory_baseline_06` / `groundplane_baseline_01` 只能證明瞬時 pose
+  不是充分條件，不能當 exact history A/B。
+- 單獨補存並恢復 `ActuatorNetLSTM` hidden/cell 仍不足；runtime regression
+  的 joint velocity 仍分岔，證明接觸 solver history 也重要。
+- 最終改用 formal trace 的 1250 個 `applied_raw_action`，從原始 spawn
+  重播 0→25 s；另補兩個 bridge bootstrap actions，並依 formal metadata
+  建立、逐步 render RTX LiDAR。這會自然重建 actuator 與 PhysX history。
+- Exact action-history replay 第一筆 external policy observation：
+  base linear/angular velocity、projected gravity、joint position/velocity、
+  previous action全部逐值 0 誤差；command 只有 `2.384e-7` 浮點誤差。
+- 依 formal command changes（yaw→forward，最後明確 zero packet）重播的
+  Factory baseline：
+  `logs/state_transplant_t25/action_replay_factory_received_exact_01`
+  - `foot_slip_first`；
+  - first foot slip 0.46 s；
+  - first body instability 4.32 s；
+  - first hard failure 8.12 s；
+  - 1 termination，最低 height 0.1638 m。
+- Watchdog deceleration 2.0 A/B：
+  `logs/state_transplant_t25/action_replay_factory_received_decel2_01`
+  - 結果與 baseline 完全相同；
+  - formal 在 29.62 s 明確送入 zero packet，effective command 立即歸零，
+    watchdog timeout deceleration 不會介入；
+  - 因此 deceleration 不是此 failure 的解法，不可設成正式預設。
+- 將相同 open-loop action history 平移到 GroundPlane 時，在到達 t=25 前
+  已有 5 次 termination，無法形成有效 post-t25 A/B。這表示 t<25 的
+  Factory 接觸／閉迴路歷史不可忽略；不能用瞬時 GroundPlane transplant
+  排除 history/contact 組合。
+- Exact replay 的 body-instability timing 仍比使用者 formal trace晚約
+  0.84 s，但前幾個 policy steps 可做到 observation 約 `1e-6`、action 約
+  `1e-7`，之後 PhysX 浮點差逐步放大。Command change 與 final zero packet
+  已對齊，這個 timing 差不再阻擋 failure classification。
+- 新 diagnostics 仍會在每個 flush boundary 保存 public actuator LSTM
+  checkpoint，供較短的瞬時診斷使用；exact contact regression 則優先使用
+  action-history replay。
+
+## IMU angular-velocity frame root cause
+
+Exact replay 的 episode-reset parity 診斷最後找出真正的 deployment
+根因，已不再把本次跌倒分類為尚未證實的 v0.4 recovery weakness：
+
+- `IsaacReadIMU.outputs:angVel` 已是 IMU sensor-local frame；目前 IMU
+  identity-mounted 到 `base_link`，所以 raw value 就是 policy contract
+  所需的 body angular velocity。
+- 舊 Action Graph 又用 base world→body matrix 旋轉一次，再發布到
+  `sensor_msgs/Imu.angular_velocity`。純 yaw／小姿態時不易察覺，但 roll／
+  pitch rate 變大時會嚴重錯誤。
+- Worst-case 實測：
+  - raw IMU：`[3.27705, -0.13917, -0.11505]`；
+  - Isaac native body：`[3.27671, -0.14173, -0.12155]`；
+  - 舊二次旋轉後 bridge：`[-2.63955, -1.95018, 0.03499]`。
+- 修正後 `ReadImuSensor.outputs:angVel` 直接接到
+  `PublishImu.inputs:angularVelocity`，`read_imu_state()` 也直接讀 raw
+  `angVel`；IMU orientation 的 world pose composition 保留不變。
+- 使用完全相同的 0→25 s formal actions、Factory contact history 與 RTX
+  LiDAR rendering，只從 t=25 起讓 external policy 使用修正後 IMU：
+  `logs/state_transplant_t25/action_replay_factory_received_imu_frame_fix_01`
+  - 正常 rollout 的 48-D observation parity 全部通過；
+  - angular velocity max error `0.0035273 < 0.01`；
+  - `no_instability`、0 termination、最低 height `0.5413 m`、最大
+    roll `0.1077 rad`。
+- 修正後第一筆 external angular observation 與舊 formal manifest 相差
+  `0.6591` 是預期的因果介入，不是 replay 失真；舊 manifest 保存的就是
+  二次旋轉後錯值。其他第一筆 term 仍為 0，command 誤差
+  `2.384e-7`。
+- 這個 A/B 證明：保留相同 t<25 policy/action/contact history，只修正 IMU
+  frame 即足以避免原 failure。正式 v0.4 policy 尚未更換，watchdog 預設
+  也未更動。
+- 使用者另從 t=0 執行 corrected bridge 的一般 formal bringup：
+  `logs/formal_bringup/imu_frame_fix_manual_01`
+  - LIO-SAM 啟用、1975 samples、39.48 s；
+  - `no_instability`、0 termination、0 truncation；
+  - 最低 height `0.5154 m`；
+  - 最大 roll/pitch 分別 `0.0847/0.0955 rad`；
+  - 有一次 6.04 s 的 contained foot-slip event，但沒有後續 body
+    instability 或 hard failure。
+
 ## Implemented diagnostics and reset synchronization
 
 Commit `2a7159a` 已加入：
@@ -181,6 +271,22 @@ Recovery v0.5 training foundation 已加入，但所有候選都仍是實驗產�
 - 左右對稱 data augmentation。
 - 40 s episode 與 recovery sampling。
 - 純低 yaw、低速曲線與 3 m/s 曲線的條件式 rewards。
+- 尚未訓練的新 targeted 設定另保留 15% environments，逐段重播
+  `refinery_fix_01` 的 25 段 effective policy-command history
+  （42.10 s；episode 會涵蓋前 40 s），包含兩次 watchdog-effective zero
+  gap，以及最後 `wz=0.817349` 原地轉向 → `vx=1.898749` 直行 → 明確
+  zero 的 failure tail。
+- 新設定在上述 refinery moving envelope 額外施加
+  flat-orientation 與 stance-foot-slide rewards；dedicated 分佈為
+  warehouse 35%、refinery 15%、turning regression 40%，另外保留 10%
+  給既有一般／高組合隨機 transition sampling。
+- 這是 command-history 加上既有 5–10 s push disturbance 的 targeted
+  training distribution，不是 PhysX contact-cache transplant。訓練仍無法
+  直接保存 Factory contact solver history，最終有效性必須由 exact
+  action-history replay qualification 判定。
+- IMU frame root cause 確認後，不應立刻啟動此 targeted training；先完成
+  corrected bridge 的完整正式路徑、reset 與 LIO regression。只有 bridge
+  修正後仍存在 policy gate failure 時才續訓新 candidate。
 
 目前最重要的候選結果：
 
@@ -219,13 +325,13 @@ Checkpoint：
 - `scripts/setup_deployment.sh --check`：通過。
 - Git LFS fsck：通過。
 
-目前未提交的 refinery／IMU／watchdog 診斷：
+本次 IMU frame／state-transplant commit：
 
-- Pytest：94 passed、3 skipped。
+- Pytest：98 passed、3 skipped。
 - Python compileall：通過。
 - `git diff --check`：通過。
 - `scripts/setup_deployment.sh --check`：通過。
-- Git LFS fsck：通過；新 `.usdc` 由 LFS 規則管理。
+- Git LFS fsck：通過。
 - 修正版 Factory 81 點 drop-grid：81/81 通過，唯一 infinite GroundPlane
   正常。
 - `warehouse_refinery_exit` 局部序列：0 termination、`no_instability`。
@@ -236,38 +342,60 @@ Checkpoint：
   `no_instability`。
 - 近似 effective trace 的 abrupt-stop 基準會跌倒；watchdog deceleration
   實驗 A/B 通過。
-- 尚未完成：t=25 s state-transplant replay，以及含 episode reset 的 LIO
-  負載下新版 IMU transient reporting runtime regression。
+- Exact t=25 action-history replay 已做到第一筆 external 48-D observation
+  全 term parity，並重現 `foot_slip_first` 與 termination。
+- Exact received-command baseline 與 watchdog deceleration 2.0 A/B 結果
+  完全相同；正式 zero packet 會讓 deceleration 無機會介入。
+- Policy/reset parity 現在對 episode reset 後的 IMU transient 使用最多
+  4 個 50 Hz steps 的有界 grace；只在 IMU/native error 尚超標時略過，
+  收斂即提前結束 grace。
+- Recovery v0.5 新設定已由實際 Isaac Sim instantiate：
+  `RecoveryV05VelocityCommandCfg`、refinery probability `0.15` 與新增
+  reward weights `-3.0/-0.1` 均成功解析。
+- Corrected IMU frame 的 exact-history runtime observation parity 已通過，
+  且原 failure 變為 `no_instability`、0 termination。
+- 使用者從 t=0 執行的 corrected formal bringup 亦為 `no_instability`、
+  0 termination；log 為
+  `logs/formal_bringup/imu_frame_fix_manual_01`。
+- 因 corrected run 沒有 episode reset，四 tick IMU reset grace 尚未被
+  runtime 觸發；不可把該項記成已通過。
+- 尚未完成：含 episode reset 的 LIO 負載下新版 IMU transient reporting
+  runtime regression。
 
 ## Unfinished work
 
 依目前 gate 順序：
 
-1. 以 `refinery_fix_01` 的 formal state 建立 t=25 s state-transplant
-   replay，避免 open-loop yaw 差累積成 3 m 路徑分岔。
-2. State transplant 分別在 GroundPlane 與修正版 Factory 執行；只有
-   Factory 失敗才繼續查局部接觸，兩者都失敗則歸到 policy recovery。
-3. 對 state-transplant failure 做 watchdog deceleration A/B；正式
-   bringup 預設在通過使用者路線與停止安全 regression 前維持不變。
-4. 再決定 Recovery v0.5 是否需要加入「高速轉向歷史→直行／停止」的
-   targeted reset distribution；不可只增加 iteration。
-5. Locomotion 通過後才重跑 LIO-SAM map-quality regression。
-6. 完成實體 sensor extrinsic 與 low-level interface。
+1. 用 corrected bridge 從 t=0 跑完整 formal
+   `refinery_fix_received_trace_replay`／正式 LIO 路徑，確認不是只在 t=25
+   介入時通過。
+2. 以可控方式觸發一次 episode reset，完成 LIO 負載下 IMU transient
+   reporting regression；
+   48-D observation parity 現在共用最多四個 50 Hz steps 的有界 reset
+   grace；runtime 尚待重跑確認乾淨 exit。
+3. Corrected bridge locomotion/reset gate 通過後，重跑 LIO-SAM
+   map-quality 與 loop-closure regression。
+4. 只有 corrected bridge 後仍出現 policy gate failure，才由 model2420
+   續訓 targeted Recovery v0.5 candidate，並先驗
+   `curve_3_0_left_0_5` 與 exact history replay。
+5. GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效
+   counterfactual；後續結論必須保留 Factory/contact history dependency。
+6. 完成實體 sensor extrinsic 與 low-level interface；IMU frame contract
+   必須維持 sensor-local `base_link` semantics。
 
 ## Next diagnostic gate
 
-不需要使用者再手動重走同一路線才能前進；`refinery_fix_01` 已有足夠的
-robot state、effective command、raw action 與 odometry。下一步實作
-state transplant 時至少要恢復：
+目前已正式分類為 ROS 2 Bridge IMU angular-velocity frame bug；t=25
+exact-history causal A/B 已通過。下一個 gate 是 corrected bridge 從 t=0
+跑完整 formal route，接著完成可控 episode reset 與 LIO map-quality
+regression。
 
-- base pose、body-frame linear/angular velocity；
-- deterministic canonical joint position/velocity；
-- external policy `previous_action`；
-- trace 時刻後的 effective command history。
+Recovery v0.5 的 `curve_3_0_left_0_5 <= 0.2` 仍是未來 candidate 的必要
+gate，但目前不是 bridge fix 發布前置條件，也不可用未通過的 model2420
+取代正式 v0.4 policy。
 
-Transplant 必須先做 observation parity，確認第一個 policy input 與 formal
-trace 一致，再開始閉迴路 rollout。不可只搬 base pose，否則 gait phase
-仍不同。
+Watchdog deceleration 2.0 已證明對明確 zero packet failure 無效，正式
+bringup 預設維持不變。
 
 ## Handoff maintenance checklist
 

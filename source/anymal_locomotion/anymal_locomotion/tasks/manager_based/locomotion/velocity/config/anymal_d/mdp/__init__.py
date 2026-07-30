@@ -15,5 +15,7 @@ from .rewards import (
     high_combined_flat_orientation_l2,
     low_curve_track_lin_vel_xy_exp,
     low_yaw_track_ang_vel_z_exp,
+    refinery_feet_slide,
+    refinery_flat_orientation_l2,
 )
 from .symmetry import compute_symmetric_states

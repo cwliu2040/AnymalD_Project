@@ -153,6 +153,18 @@ def test_refinery_received_trace_replay_preserves_watchdog_gaps() -> None:
     assert not profile.should_publish_command(30.00)
 
 
+def test_refinery_t25_transplant_starts_with_captured_command() -> None:
+    profile = get_motion_profile("refinery_fix_t25_transplant")
+
+    assert profile.start_immediately is True
+    assert profile.command_at(0.0) == pytest.approx((0.0, 0.0, 0.817349))
+    assert profile.command_at(0.85) == pytest.approx((0.0, 0.0, 0.817349))
+    assert profile.command_at(0.87) == pytest.approx((1.898749, 0.0, 0.0))
+    assert profile.command_at(4.58) == (0.0, 0.0, 0.0)
+    assert profile.should_publish_command(4.59)
+    assert not profile.should_publish_command(4.60)
+
+
 def test_trajectory_evaluation_aligns_initial_pose() -> None:
     truth = [
         PoseSample(0.0, 10.0, -3.0, 0.5, 0.2),

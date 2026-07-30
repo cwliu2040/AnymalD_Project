@@ -150,6 +150,32 @@ def test_recovery_v05_samples_high_combined_stop_and_long_horizons() -> None:
     assert "straight_to_burst" in command_source
     assert "warehouse_sequence_probability" in command_source
     assert "warehouse_durations_s" in command_source
+    assert "refinery_replay_probability" in command_source
+    assert "refinery_sequence" in command_source
+    assert "1.898749" in command_source
+    assert "0.817349" in command_source
+    refinery_assignments = [
+        node
+        for node in ast.walk(ast.parse(command_source))
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name)
+            and target.id == "refinery_sequence"
+            for target in node.targets
+        )
+    ]
+    assert len(refinery_assignments) == 1
+    refinery_sequence = ast.literal_eval(refinery_assignments[0].value)
+    assert len(refinery_sequence) == 25
+    assert round(sum(duration for duration, _ in refinery_sequence), 2) == 42.1
+    assert refinery_sequence[-3:] == (
+        (1.38, (0.0, 0.0, 0.817349)),
+        (3.72, (1.898749, 0.0, 0.0)),
+        (12.52, (0.0, 0.0, 0.0)),
+    )
+    assert "warehouse_sequence_probability=0.35" in env_source
+    assert "refinery_replay_probability=0.15" in env_source
+    assert "turning_regression_probability=0.40" in env_source
     assert "turning_regression_probability" in command_source
     assert "turning_profiles" in command_source
     assert "low_yaw_profile_probability" in command_source
@@ -160,6 +186,8 @@ def test_recovery_v05_samples_high_combined_stop_and_long_horizons() -> None:
     assert "AnymalDLocomotionRobustEnvCfg" in env_source
     assert "high_combined_flat_orientation_l2" in env_source
     assert "high_combined_feet_slide" in env_source
+    assert "refinery_flat_orientation_l2" in env_source
+    assert "refinery_feet_slide" in env_source
     assert "low_yaw_track_ang_vel_z_exp" in env_source
     assert "low_curve_track_lin_vel_xy_exp" in env_source
     assert "high_curve_track_lin_vel_xy_exp" in env_source
@@ -213,12 +241,14 @@ def test_isaac_ros2_bridge_uses_action_graph_and_name_based_commands() -> None:
         '            "PublishImu.inputs:orientation"'
     ) in source
     assert (
-        '"ComposeImuOrientation.outputs:output",\n'
-        '            "ImuInverseOrientation.inputs:matrix"'
+        '"ReadImuSensor.outputs:angVel",\n'
+        '            "PublishImu.inputs:angularVelocity"'
     ) in source
+    assert "ImuBodyAngularVelocity" not in source
+    assert "ImuInverseOrientation" not in source
     assert "ComputeImuOrientation" in source
     assert "InitialImuOrientation" in source
-    assert "imu_reset_grace_steps_remaining = 1" in host_source
+    assert "imu_reset_grace_steps_remaining = 4" in host_source
     assert "imu_reset_transient_angular_velocity_max_error" in host_source
     assert "MatrixMultiply" in source
     assert "GetMatrix4Quaternion" in source

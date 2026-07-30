@@ -89,6 +89,9 @@ def generate_launch_description() -> LaunchDescription:
     watchdog_angular_deceleration = LaunchConfiguration(
         "watchdog_angular_deceleration"
     )
+    state_transplant_manifest = LaunchConfiguration(
+        "state_transplant_manifest"
+    )
 
     project_python_path = [
         PathJoinSubstitution([project_root, "deployment", "python_vendor"]),
@@ -113,6 +116,7 @@ def generate_launch_description() -> LaunchDescription:
                 "diagnostics_path": PathJoinSubstitution(
                     [output_dir, "policy_diagnostics.json"]
                 ),
+                "state_transplant_manifest_path": state_transplant_manifest,
             }
         ],
         output="screen",
@@ -166,6 +170,8 @@ def generate_launch_description() -> LaunchDescription:
             spawn_y,
             "--spawn-yaw",
             spawn_yaw,
+            "--state-transplant-manifest",
+            state_transplant_manifest,
             "--locomotion-diagnostics-output",
             PathJoinSubstitution([output_dir, "locomotion_diagnostics.json"]),
             "--locomotion-profile",
@@ -266,6 +272,10 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("spawn_x", default_value="0.0"),
             DeclareLaunchArgument("spawn_y", default_value="-18.0"),
             DeclareLaunchArgument("spawn_yaw", default_value="0.0"),
+            DeclareLaunchArgument(
+                "state_transplant_manifest",
+                default_value="",
+            ),
             DeclareLaunchArgument(
                 "enhanced_determinism",
                 default_value="true",

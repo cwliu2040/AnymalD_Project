@@ -101,12 +101,23 @@ class StabilityBenchmarkNode(Node):
             return
         now_s = self.get_clock().now().nanoseconds * 1.0e-9
         if now_s <= 0.0:
-            self._publish_command((0.0, 0.0, 0.0))
+            self._publish_command(
+                self._profile.command_at(0.0)
+                if self._profile.start_immediately
+                else (0.0, 0.0, 0.0)
+            )
             return
         if self._first_sim_time_s is None:
             self._first_sim_time_s = now_s
 
         if self._start_time_s is None:
+            if self._profile.start_immediately:
+                self._start_time_s = now_s
+                self._publish_command(self._profile.command_at(0.0))
+                self.get_logger().info(
+                    f"Stability profile {self._profile.name!r} started immediately"
+                )
+                return
             self._publish_command((0.0, 0.0, 0.0))
             if self._odometry_count >= 5:
                 self._start_time_s = now_s

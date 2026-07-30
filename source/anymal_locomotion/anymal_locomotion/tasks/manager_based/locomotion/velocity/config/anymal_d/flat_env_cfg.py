@@ -151,6 +151,35 @@ class AnymalDLocomotionRecoveryV05RewardsCfg(
             ),
         },
     )
+    refinery_flat_orientation_l2 = RewTerm(
+        func=mdp.refinery_flat_orientation_l2,
+        weight=-3.0,
+        params={
+            "command_name": "base_velocity",
+            "target_forward_speed": 1.898749,
+            "target_yaw_speed": 0.817349,
+            "command_tolerance": 0.1,
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
+    )
+    refinery_feet_slide = RewTerm(
+        func=mdp.refinery_feet_slide,
+        weight=-0.1,
+        params={
+            "command_name": "base_velocity",
+            "target_forward_speed": 1.898749,
+            "target_yaw_speed": 0.817349,
+            "command_tolerance": 0.1,
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces",
+                body_names=".*FOOT",
+            ),
+            "asset_cfg": SceneEntityCfg(
+                "robot",
+                body_names=".*FOOT",
+            ),
+        },
+    )
     low_yaw_track_ang_vel_z_exp = RewTerm(
         func=mdp.low_yaw_track_ang_vel_z_exp,
         weight=4.0,
@@ -237,8 +266,9 @@ class AnymalDLocomotionRecoveryV05EnvCfg(
             high_combined_probability=0.80,
             high_combined_stop_probability=0.25,
             high_combined_straight_probability=0.50,
-            warehouse_sequence_probability=0.40,
-            turning_regression_probability=0.45,
+            warehouse_sequence_probability=0.35,
+            refinery_replay_probability=0.15,
+            turning_regression_probability=0.40,
             low_yaw_profile_probability=0.25,
             low_curve_profile_probability=0.25,
             high_curve_profile_probability=0.25,

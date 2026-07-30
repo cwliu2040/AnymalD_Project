@@ -221,8 +221,6 @@ def create_ros2_policy_bridge(
         ("ReadImuSensor", "isaacsim.sensors.physics.IsaacReadIMU"),
         ("ImuIdentityMatrix", "omni.graph.nodes.ConstantMatrix4d"),
         ("ImuOrientationMatrix", "omni.graph.nodes.SetMatrix4Rotation"),
-        ("ImuInverseOrientation", "omni.graph.nodes.OgnInvertMatrix"),
-        ("ImuBodyAngularVelocity", "omni.graph.nodes.TransformVector"),
         ("Context", "isaacsim.ros2.bridge.ROS2Context"),
         ("ComputeOdometry", "isaacsim.core.nodes.IsaacComputeOdometry"),
         ("BaseOrientation", "omni.graph.nodes.ConstantQuatd"),
@@ -318,20 +316,11 @@ def create_ros2_policy_bridge(
             "ComputeImuOrientation.outputs:orientation",
             "ImuOrientationMatrix.inputs:rotationAngle",
         ),
-        (
-            "ComposeImuOrientation.outputs:output",
-            "ImuInverseOrientation.inputs:matrix",
-        ),
-        (
-            "ImuInverseOrientation.outputs:invertedMatrix",
-            "ImuBodyAngularVelocity.inputs:matrix",
-        ),
+        # IsaacReadIMU angVel is already expressed in the IMU sensor frame.
+        # The sensor is identity-mounted to base_link, so rotating it again
+        # with the world-to-body matrix would corrupt roll/pitch rates.
         (
             "ReadImuSensor.outputs:angVel",
-            "ImuBodyAngularVelocity.inputs:vector",
-        ),
-        (
-            "ImuBodyAngularVelocity.outputs:result",
             "PublishImu.inputs:angularVelocity",
         ),
         (
@@ -666,10 +655,9 @@ def read_imu_state(bridge: Ros2PolicyBridge) -> Ros2ImuState:
     import omni.graph.core as og
 
     node_path = f"{bridge.graph_path}/ReadImuSensor"
+    # IsaacReadIMU reports angVel in the sensor frame (base_link here).
     angular_velocity = og.Controller.get(
-        og.Controller.attribute(
-            f"{bridge.graph_path}/ImuBodyAngularVelocity.outputs:result"
-        )
+        og.Controller.attribute(f"{node_path}.outputs:angVel")
     )
     linear_acceleration = og.Controller.get(
         og.Controller.attribute(f"{node_path}.outputs:linAcc")
