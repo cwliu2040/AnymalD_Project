@@ -349,7 +349,9 @@ def test_complete_bringup_uses_project_defaults_and_official_teleop() -> None:
     assert '"teleop_twist_keyboard"' in source
     assert '"--enable-lio-sam"' in source
     assert '"--disable-episode-timeout"' in source
+    assert '"--controlled-episode-reset-step"' in source
     assert '"Factory_Layout.usd"' in source
+    assert '"simulation_steps"' in source
     assert '"--spawn-x"' in host_source
     assert '"--spawn-y"' in host_source
     assert '"--spawn-yaw"' in host_source
@@ -358,6 +360,7 @@ def test_complete_bringup_uses_project_defaults_and_official_teleop() -> None:
     assert 'default_value="false"' in source
     assert '"--locomotion-diagnostics-output"' in source
     assert '"locomotion_diagnostics.json"' in source
+    assert '"controlled_episode_reset_step"' in source
     assert '"diagnostics_path": PathJoinSubstitution' in source
     assert '"policy_diagnostics.json"' in source
     assert "UnlessCondition(enable_locomotion_diagnostics)" in source

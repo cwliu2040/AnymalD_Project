@@ -70,5 +70,7 @@ Git ignored `outputs/`，避免把大量暫存資料納入版本控制。
 failed。這些樣本不能用來宣稱旋轉 SLAM 通過或失敗；需先取得能穩定完成該
 軌跡的 locomotion policy，再用相同門檻重跑。
 
-Loop closure、實體 ANYmal-D sensor extrinsic 與實體 low-level interface
-也不在本次驗收範圍。
+本文件的高速旋轉樣本仍不在有效驗收範圍；loop closure 已由獨立的正式
+v0.4.0 matrix 以 12/12 通過。實體 ANYmal-D sensor extrinsic 與實體
+low-level interface 仍不在本文件的 simulation gate 範圍，詳見
+`docs/physical_anymal_d_integration.md`。

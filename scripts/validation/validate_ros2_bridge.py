@@ -63,6 +63,15 @@ parser.add_argument(
     ),
 )
 parser.add_argument(
+    "--controlled-episode-reset-step",
+    type=int,
+    default=-1,
+    help=(
+        "Reset the simulator exactly once before this 0-based policy step and "
+        "verify the ROS 2 reset ACK; -1 disables the controlled reset."
+    ),
+)
+parser.add_argument(
     "--validate-observation-parity",
     action="store_true",
     help="Compare the 48-D Action Graph observation contract with Isaac Lab every controlled step.",
@@ -209,6 +218,10 @@ AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 if args_cli.steps <= 0:
     parser.error("--steps must be positive")
+if args_cli.controlled_episode_reset_step == -1:
+    args_cli.controlled_episode_reset_step = None
+elif args_cli.controlled_episode_reset_step < 0:
+    parser.error("--controlled-episode-reset-step must be -1 or non-negative")
 if args_cli.external_control_warmup_steps < 0:
     parser.error("--external-control-warmup-steps must be non-negative")
 if args_cli.joint_command_timeout_steps <= 0:
@@ -237,6 +250,19 @@ if args_cli.locomotion_diagnostics_output is not None and not args_cli.external_
     parser.error("locomotion diagnostics require --external-control")
 if args_cli.policy_parity_artifact is not None and not args_cli.external_control:
     parser.error("policy action parity requires --external-control")
+if args_cli.controlled_episode_reset_step is not None:
+    if not args_cli.external_control:
+        parser.error(
+            "--controlled-episode-reset-step requires --external-control"
+        )
+    if args_cli.controlled_episode_reset_step >= args_cli.steps:
+        parser.error(
+            "--controlled-episode-reset-step must be smaller than --steps"
+        )
+    if args_cli.controlled_episode_reset_step <= args_cli.external_control_warmup_steps:
+        parser.error(
+            "--controlled-episode-reset-step must be after external-control warmup"
+        )
 args_cli.factory_usd_path = args_cli.factory_usd_path.expanduser().resolve()
 if not args_cli.factory_usd_path.is_file():
     parser.error(f"Factory USD does not exist: {args_cli.factory_usd_path}")
@@ -495,6 +521,27 @@ def _tick_action_graph(base_env, bridge, *, render_lidar: bool = False) -> None:
     trigger_policy_step(bridge)
     if render_lidar:
         base_env.sim.render()
+
+
+def _wait_for_episode_reset_ack(
+    bridge,
+    sequence: int,
+    *,
+    timeout_s: float,
+) -> None:
+    """Publish one reset sequence until the external policy acknowledges it."""
+    reset_deadline = time.monotonic() + timeout_s
+    while True:
+        publish_episode_reset(bridge, sequence)
+        trigger_command_step(bridge)
+        if read_episode_reset_ack(bridge) >= sequence:
+            return
+        if time.monotonic() >= reset_deadline:
+            raise RuntimeError(
+                "External policy did not acknowledge simulator "
+                f"episode reset {sequence}"
+            )
+        time.sleep(0.001)
 
 
 def _raw_policy_action(
@@ -978,6 +1025,7 @@ def main() -> None:
         "enhanced_determinism": enhanced_determinism_enabled,
         "factory_friction": float(args_cli.factory_friction),
         "external_control_warmup_steps": args_cli.external_control_warmup_steps,
+        "controlled_episode_reset_step": args_cli.controlled_episode_reset_step,
         "lio_sam_enabled": bool(args_cli.enable_lio_sam),
         "profile": args_cli.locomotion_profile,
         "policy_parity_artifact": (
@@ -1401,6 +1449,7 @@ def main() -> None:
         terminated_count = 0
         truncated_count = 0
         episode_reset_sequence = 0
+        controlled_episode_reset_count = 0
         parity_max_errors = {name: 0.0 for name, _, _ in _OBSERVATION_TERMS}
         parity_worst_values: dict[str, tuple[list[float], list[float]]] = {}
         parity_angular_debug: dict[str, list[float]] = {}
@@ -1427,6 +1476,60 @@ def main() -> None:
         completed_step_count = 0
         for step_index in range(args_cli.steps):
             start = time.monotonic()
+            if (
+                args_cli.controlled_episode_reset_step is not None
+                and step_index == args_cli.controlled_episode_reset_step
+            ):
+                reset_result = env.reset()
+                if policy_parity_model is not None:
+                    reset_observation_group = reset_result[0]
+                    if (
+                        not isinstance(reset_observation_group, dict)
+                        or "policy" not in reset_observation_group
+                    ):
+                        raise RuntimeError(
+                            "Controlled episode reset did not return the policy "
+                            "observation group"
+                        )
+                    policy_input_for_next_step = (
+                        reset_observation_group["policy"].detach().clone()
+                    )
+                episode_reset_sequence += 1
+                _wait_for_episode_reset_ack(
+                    bridge,
+                    episode_reset_sequence,
+                    timeout_s=args_cli.episode_reset_ack_timeout_s,
+                )
+                controlled_episode_reset_count += 1
+                imu_reset_grace_steps_remaining = 4
+                external_velocity_command = _clamp_external_command(
+                    read_velocity_command(bridge)
+                )
+                _set_internal_velocity_command(
+                    base_env,
+                    external_velocity_command,
+                )
+                actions.zero_()
+                steps_without_new_command = 0
+                last_applied_command_timestamp = None
+                write_base_orientation(bridge, robot.data.root_quat_w[0])
+                _write_bridge_joint_state(
+                    bridge,
+                    robot,
+                    canonical_joint_indices,
+                    timestamp_s=(
+                        bridge_time_offset_s
+                        + (step_index + 1) * base_env.step_dt
+                    ),
+                )
+                _tick_action_graph(
+                    base_env,
+                    bridge,
+                    render_lidar=(
+                        args_cli.enable_lio_sam
+                        or action_replay_rendering_required
+                    ),
+                )
             if step_index == args_cli.external_control_warmup_steps:
                 controlled_wall_start = start
             if args_cli.external_control:
@@ -1568,23 +1671,11 @@ def main() -> None:
                 and (step_terminated != 0 or step_truncated != 0)
             ):
                 episode_reset_sequence += 1
-                reset_deadline = (
-                    time.monotonic() + args_cli.episode_reset_ack_timeout_s
+                _wait_for_episode_reset_ack(
+                    bridge,
+                    episode_reset_sequence,
+                    timeout_s=args_cli.episode_reset_ack_timeout_s,
                 )
-                while True:
-                    publish_episode_reset(bridge, episode_reset_sequence)
-                    trigger_command_step(bridge)
-                    if (
-                        read_episode_reset_ack(bridge)
-                        >= episode_reset_sequence
-                    ):
-                        break
-                    if time.monotonic() >= reset_deadline:
-                        raise RuntimeError(
-                            "External policy did not acknowledge simulator "
-                            f"episode reset {episode_reset_sequence}"
-                        )
-                    time.sleep(0.001)
 
             # The command manager is normally a random command generator. External-control
             # mode overwrites it before Kit renders the green target arrow.
@@ -1939,6 +2030,22 @@ def main() -> None:
             raise RuntimeError(
                 "Fresh /joint_command wait timed out during controlled steps: "
                 f"count={command_wait_timeout_count}"
+            )
+        if args_cli.controlled_episode_reset_step is not None:
+            if controlled_episode_reset_count != 1:
+                raise RuntimeError(
+                    "Controlled episode reset did not execute exactly once: "
+                    f"count={controlled_episode_reset_count}"
+                )
+            print(
+                "PASS controlled_episode_reset_step="
+                f"{args_cli.controlled_episode_reset_step}",
+                flush=True,
+            )
+            print(
+                "PASS controlled_episode_reset_count="
+                f"{controlled_episode_reset_count}",
+                flush=True,
             )
         if args_cli.validate_observation_parity:
             if parity_samples == 0:

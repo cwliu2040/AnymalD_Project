@@ -67,10 +67,14 @@ def generate_launch_description() -> LaunchDescription:
     policy_path = LaunchConfiguration("policy_path")
     metadata_path = LaunchConfiguration("metadata_path")
     factory_usd_path = LaunchConfiguration("factory_usd_path")
+    simulation_steps = LaunchConfiguration("simulation_steps")
     use_rviz = LaunchConfiguration("use_rviz")
     open_teleop_terminal = LaunchConfiguration("open_teleop_terminal")
     enable_locomotion_diagnostics = LaunchConfiguration(
         "enable_locomotion_diagnostics"
+    )
+    controlled_episode_reset_step = LaunchConfiguration(
+        "controlled_episode_reset_step"
     )
     locomotion_diagnostics_dir = LaunchConfiguration(
         "locomotion_diagnostics_dir"
@@ -141,7 +145,7 @@ def generate_launch_description() -> LaunchDescription:
         "--device",
         device,
         "--steps",
-        "1000000",
+        simulation_steps,
         "--real-time",
         "--external-control",
         "--disable-episode-timeout",
@@ -149,6 +153,8 @@ def generate_launch_description() -> LaunchDescription:
         "--enable-lio-sam",
         "--imu-observation-parity-atol",
         "0.01",
+        "--controlled-episode-reset-step",
+        controlled_episode_reset_step,
         "--factory-usd-path",
         factory_usd_path,
     ]
@@ -273,6 +279,14 @@ def generate_launch_description() -> LaunchDescription:
                 description="Project-local Factory USD terrain",
             ),
             DeclareLaunchArgument(
+                "simulation_steps",
+                default_value="1000000",
+                description=(
+                    "Number of Isaac Sim policy steps; use a finite value for "
+                    "clean runtime regressions"
+                ),
+            ),
+            DeclareLaunchArgument(
                 "use_rviz",
                 default_value="true",
                 description="Open RViz2 with the LIO-SAM view",
@@ -288,6 +302,14 @@ def generate_launch_description() -> LaunchDescription:
                 description=(
                     "Record project-local locomotion and policy traces; disabled "
                     "by default"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "controlled_episode_reset_step",
+                default_value="-1",
+                description=(
+                    "Run one explicit simulator episode reset before this "
+                    "0-based policy step; -1 disables the reset regression"
                 ),
             ),
             DeclareLaunchArgument(

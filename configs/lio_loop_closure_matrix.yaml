@@ -3,7 +3,7 @@ repetitions: 3
 
 loop_search:
   radius_m: 1.5
-  minimum_time_difference_s: 8.0
+  minimum_time_difference_s: 10.0
   neighboring_keyframes: 25
   maximum_icp_fitness_score: 0.3
 

@@ -355,6 +355,19 @@ RouDi，讓本機多 MB PointCloud2 經 CycloneDDS shared memory 傳輸；
 `/tf_static` 另外保留 UDP transient history，晚啟動的 RViz 仍能取得固定
 sensor transform。使用者不需設定 `RMW_IMPLEMENTATION`。
 
+需要驗證 episode-reset handshake 時，可在無 teleop 的 LIO 負載下指定一次性
+reset step；`-1`（預設）代表不觸發：
+
+```bash
+ros2 launch anymal_locomotion_ros2 bringup.launch.py \
+  open_teleop_terminal:=false use_rviz:=false \
+  controlled_episode_reset_step:=220
+```
+
+此 regression 會等待 `/simulation/episode_reset_ack`，並在 simulator reset
+後重新觸發 policy state；完整 transient 與 parity 結果仍以 validator 輸出及
+專案內 diagnostics log 為準。
+
 每個新 terminal 都應 source ROS 2 與本專案 workspace；專案安裝流程不會
 修改使用者的 `.bashrc`。
 
@@ -484,6 +497,7 @@ qualification。Checkpoint、artifact hash 與 parity 結果見
 
 - [系統架構](docs/architecture.md)
 - [ROS 2 模擬部署對齊紀錄](docs/ros2_deployment_decisions.md)
+- [實體 ANYmal-D 整合邊界](docs/physical_anymal_d_integration.md)
 - [Baseline 分析](docs/baseline_analysis.md)
 - [ROS 2 Policy Runtime v0.2](deployment/ros2_ws/README.md)
 

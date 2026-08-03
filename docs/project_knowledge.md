@@ -11,6 +11,11 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
 
 - 專案根目錄：`/home/ros/anymal_locomotion`
 - Branch：`main`
+- Git baseline：`e34f023`（本次 viewport／diagnostics commit）；`main` 比
+  `origin/main` ahead 2，尚未 push。目前有未提交的 validator、bringup
+  launch、README、loop matrix config／runner、deployment／validation 文件、
+  physical integration 文件、test 與本文件修改；本次 runtime 產物位於
+  project-local `logs/`／`outputs/`，未列入提交清單。
 - 本次實作 commit：
   `修正：改用增量診斷並穩定視窗效能`；其 parent 為
   `a76981c 修正：更正 IMU 座標並加入狀態回放診斷`。
@@ -50,11 +55,21 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
 - Bringup source 與 install launch 預設都指向上述 ONNX。
 - Checkpoint／TorchScript／ONNX parity 已通過；ONNX 最大絕對誤差
   `2.861e-6`。
-- 正式 v0.4 qualification：
+- Release 文件記錄的正式 v0.4 qualification：
   - 低速長圓周後 zero-command recovery 通過。
   - 純平移 3 m/s regression 通過。
   - Turning matrix 36/36。
   - True loop-closure matrix 12/12。
+
+2026-08-03 以目前 corrected motion-deskew pipeline、正式 v0.4.0 ONNX 與
+同一個 formal metadata 重新執行 LIO loop-closure matrix，初始結果為 11/12。
+調查確認 `loop_open_backward/run_01` 在 `minimum_time_difference=8 s` 時，
+因初始 keyframe 與尚未走遠的 current keyframe 距離仍小於 1.5 m，於
+`8.509999807 s` 產生可重現的 false constraint。將 project-owned matrix
+參數提高至 `minimum_time_difference_s=10.0` 後，保留 1.5 m radius；正式
+v0.4.0 replay 結果為 12/12，詳細輸出在
+`outputs/lio_sam_loop_closure/qualification_v1_formal_v040_20260803_time10`。
+此修正未修改 upstream LIO-SAM。
 
 詳情見 `docs/policy_release_v0.4.0.md`。
 
@@ -320,7 +335,7 @@ sample list 做 summary、pretty JSON encode 與 atomic replace；因此每次 f
 的工作量隨時間增長，且總寫入量呈 O(n²)。這是 diagnostics 開啟時特有的
 viewport drop 候選，與前述 Kit interpolation warning storm 是兩個獨立來源。
 
-目前未 commit 的修正改為：
+目前已提交的修正改為：
 
 - runtime 只將新 sample 追加到 `locomotion_diagnostics.jsonl`，每個 flush
   boundary（預設 25 steps）flush 一次；不再週期性重寫完整 JSON；
@@ -352,9 +367,11 @@ project-owned `motion_deskew`，但它不是單純把同一個旋轉 deskew 重�
 
 因此現在 LIO-SAM 穩定的主要原因是 scan 內 100 ms 的機體平移／旋轉畸變被用
 正確的時間與 frame contract 補償，feature extraction 與 map optimization 看到
-較一致的幾何，而不是把 instability 用額外節點或速度限制掩蓋。這個因果說明
-仍需以後續 map-quality／loop-closure regression 持續驗證；目前使用者的
-full bringup 結果已確認 pipeline 可穩定持續運作。
+較一致的幾何，而不是把 instability 用額外節點或速度限制掩蓋。三次
+`forward_3_0` map-quality benchmark 已通過；初始 loop matrix 暴露的
+`loop_open_backward` early false constraint 已由 project-owned 10 s
+minimum-time gate 排除，formal replay matrix 現為 12/12。使用者的 full
+bringup 結果已確認 pipeline 可穩定持續運作。
 
 ## Experimental Recovery v0.5
 
@@ -382,6 +399,10 @@ Recovery v0.5 training foundation 已加入，但所有候選都仍是實驗產�
 - IMU frame root cause 確認後，不應立刻啟動此 targeted training；先完成
   corrected bridge 的完整正式路徑、reset 與 LIO regression。只有 bridge
   修正後仍存在 policy gate failure 時才續訓新 candidate。
+- 2026-08-03 的正式 v0.4 diagnostics-enabled bringup 已在
+  `vx≈2.2975 m/s, wz=-2.0 rad/s` 的 command envelope 下
+  `no_instability`、0 termination；因此 Recovery v0.5 目前維持候選封存，
+  不需要為了這次穩定性結果切換 policy 或立即續訓。
 
 目前最重要的候選結果：
 
@@ -452,10 +473,9 @@ Checkpoint：
 - 使用者從 t=0 執行的 corrected formal bringup 亦為 `no_instability`、
   0 termination；log 為
   `logs/formal_bringup/imu_frame_fix_manual_01`。
-- 因 corrected run 沒有 episode reset，四 tick IMU reset grace 尚未被
-  runtime 觸發；不可把該項記成已通過。
-- 尚未完成：含 episode reset 的 LIO 負載下新版 IMU transient reporting
-  runtime regression。
+- 早先的 `imu_frame_fix_manual_01` 沒有 episode reset，因此當時不能把四 tick
+  grace 記成已通過；後續 `reset_gate_lio_clean_01` 已在 LIO 負載下完成一次
+  reset ACK、IMU transient 與 `previous_action` reset regression。
 - Viewport warning-storm 修正後：
   - Pytest：99 passed、3 skipped；
   - Python compileall、`git diff --check`、
@@ -467,35 +487,61 @@ Checkpoint：
   1.63 MiB；執行中沒有週期性重寫 canonical JSON。
 - 2026-08-03 使用者完成 diagnostics-enabled full bringup（含 RViz）並確認
   沒有再出現週期性 FPS drop；run 為 3,700 locomotion samples、3,717 policy
-  records、0 termination／truncation。
+  records、0 termination／truncation；peak command 約為
+  `vx=2.2974865 m/s, wz=-2.0 rad/s`，最低 base height 約 `0.509 m`，
+  最大絕對 roll／pitch 約 `0.146/0.130 rad`，classification 為
+  `no_instability`。
+- 2026-08-03 LIO 負載下的可控 reset gate 已乾淨通過：
+  `logs/formal_bringup/reset_gate_lio_clean_01`，
+  `simulation_steps=360`、reset step `220`、reset ACK count `1`、
+  termination/truncation `0`。Validator 的 IMU reset transient angular
+  velocity／projected gravity max error 都是 `0`；policy diagnostics 顯示
+  reset 前 `previous_action` max abs 約 `0.81401`，reset 後第一筆 observation
+  的 12 維 `previous_action` 全為 `0`。
+- 目前修正版 pipeline 的 `forward_3_0` map-quality benchmark 連續三次通過：
+  `outputs/lio_sam_benchmarks/reset_gate_forward_3_0_run{1,2,3}`；三次
+  translation ATE RMSE 為 `0.013370/0.012135/0.013071 m`，yaw RMSE 為
+  `0.031043/0.031649/0.033574 deg`，post-ready motion-deskew unavailable
+  與 IMU/odom unavailable 都是 `0`。
+- 正式 policy loop matrix 的初始輸出位於
+  `outputs/lio_sam_loop_closure/qualification_v1_formal_v040_20260803`；
+  policy path 是正式 `exported/.../recovery_v0.4.0/policy.onnx`，結果為
+  11/12。唯一失敗的 `loop_open_backward/run_01` 在
+  `8.509999807 s` 看到 15 個 loop marker 與 1 個 constraint edge；同一
+  sensor bag 的獨立 fresh-graph repeat 重現同一 edge，證實不是隨機
+  evaluator false positive。
+- 將 matrix `minimum_time_difference_s` 從 `8.0` 改為 `10.0` 後，使用同一
+  12 個 capture bags、正式 v0.4.0 policy 與 metadata 完成修正版 replay：
+  `outputs/lio_sam_loop_closure/qualification_v1_formal_v040_20260803_time10`
+  的 `matrix_summary.json` 為 expected 12、passed 12、failed 0。12 個
+  enabled cases 全部符合 required／forbidden expectation；open-backward
+  三個 run 均為 0 marker／0 edge。disabled control reports 沿用同一 sensor
+  bags 的既有 passed reports，因 loop closure 明確 disabled，不使用搜尋門檻。
 
 ## Unfinished work
 
 依目前 gate 順序：
 
-1. 用 corrected bridge 從 t=0 跑完整 formal
-   `refinery_fix_received_trace_replay`／正式 LIO 路徑，確認不是只在 t=25
-   介入時通過。
-2. 以可控方式觸發一次 episode reset，完成 LIO 負載下 IMU transient
-   reporting regression；
-   48-D observation parity 現在共用最多四個 50 Hz steps 的有界 reset
-   grace；runtime 尚待重跑確認乾淨 exit。
-3. Corrected bridge locomotion/reset gate 通過後，重跑 LIO-SAM
-   map-quality 與 loop-closure regression。
-4. 只有 corrected bridge 後仍出現 policy gate failure，才由 model2420
-   續訓 targeted Recovery v0.5 candidate，並先驗
-   `curve_3_0_left_0_5` 與 exact history replay。
-5. GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效
-   counterfactual；後續結論必須保留 Factory/contact history dependency。
-6. 完成實體 sensor extrinsic 與 low-level interface；IMU frame contract
-   必須維持 sensor-local `base_link` semantics。
+1. Loop-closure gate 已完成：以 project-owned 10 s minimum-time gate
+   排除 `loop_open_backward` 的 early false constraint，formal v0.4.0
+   matrix 為 12/12；不修改 upstream LIO-SAM。
+2. 現在處理實體 ANYmal-D sensor extrinsic 與
+   low-level interface；IMU frame contract
+   必須維持 sensor-local `base_link` semantics。目前尚無 driver／SDK、實測
+   extrinsic 或 safety controller；準備清單見
+   `docs/physical_anymal_d_integration.md`。
+3. Recovery v0.5 model2402/model2420 維持實驗候選封存；除非正式 bridge
+   gate 再次出現 policy failure，否則不切換 policy、不立即續訓。
+
+GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfactual；
+後續結論仍必須保留 Factory/contact history dependency。
 
 ## Next diagnostic gate
 
-目前已正式分類為 ROS 2 Bridge IMU angular-velocity frame bug；t=25
-exact-history causal A/B 已通過。下一個 gate 是 corrected bridge 從 t=0
-跑完整 formal route，接著完成可控 episode reset 與 LIO map-quality
-regression。
+目前已正式分類為 ROS 2 Bridge IMU angular-velocity frame bug；可控 reset gate、
+三次 map-quality benchmark 與修正版 12/12 loop-closure matrix 都已通過。
+下一個 gate 是實體 ANYmal-D sensor extrinsic、ROS 2 low-level interface 與
+sim-to-real frame contract review；Recovery v0.4.0 仍是正式 policy。
 
 Recovery v0.5 的 `curve_3_0_left_0_5 <= 0.2` 仍是未來 candidate 的必要
 gate，但目前不是 bridge fix 發布前置條件，也不可用未通過的 model2420

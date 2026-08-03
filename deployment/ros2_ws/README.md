@@ -408,8 +408,9 @@ IMU preintegration 可能因收到兩套相同時戳的 correction 而使 GTSAM
 - `/joint_command` 只用於 Isaac Sim；實體 ANYmal-D low-level interface
   尚未確認。
 - 尚未加入獨立 IMU noise/bias model。
-- LIO-SAM 的 3 m/s Factory 直行已完成三次定量驗收；loop closure、可穩定
-  達成的高速旋轉，以及實體 ANYmal-D sensor extrinsic 仍未驗收。
+- LIO-SAM 的 3 m/s Factory 直行已完成三次定量驗收，修正版 loop-closure
+  matrix 為 12/12；目前仍未驗收的是可穩定達成的高速旋轉，以及實體
+  ANYmal-D sensor extrinsic 與 low-level interface。
 - 固定 `[0.5, 0, 0]` 的 10 秒測試可前進 4.88 m、偏航 6.04°，但橫向偏移
   0.61 m，未達原訂 0.30 m；原生 checkpoint 評估也有同方向的小幅
   `vy/wz` bias，因此這是目前 policy 的低速 tracking 限制，不是 ROS 軸向錯接。

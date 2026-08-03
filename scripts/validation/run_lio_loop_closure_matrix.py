@@ -22,6 +22,14 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--matrix", type=Path, default=DEFAULT_MATRIX)
 parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
 parser.add_argument(
+    "--reuse-capture-root",
+    type=Path,
+    help=(
+        "Reuse capture bags and capture reports from another matrix output "
+        "root; only replay stages are written to --output-root."
+    ),
+)
+parser.add_argument(
     "--policy-path",
     type=Path,
     help="Project-local ONNX policy used while capturing each source bag.",
@@ -70,6 +78,13 @@ def _run(command: tuple[str, ...], environment: dict[str, str]) -> int:
 def main() -> None:
     matrix_path = _project_path(args.matrix, file_required=True)
     output_root = _project_path(args.output_root)
+    capture_root = (
+        _project_path(args.reuse_capture_root)
+        if args.reuse_capture_root is not None
+        else None
+    )
+    if capture_root is not None and not capture_root.is_dir():
+        parser.error(f"capture root does not exist: {capture_root}")
     policy_path = (
         _project_path(args.policy_path, file_required=True)
         if args.policy_path is not None
@@ -125,12 +140,27 @@ def main() -> None:
             run_dir = (
                 output_root / profile_name / f"run_{repetition:02d}"
             )
-            capture_report_path = run_dir / "capture" / "metrics.json"
-            bag_path = run_dir / "capture" / "bag"
+            capture_run_dir = (
+                capture_root / profile_name / f"run_{repetition:02d}"
+                if capture_root is not None
+                else run_dir
+            )
+            capture_report_path = capture_run_dir / "capture" / "metrics.json"
+            bag_path = capture_run_dir / "capture" / "bag"
             capture_passed = _passed_report(capture_report_path) is not None
             bag_ready = (bag_path / "metadata.yaml").is_file()
             capture_returncode = None
-            if args.rerun or not (capture_passed and bag_ready):
+            if capture_root is not None:
+                if not (capture_passed and bag_ready):
+                    raise RuntimeError(
+                        "reused capture is incomplete; expected a passed "
+                        f"capture report and metadata.yaml under {capture_run_dir}"
+                    )
+                print(
+                    f"REUSE CAPTURE {profile_name} run {repetition:02d}",
+                    flush=True,
+                )
+            elif args.rerun or not (capture_passed and bag_ready):
                 if bag_path.exists():
                     raise RuntimeError(
                         "refusing to overwrite an existing rosbag; preserve or "
