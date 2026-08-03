@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import pytest
 
 from anymal_locomotion.stability_diagnostics import (
     DiagnosticThresholds,
+    DiagnosticTraceWriter,
     build_diagnostic_report,
     classify_instability,
     evaluate_stability_gate,
+    load_diagnostic_trace,
     quaternion_to_rpy_wxyz,
     summarize_samples,
 )
@@ -159,6 +162,20 @@ def test_report_keeps_raw_samples_for_event_review() -> None:
     assert report["schema_version"] == 1
     assert report["metadata"]["profile"] == "forward_0_5"
     assert report["samples"] == samples
+
+
+def test_incremental_diagnostic_trace_is_recoverable(tmp_path: Path) -> None:
+    report_path = tmp_path / "locomotion_diagnostics.json"
+    samples = [{"time_s": 0.02}, {"time_s": 0.04, "terminated": True}]
+
+    writer = DiagnosticTraceWriter(report_path)
+    for sample in samples:
+        writer.append(sample)
+    writer.flush()
+    assert writer.path == tmp_path / "locomotion_diagnostics.jsonl"
+    assert load_diagnostic_trace(writer.path) == samples
+    writer.close()
+    assert not report_path.exists()
 
 
 def test_stability_gate_rejects_tracking_regression() -> None:

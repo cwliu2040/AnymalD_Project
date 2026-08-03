@@ -157,10 +157,12 @@ ros2 launch anymal_locomotion_ros2 bringup.launch.py \
 ```
 
 診斷會寫入
-`logs/formal_bringup/latest/locomotion_diagnostics.json`。此檔在執行期間每
-25 個 policy step 原子更新，包含實際 command、base roll／pitch、四腳
-contact force、stance tangential speed 與 simulation 實際套用的 policy raw
-action。需要保留多次測試時，請用
+`logs/formal_bringup/latest/locomotion_diagnostics.json`，並在同一目錄留下
+`locomotion_diagnostics.jsonl` 增量 trace。JSONL 每 25 個 policy step flush
+一次，包含實際 command、base roll／pitch、四腳 contact force、stance
+tangential speed 與 simulation 實際套用的 policy raw action；停止時才產生
+完整的 JSON summary。若 bringup 被強制中止，仍可先用 JSONL 保留已 flush
+的資料做事後分析。需要保留多次測試時，請用
 `locomotion_diagnostics_dir:=<repository 內的新目錄>` 避免覆寫；repository
 外的路徑會由 simulation host 拒絕。
 

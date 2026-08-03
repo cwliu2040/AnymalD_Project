@@ -321,7 +321,14 @@ def test_rtx_lidar_is_project_owned_and_uses_official_ros2_bridge_writer() -> No
     assert '" --/renderer/raytracingMotion/enabled=true"' in host_source
     assert "enableHydraEngineMasking=true" in host_source
     assert "enabledForHydraEngines=0,1,2,3,4" in host_source
+    assert (
+        "--/log/channels/isaacsim.core.simulation_manager.plugin=error"
+        in host_source
+    )
     assert "base_env.sim.render()" in host_source
+    assert "DiagnosticTraceWriter" in host_source
+    assert "load_diagnostic_trace" in host_source
+    assert "diagnostic_trace_writer.flush()" in host_source
     assert "rclpy" not in source
 
 

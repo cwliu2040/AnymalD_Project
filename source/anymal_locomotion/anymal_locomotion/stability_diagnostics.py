@@ -7,9 +7,74 @@ that the diagnostic contract can be unit tested without starting Kit.
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any
+
+
+class DiagnosticTraceWriter:
+    """Append policy-step samples without rewriting the complete report.
+
+    The canonical ``*.json`` report is intentionally produced once after the
+    simulation stops.  During a long interactive run, rewriting that growing
+    report at every flush boundary turns the diagnostics path into an
+    increasingly expensive O(n²) workload.  JSON Lines keeps the runtime cost
+    proportional to the newly recorded samples and leaves the most recent
+    flushed data recoverable if the host is interrupted.
+    """
+
+    def __init__(self, report_path: Path) -> None:
+        self.report_path = report_path
+        self.path = report_path.with_suffix(".jsonl")
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._stream = self.path.open(
+            "w",
+            encoding="utf-8",
+            buffering=1024 * 1024,
+        )
+        self.sample_count = 0
+
+    def append(self, sample: dict[str, Any]) -> None:
+        """Queue one compact JSONL sample for the next flush."""
+        self._stream.write(
+            json.dumps(sample, ensure_ascii=False, separators=(",", ":"))
+            + "\n"
+        )
+        self.sample_count += 1
+
+    def flush(self) -> None:
+        """Make all queued samples visible to readers."""
+        self._stream.flush()
+
+    def close(self) -> None:
+        """Flush and close the trace stream exactly once."""
+        if not self._stream.closed:
+            self._stream.flush()
+            self._stream.close()
+
+
+def load_diagnostic_trace(path: Path) -> list[dict[str, Any]]:
+    """Load complete JSONL samples written by :class:`DiagnosticTraceWriter`."""
+    samples: list[dict[str, Any]] = []
+    with path.open(encoding="utf-8") as stream:
+        for line_number, line in enumerate(stream, start=1):
+            if not line.strip():
+                continue
+            try:
+                sample = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"invalid diagnostic JSONL at line {line_number}: {exc}"
+                ) from exc
+            if not isinstance(sample, dict):
+                raise ValueError(
+                    "diagnostic JSONL samples must be JSON objects: "
+                    f"line {line_number}"
+                )
+            samples.append(sample)
+    return samples
 
 
 @dataclass(frozen=True)

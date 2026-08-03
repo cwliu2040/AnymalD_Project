@@ -1,6 +1,6 @@
 # Current project knowledge
 
-更新日期：2026-07-30
+更新日期：2026-08-03
 
 這份文件保存跨對話補充知識，讓 Work locally 模式的新對話在直接閱讀
 repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產物、近期
@@ -12,10 +12,14 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
 - 專案根目錄：`/home/ros/anymal_locomotion`
 - Branch：`main`
 - 本次實作 commit：
-  `修正：更正 IMU 座標並加入狀態回放診斷`；其 parent 為
-  `b9db4d2 修正：改善 Factory 接觸與行走失穩診斷`。
+  `修正：改用增量診斷並穩定視窗效能`；其 parent 為
+  `a76981c 修正：更正 IMU 座標並加入狀態回放診斷`。
 - State-transplant、reset/IMU grace、IMU frame fix 與 targeted
   Recovery v0.5 訓練設定已包含在上述 commit；尚未 push。
+- 最新 commit 已提交 viewport warning-storm 與 diagnostics I/O 修正，包含：
+  `scripts/validation/validate_ros2_bridge.py`、
+  `source/anymal_locomotion/anymal_locomotion/stability_diagnostics.py`、
+  對應 tests、README 與本文件；尚未 push。
 - 根目錄 `AGENTS.md` 是 `.gitignore` 中的本機工作規則，不可 stage 或
   push。本文件是可由 repository 共享的跨對話補充知識。
 - Nested upstream LIO-SAM 位於
@@ -261,6 +265,97 @@ Commit `2a7159a` 已加入：
   形成雙層 PhysX 腳部接觸，不能解釋這次跌倒。
 - Factory map 尚未因這項發現而修改。
 
+## Viewport FPS warning storm
+
+使用者在完整 GUI bringup 靜置數分鐘後看到 viewport 反覆 FPS drop／回穩；
+關閉並重開 RViz 累積點雲 display 沒有改善。2026-07-30 的同步量測確認：
+
+- Locomotion diagnostics 全程關閉，因此不是大型 diagnostics JSON flush。
+- Isaac Sim 5.1 的
+  `isaacsim.core.simulation_manager.plugin` 對每個 RTX frame 連續輸出：
+  - `No adjacent samples found for interpolation`
+  - `getSimulationTimeMonotonicAtTime: no data found`
+- 舊基準 240 s 內第一種 warning 新增 7,653 筆（32.02/s），Kit log
+  增加 3.64 MiB，Isaac process 寫入增加 3.85 MiB。
+- 舊基準 GPU 通常為 23–33%，CPU 約 210–216%，並非持續資源飽和；但
+  warning 約 8,353 筆時曾有一秒 GPU utilization 由 29% 降至 4%，下一秒
+  回到 28%，與使用者看到的 drop／回穩型態一致。
+- 移除 host 額外 `sim.render()` 的 A/B 沒有消除 warning，並把 RTX
+  rendering/reference-frame 推進率由約 32 Hz 降到約 21 Hz，因此已完整
+  回復，不採用該方向。
+- NVIDIA 新版 Isaac Sim release notes 已將這個訊息由 WARNING 降為 INFO；
+  目前 5.1 runtime 只針對
+  `isaacsim.core.simulation_manager.plugin` 設定 Kit log channel 為
+  `error`。其他 Kit、PhysX、RTX 與 ROS warning 仍保留，該來源的 error
+  也不會被隱藏。
+- 修正後完整 Factory＋RTX LiDAR＋LIO-SAM＋RViz idle 300 s：
+  - interpolation warning：0；
+  - GPU utilization 平均 32.31%，範圍 13–38%；
+  - Isaac CPU 平均 213.38%，範圍 209–215%；
+  - Kit log 僅增加 1.602 MiB；
+  - Isaac process write 增加 1.879 MiB；
+  - VRAM 增加 152 MiB、RSS 增加 70.02 MiB，沒有週期性尖峰。
+- 修正後 RTX raw point cloud 仍為約 29k 點、ring `0..31`、simulation
+  scan period 0.100 s；以 bringup 相同 CycloneDDS/Iceoryx 設定量到 GUI＋
+  RViz 負載下 wall-rate 約 6.2 Hz，mapping odometry 約 3.05 Hz。
+- 效能原始資料：
+  - `logs/validation/fps_idle_full_2026-07-30.csv`
+  - `logs/validation/fps_idle_channel_filter_2026-07-30.csv`
+
+2026-08-03 使用者以 diagnostics-enabled 的完整 bringup（含 LIO-SAM 與 RViz）
+實跑後確認沒有再出現原本的週期性 FPS drop／回穩。若後續仍復發，下一個
+gate 才是加入真正的 per-frame latency telemetry，而不是再以 GPU utilization
+單點推測 FPS。
+
+## Diagnostics runtime I/O
+
+先前使用者以 `enable_locomotion_diagnostics:=true` 進行 formal bringup 時，曾
+觀察到 viewport FPS drop／回穩。當時輸出在約 45 s 已達：
+
+- `locomotion_diagnostics.json`：2,250 samples、約 7.66 MiB；
+- `policy_diagnostics.json`：2,267 records、約 5.05 MiB。
+
+原 simulator host 每 25 個 policy step 都會重新對「從 t=0 到目前」的完整
+sample list 做 summary、pretty JSON encode 與 atomic replace；因此每次 flush
+的工作量隨時間增長，且總寫入量呈 O(n²)。這是 diagnostics 開啟時特有的
+viewport drop 候選，與前述 Kit interpolation warning storm 是兩個獨立來源。
+
+目前未 commit 的修正改為：
+
+- runtime 只將新 sample 追加到 `locomotion_diagnostics.jsonl`，每個 flush
+  boundary（預設 25 steps）flush 一次；不再週期性重寫完整 JSON；
+- bringup 正常停止時，從 JSONL 一次重建既有 schema v1 的
+  `locomotion_diagnostics.json`，所以既有 stability evaluator 介面不變；
+- 若主機被強制中止，JSONL 仍保留最近一次 flush 的完整 raw samples，可直接
+  用於跌倒前後追查。
+
+2026-08-03 的修正版 full bringup 已完成使用者確認：沒有再出現週期性
+viewport FPS drop。該次資料位於
+`logs/formal_bringup/diagnostics_io_fix_manual_02`，包含 3,700 筆
+locomotion JSONL samples（simulation time 74.0 s）與 3,717 筆 policy records，
+且 locomotion samples 的 termination／truncation 都是 0。完整 canonical JSON
+若以 Ctrl-C 中止可能不會完成寫出；JSONL 是這次可保留的正式 raw trace。
+
+## LIO-SAM motion deskew status
+
+目前 bringup 確實在 upstream Image Projection 與 Feature Extraction 之間啟用
+project-owned `motion_deskew`，但它不是單純把同一個旋轉 deskew 重做兩次：
+
+- upstream Image Projection 先產生 `CloudInfo` 與原始 rotational deskew；
+- `motion_deskew` 以 raw `/lio_sam/points` 的 ring／per-point time、200 Hz
+  `/imu/data` 與 200 Hz incremental odometry 重建每點的完整 SE(3) correction；
+- bringup 設定 `motion_deskew_replace_upstream_rotation=true`，所以 custom
+  quaternion gyro integration 取代 upstream Euler rotational deskew，同時補上
+  upstream 缺少的 translational deskew；
+- Feature Extraction 接收 remap 後的
+  `/lio_sam/deskew/cloud_info_motion_corrected`。
+
+因此現在 LIO-SAM 穩定的主要原因是 scan 內 100 ms 的機體平移／旋轉畸變被用
+正確的時間與 frame contract 補償，feature extraction 與 map optimization 看到
+較一致的幾何，而不是把 instability 用額外節點或速度限制掩蓋。這個因果說明
+仍需以後續 map-quality／loop-closure regression 持續驗證；目前使用者的
+full bringup 結果已確認 pipeline 可穩定持續運作。
+
 ## Experimental Recovery v0.5
 
 Recovery v0.5 training foundation 已加入，但所有候選都仍是實驗產物：
@@ -361,6 +456,18 @@ Checkpoint：
   runtime 觸發；不可把該項記成已通過。
 - 尚未完成：含 episode reset 的 LIO 負載下新版 IMU transient reporting
   runtime regression。
+- Viewport warning-storm 修正後：
+  - Pytest：99 passed、3 skipped；
+  - Python compileall、`git diff --check`、
+    `scripts/setup_deployment.sh --check`、Git LFS fsck 全部通過；
+  - 完整 GUI idle 300 s interpolation warning 為 0；
+  - RTX LiDAR、adapter 與 mapping odometry 持續輸出。
+- 2026-07-30 diagnostics-enabled 短 smoke（完整 LIO、無 RViz／teleop）在
+  SIGINT 前留下可解析的 `locomotion_diagnostics.jsonl`：775 samples、約
+  1.63 MiB；執行中沒有週期性重寫 canonical JSON。
+- 2026-08-03 使用者完成 diagnostics-enabled full bringup（含 RViz）並確認
+  沒有再出現週期性 FPS drop；run 為 3,700 locomotion samples、3,717 policy
+  records、0 termination／truncation。
 
 ## Unfinished work
 

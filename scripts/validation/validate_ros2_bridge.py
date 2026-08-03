@@ -179,7 +179,10 @@ parser.add_argument(
     "--diagnostics-flush-steps",
     type=int,
     default=25,
-    help="Atomically refresh the diagnostic JSON after this many policy steps.",
+    help=(
+        "Flush the incremental diagnostic JSONL trace after this many "
+        "policy steps."
+    ),
 )
 parser.add_argument(
     "--benchmark-completion-file",
@@ -329,10 +332,15 @@ required_kit_args = (
 if args_cli.enable_lio_sam or action_replay_rendering_required:
     # Isaac Sim 5.1 disables Motion BVH by default. A rotating LiDAR mounted
     # on a moving robot needs it for correct intra-scan motion effects.
+    # Its SimulationManager also emits a known non-fatal time-interpolation
+    # warning for every RTX frame. Filter only that source at the producer so
+    # the GUI terminal and Kit log do not grow without bound; errors and all
+    # other warning sources remain visible.
     required_kit_args += (
         " --/renderer/raytracingMotion/enabled=true"
         " --/renderer/raytracingMotion/enableHydraEngineMasking=true"
         " --/renderer/raytracingMotion/enabledForHydraEngines=0,1,2,3,4"
+        " --/log/channels/isaacsim.core.simulation_manager.plugin=error"
     )
 args_cli.kit_args = f"{args_cli.kit_args} {required_kit_args}".strip()
 
@@ -369,7 +377,9 @@ from anymal_locomotion.simulation.ros2_bridge import (
 )
 from anymal_locomotion.stability_diagnostics import (
     DiagnosticThresholds,
+    DiagnosticTraceWriter,
     build_diagnostic_report,
+    load_diagnostic_trace,
     quaternion_to_rpy_wxyz,
 )
 from anymal_locomotion.state_transplant import load_state_transplant
@@ -955,7 +965,8 @@ def main() -> None:
         command_cfg.ranges.ang_vel_z = (0.0, 0.0)
         command_cfg.ranges.heading = None
     env = gym.make(PLAY_TASK_ID, cfg=env_cfg)
-    diagnostic_samples: list[dict[str, Any]] = []
+    diagnostic_trace_writer: DiagnosticTraceWriter | None = None
+    diagnostic_sample_count = 0
     diagnostic_metadata: dict[str, Any] = {
         "factory_usd_path": str(args_cli.factory_usd_path),
         "seed": 42,
@@ -983,6 +994,13 @@ def main() -> None:
             else None
         ),
     }
+    if args_cli.locomotion_diagnostics_output is not None:
+        diagnostic_trace_writer = DiagnosticTraceWriter(
+            args_cli.locomotion_diagnostics_output
+        )
+        diagnostic_metadata["incremental_trace_path"] = str(
+            diagnostic_trace_writer.path
+        )
     completion_file_not_before_wall_s = time.time()
     benchmark_completion_observed = False
     try:
@@ -1591,6 +1609,8 @@ def main() -> None:
                 ),
             )
             if args_cli.locomotion_diagnostics_output is not None:
+                if diagnostic_trace_writer is None:
+                    raise RuntimeError("diagnostic trace writer was not initialized")
                 diagnostic_sample = _diagnostic_sample(
                     robot=robot,
                     contact_sensor=contact_sensor,
@@ -1611,7 +1631,7 @@ def main() -> None:
                     .tolist()
                 )
                 if (
-                    (len(diagnostic_samples) + 1)
+                    (diagnostic_sample_count + 1)
                     % args_cli.diagnostics_flush_steps
                     == 0
                 ):
@@ -1629,17 +1649,13 @@ def main() -> None:
                         .astype(float)
                         .tolist()
                     )
-                diagnostic_samples.append(diagnostic_sample)
+                diagnostic_trace_writer.append(diagnostic_sample)
+                diagnostic_sample_count += 1
                 if (
-                    len(diagnostic_samples) % args_cli.diagnostics_flush_steps
+                    diagnostic_sample_count % args_cli.diagnostics_flush_steps
                     == 0
                 ):
-                    _write_diagnostic_report(
-                        args_cli.locomotion_diagnostics_output,
-                        samples=diagnostic_samples,
-                        metadata=diagnostic_metadata,
-                        thresholds=diagnostic_thresholds,
-                    )
+                    diagnostic_trace_writer.flush()
             imu_state = read_imu_state(bridge)
             if imu_state.sensor_time <= last_imu_sensor_time:
                 raise RuntimeError(
@@ -2139,17 +2155,18 @@ def main() -> None:
             flush=True,
         )
     finally:
-        if (
-            args_cli.locomotion_diagnostics_output is not None
-            and diagnostic_samples
-        ):
-            _write_diagnostic_report(
-                args_cli.locomotion_diagnostics_output,
-                samples=diagnostic_samples,
-                metadata=diagnostic_metadata,
-                thresholds=diagnostic_thresholds,
-            )
-        env.close()
+        try:
+            if diagnostic_trace_writer is not None:
+                diagnostic_trace_writer.close()
+                if diagnostic_trace_writer.sample_count:
+                    _write_diagnostic_report(
+                        diagnostic_trace_writer.report_path,
+                        samples=load_diagnostic_trace(diagnostic_trace_writer.path),
+                        metadata=diagnostic_metadata,
+                        thresholds=diagnostic_thresholds,
+                    )
+        finally:
+            env.close()
 
 
 if __name__ == "__main__":
