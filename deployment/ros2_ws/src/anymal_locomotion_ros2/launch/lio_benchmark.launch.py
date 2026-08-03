@@ -27,6 +27,7 @@ from launch.substitutions import (
     PathJoinSubstitution,
 )
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def _shutdown_if_benchmark_failed(event, _context):
@@ -89,12 +90,17 @@ def generate_launch_description() -> LaunchDescription:
     spawn_y = LaunchConfiguration("spawn_y")
     spawn_yaw = LaunchConfiguration("spawn_yaw")
     record_bag = LaunchConfiguration("record_bag")
+    use_motion_deskew = LaunchConfiguration("use_motion_deskew")
+    feature_cloud_info_topic = LaunchConfiguration(
+        "feature_cloud_info_topic"
+    )
     motion_deskew_apply_translation = LaunchConfiguration(
         "motion_deskew_apply_translation"
     )
     motion_deskew_replace_upstream_rotation = LaunchConfiguration(
         "motion_deskew_replace_upstream_rotation"
     )
+    motion_deskew_required = LaunchConfiguration("motion_deskew_required")
     loop_closure_enable = LaunchConfiguration("loop_closure_enable")
     loop_closure_expectation = LaunchConfiguration(
         "loop_closure_expectation"
@@ -135,10 +141,8 @@ def generate_launch_description() -> LaunchDescription:
         ),
         launch_arguments={
             "use_rviz": "false",
-            "use_motion_deskew": "true",
-            "feature_cloud_info_topic": (
-                "/lio_sam/deskew/cloud_info_motion_corrected"
-            ),
+            "use_motion_deskew": use_motion_deskew,
+            "feature_cloud_info_topic": feature_cloud_info_topic,
             "motion_deskew_apply_translation": (
                 motion_deskew_apply_translation
             ),
@@ -171,6 +175,11 @@ def generate_launch_description() -> LaunchDescription:
                 "project_root": project_root,
                 "output_path": PathJoinSubstitution(
                     [output_dir, "metrics.json"]
+                ),
+                "cloud_info_topic": feature_cloud_info_topic,
+                "motion_deskew_required": ParameterValue(
+                    motion_deskew_required,
+                    value_type=bool,
                 ),
                 "loop_closure_expectation": loop_closure_expectation,
             }
@@ -279,6 +288,19 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument("record_bag", default_value="false"),
             DeclareLaunchArgument(
+                "use_motion_deskew",
+                default_value="true",
+                description=(
+                    "Enable project-owned motion deskew; false selects "
+                    "LIO-SAM native deskew"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "feature_cloud_info_topic",
+                default_value="/lio_sam/deskew/cloud_info_motion_corrected",
+                description="CloudInfo topic used by LIO-SAM and benchmark",
+            ),
+            DeclareLaunchArgument(
                 "loop_closure_enable",
                 default_value="false",
             ),
@@ -310,6 +332,14 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "motion_deskew_replace_upstream_rotation",
                 default_value="true",
+            ),
+            DeclareLaunchArgument(
+                "motion_deskew_required",
+                default_value="true",
+                description=(
+                    "Require project deskew readiness in the benchmark; "
+                    "false is used for native deskew"
+                ),
             ),
             DeclareLaunchArgument(
                 "policy_path",

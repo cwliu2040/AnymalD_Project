@@ -95,6 +95,11 @@ class LioBenchmarkNode(Node):
         self.declare_parameter("project_root", "")
         self.declare_parameter("readiness_timeout_s", 12.0)
         self.declare_parameter("loop_closure_expectation", "disabled")
+        self.declare_parameter(
+            "cloud_info_topic",
+            "/lio_sam/deskew/cloud_info_motion_corrected",
+        )
+        self.declare_parameter("motion_deskew_required", True)
 
         self._profile = get_motion_profile(
             str(self.get_parameter("profile").value)
@@ -117,6 +122,16 @@ class LioBenchmarkNode(Node):
         )
         if self._readiness_timeout_s <= 0.0:
             raise ValueError("readiness_timeout_s must be positive")
+        self._cloud_info_topic = str(
+            self.get_parameter("cloud_info_topic").value
+        )
+        if not self._cloud_info_topic.startswith("/"):
+            raise ValueError(
+                "cloud_info_topic must be an absolute ROS topic name"
+            )
+        self._motion_deskew_required = bool(
+            self.get_parameter("motion_deskew_required").value
+        )
         self._loop_closure_expectation = str(
             self.get_parameter("loop_closure_expectation").value
         )
@@ -194,7 +209,7 @@ class LioBenchmarkNode(Node):
         )
         self.create_subscription(
             CloudInfo,
-            "/lio_sam/deskew/cloud_info_motion_corrected",
+            self._cloud_info_topic,
             self._on_cloud_info,
             qos_profile_sensor_data,
         )
@@ -432,7 +447,10 @@ class LioBenchmarkNode(Node):
             and self._counts["adapted_cloud"] >= 2
             and self._last_cloud_info is not None
             and bool(self._last_cloud_info.imu_available)
-            and self._last_motion_deskew_applied
+            and (
+                not self._motion_deskew_required
+                or self._last_motion_deskew_applied
+            )
         )
 
     def _publish_command(
@@ -561,7 +579,7 @@ class LioBenchmarkNode(Node):
                 )
         if self._counts["imu_unavailable_after_ready"] != 0:
             failures.append("IMU deskew became unavailable after readiness")
-        if (
+        if self._motion_deskew_required and (
             self._counts["motion_deskew_unavailable_after_ready"]
             != 0
         ):
@@ -630,8 +648,10 @@ class LioBenchmarkNode(Node):
             status = "passed"
 
         report = {
-            "schema_version": 2,
+            "schema_version": 3,
             "profile": self._profile.name,
+            "cloud_info_topic": self._cloud_info_topic,
+            "motion_deskew_required": self._motion_deskew_required,
             "target_command": list(self._profile.target),
             "profile_duration_s": self._profile.duration_s,
             "status": status,

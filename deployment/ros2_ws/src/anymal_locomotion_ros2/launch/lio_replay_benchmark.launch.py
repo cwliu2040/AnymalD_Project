@@ -74,6 +74,16 @@ def generate_launch_description() -> LaunchDescription:
     bag_path = LaunchConfiguration("bag_path")
     output_path = LaunchConfiguration("output_path")
     ros_domain_id = LaunchConfiguration("ros_domain_id")
+    use_motion_deskew = LaunchConfiguration("use_motion_deskew")
+    feature_cloud_info_topic = LaunchConfiguration(
+        "feature_cloud_info_topic"
+    )
+    motion_deskew_apply_translation = LaunchConfiguration(
+        "motion_deskew_apply_translation"
+    )
+    motion_deskew_replace_upstream_rotation = LaunchConfiguration(
+        "motion_deskew_replace_upstream_rotation"
+    )
     loop_closure_enable = LaunchConfiguration("loop_closure_enable")
     loop_closure_expectation = LaunchConfiguration(
         "loop_closure_expectation"
@@ -89,12 +99,14 @@ def generate_launch_description() -> LaunchDescription:
         ),
         launch_arguments={
             "use_rviz": "false",
-            "use_motion_deskew": "true",
-            "feature_cloud_info_topic": (
-                "/lio_sam/deskew/cloud_info_motion_corrected"
+            "use_motion_deskew": use_motion_deskew,
+            "feature_cloud_info_topic": feature_cloud_info_topic,
+            "motion_deskew_apply_translation": (
+                motion_deskew_apply_translation
             ),
-            "motion_deskew_apply_translation": "true",
-            "motion_deskew_replace_upstream_rotation": "true",
+            "motion_deskew_replace_upstream_rotation": (
+                motion_deskew_replace_upstream_rotation
+            ),
             "static_transform_cyclonedds_uri": (
                 "file://"
                 + str(
@@ -186,6 +198,27 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "loop_closure_enable",
                 default_value="false",
+            ),
+            DeclareLaunchArgument(
+                "use_motion_deskew",
+                default_value="true",
+                description=(
+                    "Enable project-owned motion deskew; false selects "
+                    "LIO-SAM native deskew"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "feature_cloud_info_topic",
+                default_value="/lio_sam/deskew/cloud_info_motion_corrected",
+                description="CloudInfo topic used by LIO-SAM",
+            ),
+            DeclareLaunchArgument(
+                "motion_deskew_apply_translation",
+                default_value="true",
+            ),
+            DeclareLaunchArgument(
+                "motion_deskew_replace_upstream_rotation",
+                default_value="true",
             ),
             DeclareLaunchArgument(
                 "loop_closure_expectation",
