@@ -1,4 +1,4 @@
-"""Convert Isaac RTX full scans into the PointCloud2 layout required by LIO-SAM."""
+"""Publish the project LiDAR scan in the FAST-LIO2 Ouster field contract."""
 
 from __future__ import annotations
 
@@ -7,12 +7,17 @@ from collections.abc import Sequence
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import (
+    DurabilityPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+    qos_profile_sensor_data,
+)
 from sensor_msgs.msg import PointCloud2, PointField
 from sensor_msgs_py import point_cloud2
 
 from anymal_locomotion_ros2.lidar_adapter_core import (
-    OUSTER_POINT_DTYPE,
+    FASTLIO_POINT_DTYPE,
     convert_rtx_points_to_ouster,
     deterministic_point_indices,
     scan_start_nanoseconds,
@@ -22,22 +27,43 @@ _OUTPUT_FIELDS = (
     PointField(name="x", offset=0, datatype=PointField.FLOAT32, count=1),
     PointField(name="y", offset=4, datatype=PointField.FLOAT32, count=1),
     PointField(name="z", offset=8, datatype=PointField.FLOAT32, count=1),
-    PointField(name="intensity", offset=12, datatype=PointField.FLOAT32, count=1),
+    PointField(
+        name="intensity",
+        offset=12,
+        datatype=PointField.FLOAT32,
+        count=1,
+    ),
     PointField(name="t", offset=16, datatype=PointField.UINT32, count=1),
-    PointField(name="reflectivity", offset=20, datatype=PointField.UINT16, count=1),
+    PointField(
+        name="reflectivity",
+        offset=20,
+        datatype=PointField.UINT16,
+        count=1,
+    ),
     PointField(name="ring", offset=22, datatype=PointField.UINT8, count=1),
-    PointField(name="noise", offset=24, datatype=PointField.UINT16, count=1),
+    PointField(
+        name="ambient",
+        offset=24,
+        datatype=PointField.UINT16,
+        count=1,
+    ),
     PointField(name="range", offset=28, datatype=PointField.UINT32, count=1),
 )
 
+_RELIABLE_OUTPUT_QOS = QoSProfile(
+    depth=20,
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.VOLATILE,
+)
 
-class LidarPointAdapter(Node):
-    """Validate and enrich complete OS1 scans without entering Isaac Sim Python."""
+
+class FastlioPointAdapter(Node):
+    """Convert the same raw scan as LIO-SAM without using project deskew."""
 
     def __init__(self) -> None:
-        super().__init__("anymal_lidar_point_adapter")
+        super().__init__("anymal_fastlio_point_adapter")
         self.declare_parameter("input_topic", "/lidar/points_raw")
-        self.declare_parameter("output_topic", "/lio_sam/points")
+        self.declare_parameter("output_topic", "/fastlio/points")
         self.declare_parameter("frame_id", "lidar_link")
         self.declare_parameter("scan_rate_hz", 10.0)
         self.declare_parameter("raw_stamp_is_scan_end", True)
@@ -58,10 +84,13 @@ class LidarPointAdapter(Node):
             raise ValueError("point_density must be in (0, 1]")
         self._logged_contract = False
 
+        # The candidate fork uses the default reliable PointCloud2
+        # subscription.  Keep the raw simulator input sensor-data QoS, but
+        # offer the adapted cloud as reliable so DDS can connect to it.
         self._publisher = self.create_publisher(
             PointCloud2,
             str(self.get_parameter("output_topic").value),
-            qos_profile_sensor_data,
+            _RELIABLE_OUTPUT_QOS,
         )
         self._subscription = self.create_subscription(
             PointCloud2,
@@ -76,7 +105,8 @@ class LidarPointAdapter(Node):
             return
         if message.height != 1:
             self.get_logger().error(
-                f"Expected one unorganized full scan, received height={message.height}"
+                "Expected one unorganized full scan, received "
+                f"height={message.height}"
             )
             return
         if message.row_step != message.point_step * message.width:
@@ -86,12 +116,13 @@ class LidarPointAdapter(Node):
         missing = {"x", "y", "z"} - field_names
         if missing:
             self.get_logger().error(
-                f"RTX PointCloud2 is missing required fields: {sorted(missing)}"
+                "Raw PointCloud2 is missing required fields: "
+                f"{sorted(missing)}"
             )
             return
         if message.header.frame_id and message.header.frame_id != self._frame_id:
             self.get_logger().error(
-                "RTX PointCloud2 frame mismatch: "
+                "Raw PointCloud2 frame mismatch: "
                 f"{message.header.frame_id!r} != {self._frame_id!r}"
             )
             return
@@ -116,7 +147,7 @@ class LidarPointAdapter(Node):
             scan_period_s=self._scan_period_s,
         )
         if converted.size == 0:
-            self.get_logger().warning("RTX scan contained no finite points")
+            self.get_logger().warning("Raw scan contained no finite points")
             return
 
         stamp_ns = (
@@ -136,30 +167,32 @@ class LidarPointAdapter(Node):
         output.width = int(converted.size)
         output.fields = list(_OUTPUT_FIELDS)
         output.is_bigendian = False
-        output.point_step = OUSTER_POINT_DTYPE.itemsize
+        output.point_step = FASTLIO_POINT_DTYPE.itemsize
         output.row_step = output.point_step * output.width
+        # noise and ambient occupy the same bytes in the two contracts.  The
+        # candidate only sees the field names above, not the source dtype.
         output.data = converted.tobytes()
         output.is_dense = True
         self._publisher.publish(output)
 
         if not self._logged_contract:
             self.get_logger().info(
-                "Publishing LIO-SAM Ouster scans with ring/t fields: "
-                f"points={output.width}, frame={output.header.frame_id}, "
+                "Publishing FAST-LIO2 Ouster scans with ring/t/ambient "
+                f"fields: points={output.width}, "
                 f"point_density={self._point_density:.2f}, "
+                f"frame={output.header.frame_id}, "
                 f"scan_period={self._scan_period_s:.3f}s, "
                 f"rings={int(converted['ring'].min())}.."
                 f"{int(converted['ring'].max())}, "
                 f"relative_time_ns={int(converted['t'].min())}.."
-                f"{int(converted['t'].max())}, "
-                f"raw_stamp_ns={stamp_ns}, output_stamp_ns={output_stamp_ns}"
+                f"{int(converted['t'].max())}, reliable_output=true"
             )
             self._logged_contract = True
 
 
 def main(args: Sequence[str] | None = None) -> None:
     rclpy.init(args=args)
-    node = LidarPointAdapter()
+    node = FastlioPointAdapter()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

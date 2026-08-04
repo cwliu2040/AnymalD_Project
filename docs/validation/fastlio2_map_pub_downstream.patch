@@ -1,0 +1,24 @@
+diff --git a/FAST_LIO/src/laserMapping.cpp b/FAST_LIO/src/laserMapping.cpp
+index d4585ec..d6caee6 100644
+--- a/FAST_LIO/src/laserMapping.cpp
++++ b/FAST_LIO/src/laserMapping.cpp
+@@ -101,0 +102 @@ bool   scan_pub_en = false, dense_pub_en = false, scan_body_pub_en = false;
++bool   map_pub_en = true;
+@@ -825,0 +827,3 @@ public:
++        // Publishing the accumulated map is optional.  In ROS 2 this message
++        // grows without a bound and can exceed the default Iceoryx chunk size.
++        this->declare_parameter<bool>("publish.map_en", true);
+@@ -861,0 +866 @@ public:
++        this->get_parameter_or<bool>("publish.map_en", map_pub_en, true);
+@@ -957,2 +962,5 @@ public:
+-        auto map_period_ms = std::chrono::milliseconds(static_cast<int64_t>(1000.0));       // 1s
+-        map_pub_timer_ = rclcpp::create_timer(this, this->get_clock(), map_period_ms, std::bind(&LaserMappingNode::map_publish_callback, this));
++        if (map_pub_en)
++        {
++            auto map_period_ms = std::chrono::milliseconds(static_cast<int64_t>(1000.0));       // 1s
++            map_pub_timer_ = rclcpp::create_timer(this, this->get_clock(), map_period_ms, std::bind(&LaserMappingNode::map_publish_callback, this));
++        }
+@@ -1214 +1222 @@ int main(int argc, char** argv)
+-}
+\ No newline at end of file
++}

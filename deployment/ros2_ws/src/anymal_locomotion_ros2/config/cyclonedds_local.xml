@@ -5,9 +5,17 @@
   xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd"
 >
   <Domain Id="any">
+    <General>
+      <!-- ROS_LOCALHOST_ONLY selects loopback, which lacks multicast on this
+           host.  Use explicit localhost peer discovery instead. -->
+      <AllowMulticast>false</AllowMulticast>
+    </General>
     <Discovery>
       <ParticipantIndex>auto</ParticipantIndex>
       <MaxAutoParticipantIndex>50</MaxAutoParticipantIndex>
+      <Peers>
+        <Peer Address="127.0.0.1" />
+      </Peers>
     </Discovery>
     <!--
       Multi-megabyte local scans use Iceoryx instead of fragmented UDP. Keep

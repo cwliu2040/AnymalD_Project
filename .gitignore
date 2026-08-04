@@ -53,6 +53,11 @@ deployment/ros2_ws/.venv/
 deployment/python_vendor/
 # Reproducible third-party checkout; version is pinned in lio_sam.repos.
 deployment/ros2_ws/src/lio_sam/
+# Reproducible FAST-LIO2 candidate and its pinned third-party dependencies.
+deployment/ros2_ws/src/fast_lio/
+deployment/ros2_ws/src/livox_ros_driver2/
+deployment/ros2_ws/src/livox_sdk2/
+deployment/ros2_ws/vendor/
 
 # Local editable-install and environment state
 .python.env

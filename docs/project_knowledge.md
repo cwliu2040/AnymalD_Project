@@ -10,21 +10,19 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
 ## Repository state
 
 - 專案根目錄：`/home/ros/anymal_locomotion`
-- Branch：`main`
-- Git baseline：`e34f023`（本次 viewport／diagnostics commit）；`main` 比
-  `origin/main` ahead 2，尚未 push。目前有未提交的 validator、bringup
-  launch、README、loop matrix config／runner、deployment／validation 文件、
-  physical integration 文件、test 與本文件修改；本次 runtime 產物位於
+- 目前 branch：`exp/slam-fastlio2`。
+- `main` 與 `origin/main` 仍停在 `98b43dd`（`驗證：完成 reset、地圖品質與
+  閉環驗證`）；benchmark base branch
+  `benchmark/slam-liosam-fastlio2` 與目前實驗 branch 都以
+  `fee8c9f 建立 SLAM backend 比較基線` 為共同基礎。
+- `exp/slam-fastlio2` 的 FAST-LIO2 adapter、config、launch、tests 與 validation
+  文件目前尚未 commit／push。root dirty 包含這批實驗變更，以及本文件本身；
+  `docs/project_knowledge.md` 的既有內容必須保留。runtime 產物位於
   project-local `logs/`／`outputs/`，未列入提交清單。
-- 本次實作 commit：
-  `修正：改用增量診斷並穩定視窗效能`；其 parent 為
-  `a76981c 修正：更正 IMU 座標並加入狀態回放診斷`。
-- State-transplant、reset/IMU grace、IMU frame fix 與 targeted
-  Recovery v0.5 訓練設定已包含在上述 commit；尚未 push。
-- 最新 commit 已提交 viewport warning-storm 與 diagnostics I/O 修正，包含：
-  `scripts/validation/validate_ros2_bridge.py`、
-  `source/anymal_locomotion/anymal_locomotion/stability_diagnostics.py`、
-  對應 tests、README 與本文件；尚未 push。
+- 更早的核心修正仍位於歷史 commit，包括：
+  `e34f023 修正：改用增量診斷並穩定視窗效能`、
+  `a76981c 修正：更正 IMU 座標並加入狀態回放診斷`，以及
+  `c53f7d1 修正：改善高速 LIO-SAM 去畸變與點雲傳輸`。
 - 根目錄 `AGENTS.md` 是 `.gitignore` 中的本機工作規則，不可 stage 或
   push。本文件是可由 repository 共享的跨對話補充知識。
 - Nested upstream LIO-SAM 位於
@@ -42,6 +40,34 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
 - 不以限速、提高摩擦或硬切 nominal joint pose 掩蓋 policy 問題。
 - 每次 commit／push 前重新整理內容並取得使用者明確同意。
 - Commit message 使用繁體中文。
+
+## Future SLAM comparison and confidence-conditioned PPO plan
+
+- 使用者目前先比較 LIO-SAM 與 FAST-LIO2，並計畫把標準化的 SLAM
+  tracking confidence 輸入 locomotion PPO，使 policy 在特徵不足或 tracking
+  退化時學會降低速度、減少機身晃動。FAST-LIO2 的第一階段 adapter／replay
+  baseline 已在 `exp/slam-fastlio2` 建立；confidence contract 與 PPO
+  observation/training 尚未開始。
+- 不為每個「SLAM 方法 × PPO 版本」建立永久 branch。先在共用介面 branch
+  定義 backend selector、共同輸出與 benchmark，再合併穩定的中性基礎回
+  `main`。每個侵入性較大的 SLAM 實作可暫時使用獨立實驗 branch，例如
+  `exp/slam-<method>`；只保留比較結果的失敗候選不必整條合併。
+- 所有 SLAM backend 應透過相同 contract 輸出 canonical odom（正式 locomotion
+  topic 仍由 bringup 決定，實驗 backend 使用 `/slam/odom`，不可覆蓋 GT
+  `/odom`）、標準化的
+  `/slam_confidence`、`/slam_tracking_valid` 與 confidence age／timestamp
+  狀態，讓 PPO branch 不依賴 LIO-SAM 或其他特定方法。預期以 launch/config
+  selector 在同一個 repository 內切換 backend，而不是靠切 branch 才能比較。
+- PPO confidence training 應是獨立的
+  `feature/ppo-slam-confidence` 實驗，先用可重播／可控制的 simulated
+  confidence 驗證 observation 與行為，再與各 SLAM backend 做相同資料集的
+  matrix comparison。不同 SLAM 的 raw ICP fitness／residual 不可直接當成
+  可比較的 confidence；需要先定義 `[0, 1]` semantics、validity、age 與
+  calibration。低 confidence 的 speed cap／stop safety fallback 仍應有
+  deterministic supervisor，不可只依賴 PPO 自己學會保護。
+- 最終只把通過 gate、需要長期維護的 SLAM adapter、confidence contract
+  與 PPO training/config 合併回 `main`；正式 Recovery v0.4.0 baseline 在
+  比較期間保持可重現，不切換 Recovery v0.5。
 
 ## Formal policy
 
@@ -373,6 +399,141 @@ project-owned `motion_deskew`，但它不是單純把同一個旋轉 deskew 重�
 minimum-time gate 排除，formal replay matrix 現為 12/12。使用者的 full
 bringup 結果已確認 pipeline 可穩定持續運作。
 
+## FAST-LIO2 experiment status
+
+目前只在 `exp/slam-fastlio2` 實驗 branch 加入 FAST-LIO2；沒有修改 upstream
+LIO-SAM，也沒有切換正式 Recovery policy。候選 source 是
+`Taeyoung96/FAST_LIO_ROS2` fork，commit
+`373aa886402b6307db2995ca12b3f4596ef4f633`；它不是 hku-mars 官方 ROS 2
+release。2026-08-04 已從易消失的 `/tmp` external overlay 移到 project-local
+`deployment/ros2_ws/src/fast_lio`，並由 `fastlio2.repos` 與
+`scripts/setup_deployment.sh` 固定、重建。第三方 checkout 由 root Git ignore；
+dirty `/tmp/fastlio2_ros2_smoke` 只保留作舊 smoke artifact，不再使用。
+
+2026-08-04 實測發現此 candidate 的 ROS 2 port 會每秒累積並發布無界的
+`/Laser_map`。在 project 的 CycloneDDS/Iceoryx 設定下，累積訊息達
+`4366153` bytes 時超過預設最大 `4194304` bytes chunk，觸發
+`rclcpp::exceptions::RCLError`、`SIGABRT`（`exit code -6`）；因此先前看似
+`/Odometry` topic 存在但沒有 publisher。project-owned
+`docs/validation/fastlio2_map_pub_downstream.patch` 只新增
+`publish.map_en` 參數，config 設為 `false`，停用這個 visualization-only
+publisher，不改 FAST-LIO2 的 raw input、native deskew、EKF 或 `/Odometry`。
+套用 patch 後重新編譯，FAST-LIO2 已超過原本約 84 秒的 abort 點仍持續發布
+`/Odometry`；第二終端確認 `Publisher count: 1` 並成功 echo
+`camera_init -> body`。手動停止時為正常 `SIGINT`（`exit code -15`），不是
+再次 abort。這個 downstream patch 必須在 `/tmp` clean source 重建後重新套用。
+
+project-owned integration：
+
+- `fastlio_point_adapter` 讀 raw `/lidar/points_raw`，轉為 candidate 要求的
+  Ouster `x/y/z/intensity/t/reflectivity/ring/ambient/range`，使用 reliable
+  output；不使用 project motion deskew。
+- `fastlio_odom_adapter` 將 candidate `/Odometry`、`camera_init/body` 轉成
+  `/slam/odom`、`map/base_link`，並由 pose delta 推導 body-frame twist；不會
+  發布或覆蓋 simulator GT `/odom`。
+- config：`config/fastlio2_anymal_ouster32.yaml`，Ouster 32 ring、timestamp
+  unit ns、extrinsic T `[0.20, 0.0, 0.35]`、目前 point filter stride 2。
+- replay launch：`fastlio2_replay_benchmark.launch.py`；live locomotion
+  launch：`fastlio2_locomotion_benchmark.launch.py`。
+
+同一份 `smoke_out_and_back` replay（185 raw scans、29.87 s，實際約 6.19 Hz）
+的 native deskew 結果：LIO-SAM ATE/yaw `0.0374 m / 0.084 deg`；FAST-LIO2
+stride 2 為 `0.0944 m / 0.225 deg`，目前 replay gate 通過但仍只是單一場景。
+stride 4 失敗；stride 1 在 CycloneDDS/Iceoryx 可能因 4.25 MB shared-memory
+chunk 不足 crash，不能把 partial trajectory 當精度結果。
+
+目前正式 Recovery v0.4.0 model1450 policy 已接收 FAST-LIO2 `/slam/odom` 做
+無 confidence 的 live baseline：
+
+- stationary：1000 simulation steps，0 termination/truncation，joint command
+  freshness `406/406=1.0`，event classification `no_instability`。
+- `forward_0_5`：1200 simulation steps，0 termination/truncation，freshness
+  `656/656=1.0`，event classification `no_instability`；GT-only diagnostics
+  的 target actual velocity `0.4552 m/s`、target MAE `0.0789 m/s`、最大
+  roll/pitch `0.0479/0.0402 rad`。
+- FAST-LIO2 約 10 Hz，policy 50 Hz，因此 live launch 使用 timer trigger
+  取最新 odom，`state_timeout_s=0.25`；原本 10 ms 的
+  `synchronized_state` 不適合低頻 SLAM odom。
+- LiDAR-enabled live simulator 的 IMU parity tolerance 明確設為 `0.01`，
+  與既有 LIO-SAM live benchmark 一致；這只是 bridge validation threshold，
+  不是 confidence 或 locomotion stability threshold。
+- forward run 的 controlled real-time factor 約 `0.741`，physical-clock
+  throughput 仍未通過正式 gate。
+
+詳細結果在 `docs/validation/slam_backend_comparison.md`。目前尚未加入
+`slam_confidence`、`slam_tracking_valid`、confidence age，也尚未建立 PPO
+confidence observation 或 safety supervisor。
+
+## FAST-LIO2 native comparison pilot implementation (2026-08-03)
+
+- 新增 `slam_backend_compare.launch.py` 作為 live selector：一次只啟動
+  `liosam` 或 `fastlio2`；預設 LIO-SAM native deskew。正式 model1450 只讀
+  GT `/odom` 產生 joint command，selected SLAM 是 observation-only，因此
+  不會把 GT 偷接回 SLAM policy input。FAST-LIO2 live 分支保留 native
+  `/Odometry` 與 `camera_init/body`，不啟動 `fastlio_odom_adapter`。
+- 2026-08-04 的 LIO live smoke 發現 nested LIO-SAM 的 `use_rviz=false` 會
+  覆蓋外層同名 launch configuration，導致 selector 的 RViz 沒有啟動；已將
+  外層開關改名為 `compare_use_rviz`。`open_teleop_terminal:=false` 本來就
+  是關閉鍵盤，`simulation_steps:=300` 完成後本來就會正常 shutdown。
+- candidate、Livox ROS driver 與 Livox SDK2 source 現在分別位於
+  `deployment/ros2_ws/src/fast_lio`、`livox_ros_driver2`、`livox_sdk2`；固定版本
+  由 `deployment/ros2_ws/fastlio2.repos` 記錄。SDK2 install 位於被忽略的
+  `deployment/ros2_ws/vendor/livox_sdk2`；不使用 Docker。
+- project-owned CycloneDDS local/static-TF config 已補上 explicit localhost
+  peer `127.0.0.1`；同一 `ROS_DOMAIN_ID` 的第二終端現在可 discovery
+  `/Odometry`、`/cloud_registered`、`/path` 與 TF。只設 `ROS_DOMAIN_ID` 而不
+  source 這個 DDS config，會看見空 graph 或只有 `/rosout`／parameter events。
+- `scripts/setup_deployment.sh` 會由 Livox `package_ROS2.xml` 產生被忽略的
+  `package.xml`、初始化 FAST-LIO2 submodule、冪等套用 downstream patch，並與
+  project workspace 一起建置。candidate 內 nested driver 沒有 ROS 2
+  `package.xml`，因此 colcon 只辨識 workspace root 的 driver package，不會
+  產生 duplicate package。
+- `slam_backend_native_replay.launch.py` 對相同 raw bag 直接評估
+  LIO-SAM `/lio_sam/mapping/odometry` 或 FAST-LIO2 `/Odometry`；project
+  `/slam/odom` adapter 不在 native comparison path。既有 Factory
+  `smoke_out_and_back` bag 的新 evaluator 結果：LIO-SAM native
+  `0.037391 m / 0.083753 deg`、FAST-LIO2 native stride 2
+  `0.094370 m / 0.224615 deg`，兩者 passed。
+- 2026-08-04 新增 `fastlio2_run.launch.py` 作為第一次人工操作的直接入口；
+  它 include candidate 原本的 `mapping_ouster64.launch.py` 與
+  `rviz_cfg/fastlio.rviz`，不經 `slam_backend_compare` selector，也不啟動
+  benchmark/evaluator/odom adapter。project 只補 simulator raw PointCloud2
+  adapter、model1450 GT motion driver、teleop 與 local DDS。upstream RViz fixed
+  frame 維持 `camera_init`。headless 1200-step smoke 通過；第二終端確認
+  `/Odometry` 與 `/cloud_registered` 各有 1 個 publisher，並成功讀到 width
+  `4199` 的 registered cloud。
+- 使用者已親自用 `fastlio2_run.launch.py` 操作並看到 FAST-LIO2 native RViz
+  輸出；主觀觀察是整體比目前 LIO-SAM native 好一點，但快速旋轉時仍會出現
+  明顯裂圖。這次目的只是建立 FAST-LIO2 效能直覺，不是正式 quality gate，
+  不可把「稍好」寫成量化結論；快速旋轉裂圖應保留為後續 yaw-rate／rotation
+  stress scene 與 confidence degradation label 的候選現象。
+- adapters 新增 deterministic `point_density`（預設 1.0；pilot 使用
+  1.0/0.75/0.5/0.25），不複製或修改 source bag。50% FAST-LIO2 Factory
+  smoke 已被 evaluator 正確判為 expected backend failure
+  (`ATE=0.248619 m`)，不是 infrastructure failure。
+- 新增 project-owned flat feature-poor scene：
+  `assets/maps/ground_plane/GroundPlane.usda/.usd`。它只有 100 m square
+  collision mesh 與同 contract 的 `FactoryPhysicsMaterial`，不含牆、物件或
+  visual features；`validate_ros2_bridge` smoke 通過，resolved collision
+  prims `1`、300 steps、joint freshness `1.0`。source bag 位於
+  `outputs/slam_backend_pilot/source_groundplane_forward_0_5/bag`（約 15.4 s、
+  120 scans、2416 IMU、605 GT odom）；Flat scene 的 LIO/FAST replay 均為
+  expected backend failures，不能當成 host/bridge failure。
+- 新增 `scripts/validation/run_slam_backend_pilot.py`：兩 scene × 兩 backend
+  × 四 densities 的 16 unique cells；100% baseline 與 50% boundary 三次，
+  其他一次，共 32 sequential runs。只有 evaluator JSON 明確回報的 backend
+  failure 會繼續；timeout、missing JSON 或 pre-evaluator crash 會停止整套。
+  這次實際完成 `passed=11`、`expected_backend_failure=21`、
+  `infrastructure_failure=0`；輸出在
+  `logs/slam_backend_pilot/matrix/summary.json`。Factory native baseline
+  三次結果為：LIO-SAM ATE `0.037397..0.037446 m`、yaw
+  `0.083725..0.083863 deg`；FAST-LIO2 stride 2 ATE `0.094370 m`、yaw
+  `0.224615 deg`。Factory LIO-SAM 在 75/50/25% density 仍通過；FAST-LIO2
+  在 75/50/25% 被 evaluator 判為 backend failure。GroundPlane 的兩個
+  backend、所有 density 都是預期的 feature-poor failure，不是
+  infrastructure failure。操作與 gate 邊界見
+  `docs/validation/slam_backend_live_and_replay.md`。
+
 ## Experimental Recovery v0.5
 
 Recovery v0.5 training foundation 已加入，但所有候選都仍是實驗產物：
@@ -517,6 +678,18 @@ Checkpoint：
   enabled cases 全部符合 required／forbidden expectation；open-backward
   三個 run 均為 0 marker／0 edge。disabled control reports 沿用同一 sensor
   bags 的既有 passed reports，因 loop closure 明確 disabled，不使用搜尋門檻。
+- `exp/slam-fastlio2` 目前 Python pytest 為 `106 passed, 3 skipped`；
+  `git diff --check` 與包含 LIO-SAM、Livox driver、FAST-LIO2、project package
+  的 project-local ROS 2 workspace build 均通過；
+  `scripts/setup_deployment.sh --check` 也通過。3 個 skip 都是 Isaac Sim
+  runtime unavailable 的 external-project tests。
+- FAST-LIO2 stationary／forward live smoke 的 output 分別位於：
+  `logs/stability_benchmarks/fastlio2/stationary_smoke_timer` 與
+  `logs/stability_benchmarks/fastlio2/forward_0_5_smoke_atol01`。第一次
+  forward run 只因 default IMU parity `0.002` gate 超過
+  `0.0028817` 而停止，沒有 termination 或 policy freshness failure；依照
+  既有 LIO-SAM live benchmark 改用 `0.01` 後重跑通過，最後 error
+  `0.0025872`。
 
 ## Unfinished work
 
@@ -525,12 +698,24 @@ Checkpoint：
 1. Loop-closure gate 已完成：以 project-owned 10 s minimum-time gate
    排除 `loop_open_backward` 的 early false constraint，formal v0.4.0
    matrix 為 12/12；不修改 upstream LIO-SAM。
-2. 現在處理實體 ANYmal-D sensor extrinsic 與
+2. 新對話第一步使用 `grilling`／`grillme` skill，逐題 stress-test：LIO-SAM
+   與 FAST-LIO2 的公平比較資料、confidence `[0,1]` 語意與 calibration label、
+   PPO observation/training、低 confidence 的 deterministic safety supervisor、
+   sim-to-real 與 branch/merge gate。skill 要求每次只問一個決策問題，未達成
+   shared understanding 前不要開始下一階段實作。
+3. grill 完成後，先補 FAST-LIO2/LIO-SAM 多場景與點雲退化 replay、effective
+   point coverage、latency/queue drop、physical-clock throughput，再實作共用
+   confidence interface；目前無 confidence 的 FAST-LIO2 locomotion baseline
+   已通過，但尚未正式 qualification。
+4. confidence gate 通過後，才建立 `feature/ppo-slam-confidence`，先做
+   simulated confidence perturbation 與 PPO observation parity，再進行
+   confidence-conditioned training 與 locomotion matrix；實體 ANYmal-D
+   sensor extrinsic、
    low-level interface；IMU frame contract
    必須維持 sensor-local `base_link` semantics。目前尚無 driver／SDK、實測
    extrinsic 或 safety controller；準備清單見
    `docs/physical_anymal_d_integration.md`。
-3. Recovery v0.5 model2402/model2420 維持實驗候選封存；除非正式 bridge
+5. Recovery v0.5 model2402/model2420 維持實驗候選封存；除非正式 bridge
    gate 再次出現 policy failure，否則不切換 policy、不立即續訓。
 
 GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfactual；
@@ -539,9 +724,11 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
 ## Next diagnostic gate
 
 目前已正式分類為 ROS 2 Bridge IMU angular-velocity frame bug；可控 reset gate、
-三次 map-quality benchmark 與修正版 12/12 loop-closure matrix 都已通過。
-下一個 gate 是實體 ANYmal-D sensor extrinsic、ROS 2 low-level interface 與
-sim-to-real frame contract review；Recovery v0.4.0 仍是正式 policy。
+三次 map-quality benchmark、修正版 12/12 loop-closure matrix，以及 FAST-LIO2
+第一個 replay/live baseline 都已通過各自的初步 gate。下一個對話先不要直接
+加 confidence 或續訓，而是用 `grilling`／`grillme` skill 完成多 SLAM、confidence
+calibration、PPO observation、safety supervisor 與 sim-to-real 的共同決策。
+Recovery v0.4.0 仍是正式 policy。
 
 Recovery v0.5 的 `curve_3_0_left_0_5 <= 0.2` 仍是未來 candidate 的必要
 gate，但目前不是 bridge fix 發布前置條件，也不可用未通過的 model2420

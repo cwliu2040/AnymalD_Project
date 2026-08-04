@@ -74,6 +74,64 @@ OUSTER_POINT_DTYPE = np.dtype(
     }
 )
 
+# The ROS 2 FAST-LIO2 fork registers the Ouster ambient channel instead of
+# the project's noise channel.  The binary layout is intentionally identical
+# so both adapters receive the same converted XYZ, ring, and per-point time.
+FASTLIO_POINT_DTYPE = np.dtype(
+    {
+        "names": (
+            "x",
+            "y",
+            "z",
+            "intensity",
+            "t",
+            "reflectivity",
+            "ring",
+            "ambient",
+            "range",
+        ),
+        "formats": (
+            "<f4",
+            "<f4",
+            "<f4",
+            "<f4",
+            "<u4",
+            "<u2",
+            "u1",
+            "<u2",
+            "<u4",
+        ),
+        "offsets": (0, 4, 8, 12, 16, 20, 22, 24, 28),
+        "itemsize": 32,
+    }
+)
+
+
+def deterministic_point_indices(
+    point_count: int,
+    keep_ratio: float,
+) -> np.ndarray:
+    """Return evenly spaced, deterministic indices for one scan.
+
+    The helper is intentionally independent of ROS and does not shuffle a
+    scan.  It is used only for controlled replay degradation; the default
+    ratio of ``1.0`` returns every point unchanged.
+    """
+    if point_count < 0:
+        raise ValueError("point_count must be non-negative")
+    if not math.isfinite(keep_ratio) or not 0.0 < keep_ratio <= 1.0:
+        raise ValueError("keep_ratio must be finite and in (0, 1]")
+    if point_count == 0:
+        return np.empty(0, dtype=np.int64)
+    keep_count = max(1, int(round(point_count * keep_ratio)))
+    if keep_count >= point_count:
+        return np.arange(point_count, dtype=np.int64)
+    return np.floor(
+        np.arange(keep_count, dtype=np.float64)
+        * float(point_count)
+        / float(keep_count)
+    ).astype(np.int64)
+
 
 def scan_start_nanoseconds(
     stamp_nanoseconds: int,

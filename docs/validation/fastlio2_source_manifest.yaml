@@ -1,0 +1,27 @@
+candidate:
+  repository: https://github.com/Taeyoung96/FAST_LIO_ROS2.git
+  branch: ros2
+  commit: 373aa886402b6307db2995ca12b3f4596ef4f633
+  ros_distribution: humble
+  build_mode: project_ros2_workspace
+  docker: false
+  source_checkout: deployment/ros2_ws/src/fast_lio
+  livox_driver_checkout: deployment/ros2_ws/src/livox_ros_driver2
+  build_overlay: deployment/ros2_ws/install
+  build_source_root: deployment/ros2_ws/src
+  submodules:
+    FAST_LIO/include/ikd-Tree: e2e3f4e9d3b95a9e66b1ba83dc98d4a05ed8a3c4
+    livox_ros_driver2: bf4d062a2ac4030272be6fe1ee1505a4eb2ffdcb
+  build_dependencies:
+    livox_sdk2_source: https://github.com/Livox-SDK/Livox-SDK2.git
+    livox_sdk2_commit: 08f523c930b2f0ba1e98a6afaa8d7476bf479908
+    livox_sdk2_source: deployment/ros2_ws/src/livox_sdk2
+    livox_sdk2_install: deployment/ros2_ws/vendor/livox_sdk2
+project_integration:
+  raw_lidar_topic: /lidar/points_raw
+  raw_imu_topic: /imu/data
+  fastlio_lidar_topic: /fastlio/points
+  native_odom_topic: /Odometry
+  point_filter_num: 2
+  deskew: candidate_native
+  project_motion_deskew: false

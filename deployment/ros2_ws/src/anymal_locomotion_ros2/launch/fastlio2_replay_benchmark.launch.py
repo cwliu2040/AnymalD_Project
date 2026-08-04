@@ -1,4 +1,4 @@
-"""Replay one recorded Factory sensor stream through a fresh LIO-SAM graph."""
+"""Replay the same recorded sensor bag through the FAST-LIO2 candidate."""
 
 from __future__ import annotations
 
@@ -74,66 +74,45 @@ def generate_launch_description() -> LaunchDescription:
     bag_path = LaunchConfiguration("bag_path")
     output_path = LaunchConfiguration("output_path")
     ros_domain_id = LaunchConfiguration("ros_domain_id")
-    use_motion_deskew = LaunchConfiguration("use_motion_deskew")
-    feature_cloud_info_topic = LaunchConfiguration(
-        "feature_cloud_info_topic"
-    )
-    motion_deskew_apply_translation = LaunchConfiguration(
-        "motion_deskew_apply_translation"
-    )
-    motion_deskew_replace_upstream_rotation = LaunchConfiguration(
-        "motion_deskew_replace_upstream_rotation"
-    )
-    loop_closure_enable = LaunchConfiguration("loop_closure_enable")
-    loop_closure_expectation = LaunchConfiguration(
-        "loop_closure_expectation"
-    )
-    loop_search_radius = LaunchConfiguration("loop_search_radius")
-    loop_search_time_diff = LaunchConfiguration("loop_search_time_diff")
-    loop_search_keyframes = LaunchConfiguration("loop_search_keyframes")
-    loop_fitness_score = LaunchConfiguration("loop_fitness_score")
+    config_path = LaunchConfiguration("config_path")
+    blind = LaunchConfiguration("blind")
+    point_filter_num = LaunchConfiguration("point_filter_num")
+    filter_size_surf = LaunchConfiguration("filter_size_surf")
+    filter_size_map = LaunchConfiguration("filter_size_map")
+    bag_rate = LaunchConfiguration("bag_rate")
+    rmw_implementation = LaunchConfiguration("rmw_implementation")
     point_density = LaunchConfiguration("point_density")
 
-    lio_sam = IncludeLaunchDescription(
+    fastlio = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            str(package_share / "launch" / "lio_sam.launch.py")
+            str(package_share / "launch" / "fastlio2_benchmark.launch.py")
         ),
         launch_arguments={
-            "use_rviz": "false",
-            "use_motion_deskew": use_motion_deskew,
-            "feature_cloud_info_topic": feature_cloud_info_topic,
-            "motion_deskew_apply_translation": (
-                motion_deskew_apply_translation
-            ),
-            "motion_deskew_replace_upstream_rotation": (
-                motion_deskew_replace_upstream_rotation
-            ),
-            "static_transform_cyclonedds_uri": (
-                "file://"
-                + str(
-                    package_share
-                    / "config"
-                    / "cyclonedds_static_tf.xml"
-                )
-            ),
-            "loop_closure_enable": loop_closure_enable,
-            "loop_search_radius": loop_search_radius,
-            "loop_search_time_diff": loop_search_time_diff,
-            "loop_search_keyframes": loop_search_keyframes,
-            "loop_fitness_score": loop_fitness_score,
+            "use_sim_time": "true",
+            "config_path": config_path,
+            "raw_cloud_topic": "/lidar/points_raw",
+            "fastlio_cloud_topic": "/fastlio/points",
+            "candidate_odom_topic": "/Odometry",
+            "slam_odom_topic": "/slam/odom",
+            "blind": blind,
+            "point_filter_num": point_filter_num,
+            "filter_size_surf": filter_size_surf,
+            "filter_size_map": filter_size_map,
             "point_density": point_density,
         }.items(),
     )
     evaluator = Node(
         package="anymal_locomotion_ros2",
         executable="lio_replay_evaluator",
-        name="anymal_lio_replay_evaluator",
+        name="anymal_fastlio_replay_evaluator",
         parameters=[
             {
                 "use_sim_time": True,
                 "project_root": project_root,
                 "output_path": output_path,
-                "loop_closure_expectation": loop_closure_expectation,
+                "estimate_topic": "/slam/odom",
+                "ground_truth_sensor_offset_xyz": [0.0, 0.0, 0.0],
+                "loop_closure_expectation": "forbidden",
             }
         ],
         output="screen",
@@ -147,6 +126,8 @@ def generate_launch_description() -> LaunchDescription:
             "--read-ahead-queue-size",
             "1000",
             "--disable-keyboard-controls",
+            "--rate",
+            bag_rate,
             "--topics",
             "/clock",
             "/odom",
@@ -185,9 +166,15 @@ def generate_launch_description() -> LaunchDescription:
                     [
                         project_root,
                         "outputs",
-                        "lio_sam_loop_closure",
+                        "fastlio2_benchmark",
                         "replay.json",
                     ]
+                ),
+            ),
+            DeclareLaunchArgument(
+                "config_path",
+                default_value=str(
+                    package_share / "config" / "fastlio2_anymal_ouster32.yaml"
                 ),
             ),
             DeclareLaunchArgument(
@@ -197,50 +184,22 @@ def generate_launch_description() -> LaunchDescription:
                     default_value="1",
                 ),
             ),
+            DeclareLaunchArgument("blind", default_value="0.5"),
+            DeclareLaunchArgument("point_filter_num", default_value="2"),
+            DeclareLaunchArgument("filter_size_surf", default_value="0.5"),
+            DeclareLaunchArgument("filter_size_map", default_value="0.5"),
             DeclareLaunchArgument(
-                "loop_closure_enable",
-                default_value="false",
-            ),
-            DeclareLaunchArgument(
-                "use_motion_deskew",
-                default_value="true",
+                "bag_rate",
+                default_value="1.0",
                 description=(
-                    "Enable project-owned motion deskew; false selects "
-                    "LIO-SAM native deskew"
+                    "Rosbag wall-clock replay rate; simulation timestamps "
+                    "remain unchanged"
                 ),
             ),
             DeclareLaunchArgument(
-                "feature_cloud_info_topic",
-                default_value="/lio_sam/deskew/cloud_info_motion_corrected",
-                description="CloudInfo topic used by LIO-SAM",
-            ),
-            DeclareLaunchArgument(
-                "motion_deskew_apply_translation",
-                default_value="true",
-            ),
-            DeclareLaunchArgument(
-                "motion_deskew_replace_upstream_rotation",
-                default_value="true",
-            ),
-            DeclareLaunchArgument(
-                "loop_closure_expectation",
-                default_value="forbidden",
-            ),
-            DeclareLaunchArgument(
-                "loop_search_radius",
-                default_value="1.5",
-            ),
-            DeclareLaunchArgument(
-                "loop_search_time_diff",
-                default_value="15.0",
-            ),
-            DeclareLaunchArgument(
-                "loop_search_keyframes",
-                default_value="25",
-            ),
-            DeclareLaunchArgument(
-                "loop_fitness_score",
-                default_value="0.3",
+                "rmw_implementation",
+                default_value="rmw_cyclonedds_cpp",
+                description="ROS 2 middleware used by this experiment",
             ),
             DeclareLaunchArgument(
                 "point_density",
@@ -251,7 +210,7 @@ def generate_launch_description() -> LaunchDescription:
             SetEnvironmentVariable("ROS_LOCALHOST_ONLY", "1"),
             SetEnvironmentVariable(
                 "RMW_IMPLEMENTATION",
-                "rmw_cyclonedds_cpp",
+                rmw_implementation,
             ),
             SetEnvironmentVariable("CYCLONEDDS_URI", local_cyclonedds_uri),
             SetEnvironmentVariable("PYTHONPATH", project_python_path),
@@ -259,7 +218,7 @@ def generate_launch_description() -> LaunchDescription:
             TimerAction(
                 period=1.0,
                 actions=[
-                    lio_sam,
+                    fastlio,
                     evaluator,
                     TimerAction(period=2.0, actions=[replay]),
                 ],
@@ -276,7 +235,9 @@ def generate_launch_description() -> LaunchDescription:
                     on_exit=[
                         EmitEvent(
                             event=Shutdown(
-                                reason="LIO replay evaluation completed"
+                                reason=(
+                                    "FAST-LIO2 replay evaluation completed"
+                                )
                             )
                         )
                     ],

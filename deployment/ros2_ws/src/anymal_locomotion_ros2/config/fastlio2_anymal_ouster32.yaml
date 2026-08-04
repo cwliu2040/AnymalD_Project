@@ -1,0 +1,54 @@
+/**:
+    ros__parameters:
+        use_sim_time: true
+
+        common:
+            lid_topic: "/fastlio/points"
+            imu_topic: "/imu/data"
+            time_sync_en: false
+            time_offset_lidar_to_imu: 0.0
+
+        preprocess:
+            lidar_type: 3
+            scan_line: 32
+            blind: 0.5
+            timestamp_unit: 3
+            scan_rate: 10
+
+        # Selected in the first replay comparison: stride 2 passed the
+        # current single-bag ATE gate while stride 1 increased transport load.
+        point_filter_num: 2
+
+        mapping:
+            acc_cov: 0.1
+            gyr_cov: 0.1
+            b_acc_cov: 0.0001
+            b_gyr_cov: 0.0001
+            fov_degree: 360.0
+            det_range: 100.0
+            extrinsic_est_en: false
+            # FAST-LIO defines this as the LiDAR pose in the IMU/base frame.
+            extrinsic_T: [0.20, 0.0, 0.35]
+            extrinsic_R: [1.0, 0.0, 0.0,
+                          0.0, 1.0, 0.0,
+                          0.0, 0.0, 1.0]
+
+        publish:
+            path_en: false
+            scan_publish_en: false
+            dense_publish_en: false
+            scan_bodyframe_pub_en: false
+            # The upstream ROS 2 port accumulates an unbounded /Laser_map
+            # PointCloud2. Disable this visualization-only output for the
+            # project comparison; registered scans remain independently
+            # controllable by the launch file.
+            map_en: false
+
+        map_file_path: ""
+        pcd_save:
+            pcd_save_en: false
+            interval: -1
+
+        traj_save:
+            traj_save_en: false
+            traj_file_path: ""

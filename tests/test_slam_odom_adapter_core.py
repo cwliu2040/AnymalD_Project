@@ -1,0 +1,55 @@
+"""Tests for FAST-LIO2 pose-to-body-twist conversion."""
+
+from __future__ import annotations
+
+import math
+
+import numpy as np
+import pytest
+
+from anymal_locomotion_ros2.slam_odom_adapter_core import (
+    body_velocity_from_pose_delta,
+    normalized_quaternion_xyzw,
+    rotation_matrix_from_quaternion_xyzw,
+)
+
+
+def test_normalized_quaternion_rejects_zero_norm() -> None:
+    with pytest.raises(ValueError, match="near-zero"):
+        normalized_quaternion_xyzw((0.0, 0.0, 0.0, 0.0))
+
+
+def test_body_velocity_transforms_world_translation_into_previous_body() -> None:
+    half_yaw = math.sin(math.pi / 4.0)
+    quaternion = (0.0, 0.0, half_yaw, half_yaw)
+    linear, angular = body_velocity_from_pose_delta(
+        (0.0, 0.0, 0.0),
+        quaternion,
+        (0.0, 1.0, 0.0),
+        quaternion,
+        0.5,
+    )
+
+    np.testing.assert_allclose(linear, (2.0, 0.0, 0.0), atol=1.0e-9)
+    np.testing.assert_allclose(angular, (0.0, 0.0, 0.0), atol=1.0e-9)
+
+
+def test_body_velocity_reports_relative_yaw_rate() -> None:
+    half_yaw = math.sin(math.pi / 8.0)
+    linear, angular = body_velocity_from_pose_delta(
+        (0.0, 0.0, 0.0),
+        (0.0, 0.0, 0.0, 1.0),
+        (0.0, 0.0, 0.0),
+        (0.0, 0.0, half_yaw, math.cos(math.pi / 8.0)),
+        0.5,
+    )
+
+    np.testing.assert_allclose(linear, np.zeros(3), atol=1.0e-9)
+    np.testing.assert_allclose(angular, (0.0, 0.0, math.pi / 2.0), atol=1.0e-9)
+
+
+def test_rotation_matrix_is_orthonormal() -> None:
+    matrix = rotation_matrix_from_quaternion_xyzw(
+        (0.1, -0.2, 0.3, 0.9)
+    )
+    np.testing.assert_allclose(matrix @ matrix.T, np.eye(3), atol=1.0e-12)

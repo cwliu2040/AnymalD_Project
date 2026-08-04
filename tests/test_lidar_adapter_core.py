@@ -5,9 +5,11 @@ from __future__ import annotations
 import numpy as np
 
 from anymal_locomotion_ros2.lidar_adapter_core import (
+    FASTLIO_POINT_DTYPE,
     OS1_32_ELEVATION_DEG,
     OUSTER_POINT_DTYPE,
     convert_rtx_points_to_ouster,
+    deterministic_point_indices,
     scan_start_nanoseconds,
 )
 
@@ -75,4 +77,24 @@ def test_scan_start_timestamp_accounts_for_full_scan_accumulation() -> None:
             stamp_is_scan_end=False,
         )
         == 12_345_000_000
+    )
+
+
+def test_fastlio_point_layout_uses_ambient_at_the_existing_noise_offset() -> None:
+    assert FASTLIO_POINT_DTYPE.itemsize == OUSTER_POINT_DTYPE.itemsize
+    assert FASTLIO_POINT_DTYPE.fields["ambient"][1] == 24
+    assert "noise" not in FASTLIO_POINT_DTYPE.names
+
+
+def test_deterministic_point_indices_keep_reproducible_even_coverage() -> None:
+    first = deterministic_point_indices(10, 0.5)
+    second = deterministic_point_indices(10, 0.5)
+    np.testing.assert_array_equal(first, [0, 2, 4, 6, 8])
+    np.testing.assert_array_equal(first, second)
+
+
+def test_deterministic_point_indices_keep_all_points_at_full_density() -> None:
+    np.testing.assert_array_equal(
+        deterministic_point_indices(4, 1.0),
+        [0, 1, 2, 3],
     )

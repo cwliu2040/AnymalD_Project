@@ -1,0 +1,51 @@
+/**:
+    ros__parameters:
+        use_sim_time: true
+
+        common:
+            lid_topic: "/fastlio/points"
+            imu_topic: "/imu/data"
+            time_sync_en: false
+            time_offset_lidar_to_imu: 0.0
+
+        preprocess:
+            lidar_type: 3
+            scan_line: 32
+            blind: 0.5
+            timestamp_unit: 3
+            scan_rate: 10
+
+        point_filter_num: 2
+
+        mapping:
+            acc_cov: 0.1
+            gyr_cov: 0.1
+            b_acc_cov: 0.0001
+            b_gyr_cov: 0.0001
+            fov_degree: 360.0
+            det_range: 100.0
+            extrinsic_est_en: false
+            extrinsic_T: [0.20, 0.0, 0.35]
+            extrinsic_R: [1.0, 0.0, 0.0,
+                          0.0, 1.0, 0.0,
+                          0.0, 0.0, 1.0]
+
+        # Interactive outputs consumed by the upstream fastlio.rviz config.
+        publish:
+            path_en: true
+            scan_publish_en: true
+            dense_publish_en: false
+            scan_bodyframe_pub_en: false
+            # Downstream compatibility parameter. The upstream accumulated
+            # /Laser_map grows without bound and aborts when it exceeds the
+            # default Iceoryx chunk size. /cloud_registered remains enabled.
+            map_en: false
+
+        map_file_path: ""
+        pcd_save:
+            pcd_save_en: false
+            interval: -1
+
+        traj_save:
+            traj_save_en: false
+            traj_file_path: ""

@@ -119,13 +119,32 @@ Calibration gate 應檢查 reliability diagram、Brier score、ECE、低 confide
 
 ## 目前 branch 狀態
 
-- branch：`benchmark/slam-liosam-fastlio2`
-- FAST-LIO2 adapter：尚未存在，待建立共用 contract 後實作。
+- benchmark base：`benchmark/slam-liosam-fastlio2`，commit
+  `fee8c9f 建立 SLAM backend 比較基線`
+- 實驗 branch：`exp/slam-fastlio2`
+- FAST-LIO2 adapter：已建立輸入與輸出 adapter，並已通過第一個 live
+  locomotion runtime gate；尚未完成正式 backend qualification。
+- FAST-LIO2 project launch：`fastlio2_benchmark.launch.py`；replay launch：
+  `fastlio2_replay_benchmark.launch.py`。
+- FAST-LIO2 locomotion launch：`fastlio2_locomotion_benchmark.launch.py`；policy
+  讀取 `/slam/odom`，simulation 的 ground-truth `/odom` 只供 stability
+  diagnostics 與 readiness 使用。
+- FAST-LIO2 project cloud topic：`/fastlio/points`，使用與 LIO-SAM 相同的
+  raw `/lidar/points_raw`，但輸出欄位名稱為 `ambient` 並使用 reliable QoS。
+- FAST-LIO2 project odometry topic：`/slam/odom`，由
+  `fastlio_odom_adapter` 將候選的 `/Odometry`、`camera_init/body` 轉為
+  `map/base_link`，並從 pose delta 推導 body-frame twist；不會覆蓋 simulator
+  ground-truth `/odom`。
 - 現有 root `docs/project_knowledge.md` dirty 必須與本 branch 的程式變更
   分開處理。
 - nested upstream LIO-SAM 的既存 dirty 不得修改、還原或提交。
 
-## FAST-LIO2 ROS 2 Humble smoke test（尚未通過 benchmark gate）
+FAST-LIO2 config：
+`deployment/ros2_ws/src/anymal_locomotion_ros2/config/fastlio2_anymal_ouster32.yaml`。
+其中 extrinsic 是 LiDAR 在 IMU/base frame 的位置 `[0.20, 0.0, 0.35]`，不是
+把 project motion-deskew 的輸出接進 FAST-LIO2。
+
+## FAST-LIO2 ROS 2 Humble smoke/replay test
 
 本 branch 暫時測試的 candidate 是
 `Taeyoung96/FAST_LIO_ROS2`，commit
@@ -148,6 +167,60 @@ ROS2 launch 與 `livox_ros_driver2` 的 fork。
 - `/Odometry` 的 frame/topic 仍是 `camera_init`、`body`、`/Odometry`，尚未
   符合本專案的 `/odom`、`base_link` 共用 contract。
 
-因此目前結論是「ROS2 port 可 build、可啟動、可收到資料」，但尚未是可接受
-的 FAST-LIO2 backend，也尚未執行 ATE。必須先處理 QoS、point-field mapping、
-frame/output adapter 與 effective-point gate，再和 LIO-SAM 做公平比較。
+project adapter 建立後，以下結果來自同一份
+`smoke_out_and_back` bag（185 raw scans、29.87 s；實際約 6.19 Hz），
+LIO-SAM 使用 native deskew：
+
+| Profile | Middleware | Mapping odom | Translation ATE RMSE | Yaw RMSE | 結果 |
+| --- | --- | ---: | ---: | ---: | --- |
+| LIO-SAM native | Cyclone DDS | 182 | 0.0374 m | 0.084 deg | passed |
+| FAST-LIO2 stride 4, blind 0.5 | Cyclone DDS | 182 | 0.3018 m | 1.169 deg | failed |
+| FAST-LIO2 stride 4, blind 2.0 | Cyclone DDS | 182 | 0.3310 m | 1.663 deg | failed |
+| FAST-LIO2 stride 1, blind 0.5 | Fast DDS | 182 | 0.1133 m | 0.180 deg | failed ATE |
+| FAST-LIO2 stride 2, blind 0.5 | Fast DDS | 182 | 0.0944 m | 0.225 deg | passed |
+| FAST-LIO2 stride 2, blind 0.5 | Cyclone DDS | 182 | 0.0944 m | 0.225 deg | passed |
+
+stride 2 是目前此單一 replay 的實驗預設；它尚未代表 FAST-LIO2 已完成正式
+backend qualification。仍需在其他 locomotion/退化場景重跑、確認 effective-point
+coverage、latency/queue drop 與 physical-clock throughput，再做 locomotion
+stability 與 confidence calibration。stride 1 在 Cyclone/iceoryx 下曾因
+4.25 MB shared-memory chunk 不足而 crash；這是 middleware/吞吐 gate，不能
+用 partial trajectory 當精度結論。
+
+## FAST-LIO2 live locomotion smoke
+
+在 `exp/slam-fastlio2` 使用正式 Recovery v0.4.0 `model1450` policy，執行
+stationary 與 `forward_0_5` live smoke：
+
+| Metric | Stationary | Forward 0.5 m/s |
+| --- | ---: | ---: |
+| Simulation steps | 1000 | 1200 |
+| Stability profile | passed | passed |
+| Termination / truncation | 0 / 0 | 0 / 0 |
+| Controlled joint-command freshness | 406 / 406 (1.0) | 656 / 656 (1.0) |
+| Joint-command wait timeout | 0 | 0 |
+| Policy diagnostic records | 534 | 784 |
+| Event-order classification | `no_instability` | `no_instability` |
+| FAST-LIO2 policy odometry source | `/slam/odom` | `/slam/odom` |
+
+`forward_0_5` 的 GT-only stability diagnostics 另外得到：target actual
+velocity `0.4552 m/s`、target MAE `0.0789 m/s`、base roll max `0.0479 rad`、
+base pitch max `0.0402 rad`；這些是 locomotion assessment，不是 SLAM ATE。
+這次 controlled loop 的 real-time factor 約 `0.741`，因此 physical-clock
+throughput 仍是未完成的 backend gate。
+
+這次測試確認 FAST-LIO2 odometry 已能進入 policy，且 policy 能持續輸出
+joint command；並非只把 `/odom` ground truth 接回 policy。因為 FAST-LIO2
+輸出約 10 Hz，而 locomotion policy 為 50 Hz，這個專用 launch 使用 timer
+trigger 取最新 SLAM state，並以 0.25 s receipt-age timeout 防止 stale state
+繼續推動 policy。原本要求 joint、IMU、SLAM odom 在 10 ms 內對齊的
+`synchronized_state` 不適合這個低頻 backend。
+
+forward smoke 的 IMU bridge parity 在 `imu_observation_parity_atol=0.01` 下
+通過，最大 angular-velocity error 為 `0.002587`；這個 threshold 只屬於
+LiDAR-enabled live simulator 的 bridge validation，不是 SLAM confidence 或
+locomotion stability threshold。
+
+這次的 stationary stability assessment 沒有把 simulator ground truth 當成
+policy input；GT 僅供 stability diagnostics 與驗證使用。尚未加入 confidence，
+也尚未測試 forward locomotion、點雲退化與 SLAM confidence calibration。

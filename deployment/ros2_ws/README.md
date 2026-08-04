@@ -80,8 +80,9 @@ names 與 position targets。模擬端的 ROS2 Subscribe Joint State 必須把
 ./scripts/setup_deployment.sh
 ```
 
-它會下載 LFS、匯入固定版本的 LIO-SAM、安裝 ONNX／ROS dependencies，並
-執行 colcon build。既有 checkout 可用
+它會下載 LFS、匯入固定版本的 LIO-SAM、FAST-LIO2 與 Livox dependencies、
+套用 project-owned FAST-LIO2 compatibility patch、安裝 ONNX／ROS
+dependencies，並執行 colcon build。既有 checkout 可用
 `./scripts/setup_deployment.sh --check` 做唯讀完整性檢查。
 
 ## ONNX 是什麼

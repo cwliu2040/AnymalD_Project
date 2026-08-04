@@ -28,6 +28,7 @@ def generate_launch_description() -> LaunchDescription:
     feature_cloud_info_topic = LaunchConfiguration(
         "feature_cloud_info_topic"
     )
+    point_density = LaunchConfiguration("point_density")
     static_transform_cyclonedds_uri = LaunchConfiguration(
         "static_transform_cyclonedds_uri"
     )
@@ -167,6 +168,11 @@ def generate_launch_description() -> LaunchDescription:
                 description="CloudInfo input used by LIO-SAM feature extraction",
             ),
             DeclareLaunchArgument(
+                "point_density",
+                default_value="1.0",
+                description="Deterministic fraction of raw scan points retained",
+            ),
+            DeclareLaunchArgument(
                 "motion_deskew_apply_translation",
                 default_value="true",
                 description=(
@@ -247,6 +253,10 @@ def generate_launch_description() -> LaunchDescription:
                         "frame_id": "lidar_link",
                         "scan_rate_hz": 10.0,
                         "raw_stamp_is_scan_end": True,
+                        "point_density": ParameterValue(
+                            point_density,
+                            value_type=float,
+                        ),
                     }
                 ],
                 output="screen",

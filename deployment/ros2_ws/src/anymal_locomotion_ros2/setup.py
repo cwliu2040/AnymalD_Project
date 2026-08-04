@@ -3,6 +3,7 @@ from glob import glob
 from setuptools import find_packages, setup
 
 package_name = "anymal_locomotion_ros2"
+launch_files = sorted(glob("launch/*.launch.py"))
 
 setup(
     name=package_name,
@@ -13,9 +14,11 @@ setup(
         (f"share/{package_name}", ["package.xml"]),
         (
             f"share/{package_name}/config",
-            glob("config/*.yaml") + glob("config/*.xml"),
+            glob("config/*.yaml")
+            + glob("config/*.xml")
+            + glob("config/*.rviz"),
         ),
-        (f"share/{package_name}/launch", glob("launch/*.launch.py")),
+        (f"share/{package_name}/launch", launch_files),
     ],
     install_requires=["numpy", "PyYAML", "setuptools"],
     zip_safe=True,
@@ -30,6 +33,8 @@ setup(
             "lio_replay_evaluator = anymal_locomotion_ros2.lio_replay_evaluator_node:main",
             "stability_benchmark = anymal_locomotion_ros2.stability_benchmark_node:main",
             "lidar_point_adapter = anymal_locomotion_ros2.lidar_point_adapter:main",
+            "fastlio_point_adapter = anymal_locomotion_ros2.fastlio_point_adapter:main",
+            "fastlio_odom_adapter = anymal_locomotion_ros2.fastlio_odom_adapter:main",
             "policy_node = anymal_locomotion_ros2.policy_node:main",
             "motion_deskew = anymal_locomotion_ros2.motion_deskew_node:main",
         ],

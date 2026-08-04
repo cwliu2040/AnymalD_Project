@@ -7,6 +7,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+import numpy as np
 import rclpy
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
@@ -28,6 +29,11 @@ class LioReplayEvaluatorNode(Node):
         super().__init__("anymal_lio_replay_evaluator")
         self.declare_parameter("output_path", "")
         self.declare_parameter("project_root", "")
+        self.declare_parameter("estimate_topic", "/lio_sam/mapping/odometry")
+        self.declare_parameter(
+            "ground_truth_sensor_offset_xyz",
+            [0.20, 0.0, 0.35],
+        )
         self.declare_parameter("loop_closure_expectation", "disabled")
 
         project_root = Path(
@@ -50,6 +56,21 @@ class LioReplayEvaluatorNode(Node):
             raise ValueError(
                 "loop_closure_expectation must be required or forbidden"
             )
+        self._estimate_topic = str(
+            self.get_parameter("estimate_topic").value
+        )
+        offset = np.asarray(
+            self.get_parameter("ground_truth_sensor_offset_xyz").value,
+            dtype=np.float64,
+        )
+        if offset.shape != (3,) or not np.isfinite(offset).all():
+            raise ValueError(
+                "ground_truth_sensor_offset_xyz must contain three "
+                "finite values"
+            )
+        self._ground_truth_sensor_offset_xyz = tuple(
+            float(value) for value in offset
+        )
 
         self._truth: list[PoseSample] = []
         self._estimate: list[PoseSample] = []
@@ -69,7 +90,7 @@ class LioReplayEvaluatorNode(Node):
         )
         self.create_subscription(
             Odometry,
-            "/lio_sam/mapping/odometry",
+            self._estimate_topic,
             self._on_estimate,
             qos_profile_sensor_data,
         )
@@ -141,7 +162,9 @@ class LioReplayEvaluatorNode(Node):
             metrics = evaluate_trajectory(
                 self._truth,
                 self._estimate,
-                ground_truth_sensor_offset_xyz=(0.20, 0.0, 0.35),
+                ground_truth_sensor_offset_xyz=(
+                    self._ground_truth_sensor_offset_xyz
+                ),
             )
         except ValueError as error:
             failures.append(str(error))
@@ -188,6 +211,10 @@ class LioReplayEvaluatorNode(Node):
             "status": "passed" if not failures else "failed",
             "failures": failures,
             "trajectory": metrics,
+            "estimate_topic": self._estimate_topic,
+            "ground_truth_sensor_offset_xyz": list(
+                self._ground_truth_sensor_offset_xyz
+            ),
             "counts": {
                 "ground_truth_odometry": len(self._truth),
                 "mapping_odometry": len(self._estimate),
