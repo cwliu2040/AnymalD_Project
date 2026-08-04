@@ -37,6 +37,7 @@ setup(
             "fastlio_odom_adapter = anymal_locomotion_ros2.fastlio_odom_adapter:main",
             "policy_node = anymal_locomotion_ros2.policy_node:main",
             "motion_deskew = anymal_locomotion_ros2.motion_deskew_node:main",
+            "yaw_visualizer = anymal_locomotion_ros2.yaw_visualizer_node:main",
         ],
     },
 )

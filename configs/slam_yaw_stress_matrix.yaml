@@ -1,0 +1,30 @@
+schema_version: 1
+experiment: native_deskew_yaw_stress_v1
+
+scene:
+  name: factory_fixed_start
+  spawn: {x: 0.0, y: 0.0, yaw: 0.0}
+
+timeline_s:
+  warmup: 5.0
+  ramp_up: 2.0
+  hold: 8.0
+  ramp_down: 2.0
+  recovery: 10.0
+
+yaw_rates_rps: [0.25, 0.5, 1.0, 1.5, 2.0]
+directions: [left, right]
+uniform_point_densities: [1.0, 0.75, 0.5, 0.25]
+backends: [liosam, fastlio2]
+
+pilot:
+  seeds: [42]
+  uniform_point_densities: [1.0]
+
+formal:
+  seeds: [42, 43, 44]
+
+tracking_gap_thresholds_s: [0.10, 0.25, 0.50]
+loop_closure_enable: false
+deskew_mode: native
+map_output_qualified: false

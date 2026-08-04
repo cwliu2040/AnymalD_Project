@@ -13,6 +13,7 @@ LIVOX_SDK_ROOT="${ROS_WORKSPACE}/src/livox_sdk2"
 LIVOX_SDK_BUILD="${ROS_WORKSPACE}/build/livox_sdk2"
 LIVOX_SDK_INSTALL="${ROS_WORKSPACE}/vendor/livox_sdk2"
 FAST_LIO_PATCH="${PROJECT_ROOT}/docs/validation/fastlio2_map_pub_downstream.patch"
+FAST_LIO_DIAGNOSTICS_PATCH="${PROJECT_ROOT}/docs/validation/fastlio2_effect_diagnostics_downstream.patch"
 THIRD_PARTY_GITIGNORE="${ROS_WORKSPACE}/third_party.gitignore"
 PYTHON_VENDOR="${PROJECT_ROOT}/deployment/python_vendor"
 POLICY_ROOT="${PROJECT_ROOT}/exported/anymal_d_locomotion_v1/recovery_v0.4.0"
@@ -112,6 +113,11 @@ if [[ "${CHECK_ONLY}" == false ]]; then
     elif ! git -C "${FAST_LIO_ROOT}" apply --unidiff-zero --reverse --check "${FAST_LIO_PATCH}"; then
         fail "FAST-LIO2 downstream patch cannot be applied cleanly"
     fi
+    if git -C "${FAST_LIO_ROOT}" apply --check "${FAST_LIO_DIAGNOSTICS_PATCH}"; then
+        git -C "${FAST_LIO_ROOT}" apply "${FAST_LIO_DIAGNOSTICS_PATCH}"
+    elif ! git -C "${FAST_LIO_ROOT}" apply --reverse --check "${FAST_LIO_DIAGNOSTICS_PATCH}"; then
+        fail "FAST-LIO2 diagnostics patch cannot be applied cleanly"
+    fi
 
     echo "[3/5] Building pinned Livox SDK2..."
     cmake -S "${LIVOX_SDK_ROOT}" -B "${LIVOX_SDK_BUILD}" \
@@ -202,6 +208,8 @@ cmp -s "${LIVOX_DRIVER_ROOT}/package_ROS2.xml" "${LIVOX_DRIVER_ROOT}/package.xml
     || fail "Livox SDK2 is not excluded from colcon discovery"
 git -C "${FAST_LIO_ROOT}" apply --unidiff-zero --reverse --check "${FAST_LIO_PATCH}" \
     || fail "FAST-LIO2 downstream map publisher patch is missing"
+git -C "${FAST_LIO_ROOT}" apply --reverse --check "${FAST_LIO_DIAGNOSTICS_PATCH}" \
+    || fail "FAST-LIO2 downstream diagnostics patch is missing"
 [[ -f "${LIVOX_SDK_INSTALL}/lib/liblivox_lidar_sdk_shared.so" ]] \
     || fail "Pinned Livox SDK2 installation is missing"
 

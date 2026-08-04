@@ -52,6 +52,11 @@ deskew 的純 backend 對比。FAST-LIO2 第一階段不直接接 project deskew
 輸出，避免發生重複 undistortion；若之後需要共用前端，必須另定義
 deskewed-cloud input contract。
 
+上述 reference arm 屬於一般 backend comparison 的既有 deployment 參考；
+`slam_yaw_stress` gate 依使用者決策只比較兩個 backend 的 native deskew，不把
+LIO-SAM project-deskew 加入該 240-run 主矩陣。詳細 contract 見
+`docs/validation/slam_yaw_stress.md`。
+
 ## 測試順序
 
 1. 用相同 raw replay 執行 LIO-SAM native profile。

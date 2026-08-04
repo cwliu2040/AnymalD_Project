@@ -34,6 +34,7 @@ from launch.substitutions import (
     PathJoinSubstitution,
 )
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def _find_project_root(package_share: Path) -> Path:
@@ -81,6 +82,13 @@ def _backend_actions(context, *_) -> list[object]:
     point_density = LaunchConfiguration("point_density")
     project_root = LaunchConfiguration("project_root")
     output_path = LaunchConfiguration("output_path")
+    yaw_stress_mode = LaunchConfiguration("yaw_stress_mode")
+    enable_effect_diagnostics = LaunchConfiguration(
+        "enable_effect_diagnostics"
+    )
+    visual_video_path = LaunchConfiguration("visual_video_path").perform(
+        context
+    ).strip()
 
     if backend not in {"liosam", "fastlio2"}:
         raise RuntimeError(
@@ -130,6 +138,8 @@ def _backend_actions(context, *_) -> list[object]:
             }.items(),
         )
         estimate_topic = "/lio_sam/mapping/odometry"
+        adapted_cloud_topic = "/lio_sam/points"
+        registered_cloud_topic = "/lio_sam/mapping/cloud_registered"
         sensor_offset = [0.20, 0.0, 0.35]
     else:
         try:
@@ -154,10 +164,13 @@ def _backend_actions(context, *_) -> list[object]:
                 "fastlio_cloud_topic": "/fastlio/points",
                 "candidate_odom_topic": "/Odometry",
                 "point_density": point_density,
-                "enable_visual_outputs": "false",
+                "enable_visual_outputs": "true" if visual_video_path else "false",
+                "enable_effect_diagnostics": enable_effect_diagnostics,
             }.items(),
         )
         estimate_topic = "/Odometry"
+        adapted_cloud_topic = "/fastlio/points"
+        registered_cloud_topic = "/cloud_registered"
         # FAST-LIO2's native state_point.pos is the IMU/base position.  LIO-SAM
         # mapping odometry is evaluated at the LiDAR pose, hence the distinct
         # ground-truth offset above.
@@ -173,13 +186,18 @@ def _backend_actions(context, *_) -> list[object]:
                 "project_root": project_root,
                 "output_path": output_path,
                 "estimate_topic": estimate_topic,
+                "adapted_cloud_topic": adapted_cloud_topic,
+                "backend_kind": backend,
                 "ground_truth_sensor_offset_xyz": sensor_offset,
                 "loop_closure_expectation": "forbidden",
+                "yaw_stress_mode": ParameterValue(
+                    yaw_stress_mode, value_type=bool
+                ),
             }
         ],
         output="screen",
     )
-    return [
+    actions = [
         backend_action,
         evaluator,
         RegisterEventHandler(
@@ -195,6 +213,25 @@ def _backend_actions(context, *_) -> list[object]:
             )
         ),
     ]
+    if visual_video_path:
+        actions.insert(
+            2,
+            Node(
+                package="anymal_locomotion_ros2",
+                executable="yaw_visualizer",
+                name=f"anymal_{backend}_yaw_visualizer",
+                parameters=[
+                    {
+                        "use_sim_time": True,
+                        "project_root": project_root,
+                        "cloud_topic": registered_cloud_topic,
+                        "output_path": visual_video_path,
+                    }
+                ],
+                output="screen",
+            ),
+        )
+    return actions
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -207,7 +244,6 @@ def generate_launch_description() -> LaunchDescription:
     )
     project_root = LaunchConfiguration("project_root")
     bag_path = LaunchConfiguration("bag_path")
-    output_path = LaunchConfiguration("output_path")
     ros_domain_id = LaunchConfiguration("ros_domain_id")
     bag_rate = LaunchConfiguration("bag_rate")
 
@@ -227,6 +263,12 @@ def generate_launch_description() -> LaunchDescription:
             "/odom",
             "/imu/data",
             "/lidar/points_raw",
+            "/cmd_vel",
+            "/joint_states",
+            "/tf",
+            "/tf_static",
+            "/simulation/episode_reset",
+            "/simulation/episode_reset_ack",
         ],
         output="screen",
     )
@@ -257,6 +299,15 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument("slam_backend", default_value="liosam"),
             DeclareLaunchArgument("deskew_mode", default_value="native"),
+            DeclareLaunchArgument("yaw_stress_mode", default_value="false"),
+            DeclareLaunchArgument(
+                "enable_effect_diagnostics", default_value="false"
+            ),
+            DeclareLaunchArgument(
+                "visual_video_path",
+                default_value="",
+                description="Optional anonymous fixed-view MP4 output path",
+            ),
             DeclareLaunchArgument(
                 "point_density",
                 default_value="1.0",

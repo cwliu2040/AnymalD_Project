@@ -86,6 +86,17 @@ def test_fastlio_point_layout_uses_ambient_at_the_existing_noise_offset() -> Non
     assert "noise" not in FASTLIO_POINT_DTYPE.names
 
 
+def test_backend_input_layouts_preserve_identical_point_bytes() -> None:
+    converted = convert_rtx_points_to_ouster(
+        np.asarray(((1.0, 0.0, 0.1), (0.0, -2.0, -0.2)), dtype=np.float32),
+        np.asarray((0.25, 0.75), dtype=np.float32),
+    )
+    fastlio_view = np.frombuffer(converted.tobytes(), dtype=FASTLIO_POINT_DTYPE)
+    for field in ("x", "y", "z", "intensity", "t", "reflectivity", "ring", "range"):
+        np.testing.assert_array_equal(converted[field], fastlio_view[field])
+    np.testing.assert_array_equal(converted["noise"], fastlio_view["ambient"])
+
+
 def test_deterministic_point_indices_keep_reproducible_even_coverage() -> None:
     first = deterministic_point_indices(10, 0.5)
     second = deterministic_point_indices(10, 0.5)

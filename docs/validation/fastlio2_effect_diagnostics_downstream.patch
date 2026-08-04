@@ -1,0 +1,34 @@
+diff --git a/FAST_LIO/src/laserMapping.cpp b/FAST_LIO/src/laserMapping.cpp
+--- a/FAST_LIO/src/laserMapping.cpp
++++ b/FAST_LIO/src/laserMapping.cpp
+@@ -100,5 +100,6 @@ bool   point_selected_surf[100000] = {0};
+ bool   lidar_pushed, flg_first_scan = true, flg_exit = false, flg_EKF_inited;
+ bool   scan_pub_en = false, dense_pub_en = false, scan_body_pub_en = false;
++bool   effect_pub_en = false;
+ bool   map_pub_en = true;
+ bool    is_first_lidar = true;
+ 
+@@ -826,6 +827,7 @@ public:
+         this->declare_parameter<bool>("publish.scan_publish_en", true);
+         this->declare_parameter<bool>("publish.dense_publish_en", true);
+         this->declare_parameter<bool>("publish.scan_bodyframe_pub_en", true);
++        this->declare_parameter<bool>("publish.effect_en", false);
+         // Publishing the accumulated map is optional.  In ROS 2 this message
+         // grows without a bound and can exceed the default Iceoryx chunk size.
+         this->declare_parameter<bool>("publish.map_en", true);
+@@ -866,6 +868,7 @@ public:
+         this->get_parameter_or<bool>("publish.scan_publish_en", scan_pub_en, true);
+         this->get_parameter_or<bool>("publish.dense_publish_en", dense_pub_en, true);
+         this->get_parameter_or<bool>("publish.scan_bodyframe_pub_en", scan_body_pub_en, true);
++        this->get_parameter_or<bool>("publish.effect_en", effect_pub_en, false);
+         this->get_parameter_or<bool>("publish.map_en", map_pub_en, true);
+         this->get_parameter_or<int>("max_iteration", NUM_MAX_ITERATIONS, 4);
+         this->get_parameter_or<string>("map_file_path", map_file_path, "");
+@@ -1098,6 +1101,7 @@ private:
+             if (path_en)                         publish_path(pubPath_);
+             if (scan_pub_en)      publish_frame_world(pubLaserCloudFull_);
+             if (scan_pub_en && scan_body_pub_en) publish_frame_body(pubLaserCloudFull_body_);
++            if (effect_pub_en)    publish_effect_world(pubLaserCloudEffect_);
+ 
+             /*** Debug variables ***/
+             if (runtime_pos_log)

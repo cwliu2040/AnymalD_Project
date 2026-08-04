@@ -89,6 +89,7 @@ def generate_launch_description() -> LaunchDescription:
     spawn_x = LaunchConfiguration("spawn_x")
     spawn_y = LaunchConfiguration("spawn_y")
     spawn_yaw = LaunchConfiguration("spawn_yaw")
+    seed = LaunchConfiguration("seed")
     record_bag = LaunchConfiguration("record_bag")
     use_motion_deskew = LaunchConfiguration("use_motion_deskew")
     feature_cloud_info_topic = LaunchConfiguration(
@@ -198,6 +199,8 @@ def generate_launch_description() -> LaunchDescription:
             "--headless",
             "--steps",
             "4000",
+            "--seed",
+            seed,
             "--real-time",
             "--external-control",
             "--disable-episode-timeout",
@@ -239,6 +242,12 @@ def generate_launch_description() -> LaunchDescription:
             "/odom",
             "/imu/data",
             "/lidar/points_raw",
+            "/cmd_vel",
+            "/joint_states",
+            "/tf",
+            "/tf_static",
+            "/simulation/episode_reset",
+            "/simulation/episode_reset_ack",
         ],
         condition=IfCondition(record_bag),
         output="screen",
@@ -275,6 +284,7 @@ def generate_launch_description() -> LaunchDescription:
                 ),
             ),
             DeclareLaunchArgument("profile", default_value="stationary"),
+            DeclareLaunchArgument("seed", default_value="42"),
             DeclareLaunchArgument(
                 "output_dir",
                 default_value=PathJoinSubstitution(

@@ -1,6 +1,6 @@
 # Current project knowledge
 
-更新日期：2026-08-03
+更新日期：2026-08-04
 
 這份文件保存跨對話補充知識，讓 Work locally 模式的新對話在直接閱讀
 repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產物、近期
@@ -15,10 +15,12 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   閉環驗證`）；benchmark base branch
   `benchmark/slam-liosam-fastlio2` 與目前實驗 branch 都以
   `fee8c9f 建立 SLAM backend 比較基線` 為共同基礎。
-- `exp/slam-fastlio2` 的 FAST-LIO2 adapter、config、launch、tests 與 validation
-  文件目前尚未 commit／push。root dirty 包含這批實驗變更，以及本文件本身；
-  `docs/project_knowledge.md` 的既有內容必須保留。runtime 產物位於
-  project-local `logs/`／`outputs/`，未列入提交清單。
+- `exp/slam-fastlio2` 已建立並 push 到 `origin/exp/slam-fastlio2`。目前 HEAD
+  為 `9e82195 修正：讓 FAST-LIO2 topic 可由一般終端探索`；前一筆
+  `936057b 整合：加入 FAST-LIO2 比較與持久化建置` 包含 adapter、config、
+  launch、tests、validation 與 pinned project-local dependencies。交接更新前
+  root worktree clean；本文件因本次交接更新而重新 dirty，尚未 commit／push。
+  runtime 產物位於 project-local `logs/`／`outputs/`，未列入提交清單。
 - 更早的核心修正仍位於歷史 commit，包括：
   `e34f023 修正：改用增量診斷並穩定視窗效能`、
   `a76981c 修正：更正 IMU 座標並加入狀態回放診斷`，以及
@@ -68,6 +70,47 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
 - 最終只把通過 gate、需要長期維護的 SLAM adapter、confidence contract
   與 PPO training/config 合併回 `main`；正式 Recovery v0.4.0 baseline 在
   比較期間保持可重現，不切換 Recovery v0.5。
+
+### Yaw-stress implementation contract (in progress)
+
+- 使用者已確認 yaw-stress 直接留在 `exp/slam-fastlio2`；目前不 merge 回
+  `main`，也不提前建立 PPO branch。
+- 只比較 LIO-SAM／FAST-LIO2 native deskew；不加入 project-based deskew arm。
+- 固定 Factory pose，左右原地旋轉，yaw-rate grid 為
+  `0.25/0.5/1.0/1.5/2.0 rad/s`；timeline 為 5 s warmup、2 s ramp-up、8 s
+  hold、2 s ramp-down、10 s recovery。
+- Pilot 為 10 bags／20 full-density replays；正式為三個 paired seeds、30 bags、
+  四個 uniform point densities、兩 backend，共 240 replays。Pilot review 前不跑
+  formal matrix。
+- `uniform_point_density` 只代表 deterministic evenly spaced thinning；不可泛稱
+  一般 LiDAR degradation。固定單一起點資料不可直接決定 production backend 或
+  confidence calibration。
+- FAST-LIO2 `map_en=false` 不影響 estimator，但 full-map export 尚未
+  qualification，需另設 gate。
+- 實作與 smoke 可在 dirty tree 進行；pilot/formal 必須來自乾淨、可識別的 Git
+  baseline。任何 commit/push 仍須當次重新取得使用者明確同意。
+- 2026-08-04 非 qualification 單-cell smoke 已驗證
+  `yaw_stress_left_0_5`／seed 42：27 s capture contract 通過、model1450 motion
+  driver `passed`、276 raw scans、bag 約 106 MB。相同 bag 的 LIO-SAM 與
+  FAST-LIO2 native full-density replay 都產生完整 yaw-stress report 並通過
+  infrastructure/tracking-ready gate。這不是 10-cell pilot 結論。
+- 第一次 sandbox capture 因 Iceoryx 無權建立 `/tmp/roudi` Unix socket 失敗，
+  沒有產生 bag；改在正常 host 權限後通過。失敗 artifact 位於 ignored
+  `outputs/slam_yaw_stress/capture_smoke_20260804`，不可混入正式資料。
+- Native effective-support instrumentation 已加入並以同一份 smoke bag 驗證：
+  LIO-SAM 記錄 extracted corner+surface feature count；FAST-LIO2 透過可重建、
+  預設關閉的 downstream `publish.effect_en` 記錄 point-to-plane selected
+  effective points。兩者只作 backend-specific calibration feature，不當成共同
+  confidence 比例。FAST-LIO2 rebuild 與兩 backend replay regression 通過。
+- FAST-LIO2 `publish.effect_en` off/on A/B 的全程 trajectory 與五 phase
+  evaluation JSON 逐值相同；on 取得 273 筆 samples，off 為 0。這只證明該
+  deterministic replay 的 estimator parity，publisher 的 physical-clock overhead
+  仍屬 throughput gate。
+- Blind review 已有 deterministic blind/reveal manifest generator 與固定視角
+  MP4 renderer。相同單-cell smoke 的兩 backend 各產生 720×720、10 fps、273
+  幀（27.3 s）影片；首／中／末幀非空白檢查通過。Blind manifest 不含 backend
+  對照，reveal manifest 分開保存。影片尚未完成人工標註，這不是 10-cell pilot
+  或裂圖盲測結論。
 
 ## Formal policy
 
@@ -421,7 +464,18 @@ publisher，不改 FAST-LIO2 的 raw input、native deskew、EKF 或 `/Odometry`
 套用 patch 後重新編譯，FAST-LIO2 已超過原本約 84 秒的 abort 點仍持續發布
 `/Odometry`；第二終端確認 `Publisher count: 1` 並成功 echo
 `camera_init -> body`。手動停止時為正常 `SIGINT`（`exit code -15`），不是
-再次 abort。這個 downstream patch 必須在 `/tmp` clean source 重建後重新套用。
+再次 abort。`scripts/setup_deployment.sh` 會在 project-local pinned source
+重建時冪等套用這個 downstream patch。
+
+FAST-LIO2 的 `map_en=false` 不是限制最多保存幾個點，而是完全不啟動每秒把
+registered scan append 到 `pcl_wait_pub`、再整包發布 `/Laser_map` 的 timer；
+內部 iKD-Tree mapping、`/cloud_registered`、`/Odometry` 與 `/path` 不受影響。
+upstream FAST-LIO2 RViz 對 `/cloud_registered` 使用 30 s decay。相較之下，
+LIO-SAM `/mapping/map_global` 只有 subscriber 時才以 0.2 Hz 建立，並使用
+radius、key-pose density 與 1 m voxel leaf 降採樣；但目前 protected nested
+upstream `rviz2.rviz` 對 `/lio_sam/mapping/cloud_registered` 的 decay 是
+1000 s，長時間仍可能在 RViz client 累積而變慢。若要改善，應新增
+project-owned LIO-SAM RViz config，不修改既有 dirty nested config。
 
 project-owned integration：
 
@@ -702,19 +756,21 @@ Checkpoint：
 
 依目前 gate 順序：
 
-1. Loop-closure gate 已完成：以 project-owned 10 s minimum-time gate
-   排除 `loop_open_backward` 的 early false constraint，formal v0.4.0
-   matrix 為 12/12；不修改 upstream LIO-SAM。
-2. 新對話第一步使用 `grilling`／`grillme` skill，逐題 stress-test：LIO-SAM
-   與 FAST-LIO2 的公平比較資料、confidence `[0,1]` 語意與 calibration label、
-   PPO observation/training、低 confidence 的 deterministic safety supervisor、
-   sim-to-real 與 branch/merge gate。skill 要求每次只問一個決策問題，未達成
-   shared understanding 前不要開始下一階段實作。
-3. grill 完成後，先補 FAST-LIO2/LIO-SAM 多場景與點雲退化 replay、effective
-   point coverage、latency/queue drop、physical-clock throughput，再實作共用
-   confidence interface；目前無 confidence 的 FAST-LIO2 locomotion baseline
-   已通過，但尚未正式 qualification。
-4. confidence gate 通過後，才建立 `feature/ppo-slam-confidence`，先做
+1. Loop-closure gate、FAST-LIO2 持久化、direct launch 與一般第二終端 DDS
+   discovery 已完成；目前不需再改 estimator 或 dependency layout。
+2. 下一個實作 gate 是建立可重播的快速旋轉 yaw-rate stress capture，固定
+   Factory 起點、model1450、LiDAR contract 與 command duration，至少涵蓋
+   `0.25/0.5/1.0/1.5/2.0 rad/s`，重現使用者看到的裂圖；不要先 custom deskew
+   修掉退化現象。
+3. 對同一批 raw bags 跑 LIO-SAM／FAST-LIO2 相同 scene、linear speed、yaw
+   rate 與 point-density matrix，補 effective points／coverage、ATE/yaw error、
+   odom rate、latency、queue drop、timestamp age 與 tracking interruption，再
+   定義共用 confidence interface。目前無 confidence 的 FAST-LIO2 locomotion
+   baseline 已通過，但尚未正式 qualification。
+4. 資料與 calibration label 足夠後，定義 backend-neutral
+   `/slam_confidence [0,1]`、`/slam_tracking_valid`、timestamp／age contract；
+   不可直接把不同 backend 的 raw residual 當成可比較 confidence。
+5. confidence gate 通過後，才建立 `feature/ppo-slam-confidence`，先做
    simulated confidence perturbation 與 PPO observation parity，再進行
    confidence-conditioned training 與 locomotion matrix；實體 ANYmal-D
    sensor extrinsic、
@@ -722,7 +778,7 @@ Checkpoint：
    必須維持 sensor-local `base_link` semantics。目前尚無 driver／SDK、實測
    extrinsic 或 safety controller；準備清單見
    `docs/physical_anymal_d_integration.md`。
-5. Recovery v0.5 model2402/model2420 維持實驗候選封存；除非正式 bridge
+6. Recovery v0.5 model2402/model2420 維持實驗候選封存；除非正式 bridge
    gate 再次出現 policy failure，否則不切換 policy、不立即續訓。
 
 GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfactual；

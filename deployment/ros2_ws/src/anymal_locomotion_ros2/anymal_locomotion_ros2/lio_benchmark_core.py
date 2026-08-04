@@ -506,6 +506,22 @@ _PROFILES = {
     ),
 }
 
+# Native-deskew yaw-stress profiles share one command timeline so yaw rate is
+# the only commanded motion variable.  The ten-second zero-command tail is a
+# measurement window for estimator recovery, not merely launch shutdown time.
+for _yaw_rate in (0.25, 0.5, 1.0, 1.5, 2.0):
+    for _direction, _sign in (("left", 1.0), ("right", -1.0)):
+        _rate_label = str(_yaw_rate).replace(".", "_")
+        _name = f"yaw_stress_{_direction}_{_rate_label}"
+        _PROFILES[_name] = MotionProfile(
+            _name,
+            (0.0, 0.0, _sign * _yaw_rate),
+            warmup_s=5.0,
+            ramp_s=2.0,
+            hold_s=8.0,
+            settle_s=10.0,
+        )
+
 # Replay the received /cmd_vel history rather than the already-conditioned
 # effective command. The silent windows reproduce the two long keyboard
 # refresh gaps so watchdog behavior can be changed without changing the route.

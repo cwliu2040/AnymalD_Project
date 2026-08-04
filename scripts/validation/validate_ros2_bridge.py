@@ -23,6 +23,7 @@ DEFAULT_STABILITY_CONFIG_PATH = (
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--steps", type=int, default=250, help="Number of 50 Hz environment steps.")
+parser.add_argument("--seed", type=int, default=42, help="Isaac Lab environment seed.")
 parser.add_argument("--real-time", action="store_true", help="Pace the smoke host at 50 Hz.")
 parser.add_argument(
     "--external-control",
@@ -979,7 +980,7 @@ def main() -> None:
     env_cfg.sim.physx.enable_enhanced_determinism = (
         enhanced_determinism_enabled
     )
-    env_cfg.seed = 42
+    env_cfg.seed = args_cli.seed
     if args_cli.locomotion_diagnostics_output is not None:
         # Preserve one complete 50 Hz control interval of 200 Hz contact data.
         env_cfg.scene.contact_forces.history_length = 4
@@ -1016,7 +1017,7 @@ def main() -> None:
     diagnostic_sample_count = 0
     diagnostic_metadata: dict[str, Any] = {
         "factory_usd_path": str(args_cli.factory_usd_path),
-        "seed": 42,
+        "seed": args_cli.seed,
         "spawn": {
             "x": args_cli.spawn_x,
             "y": args_cli.spawn_y,

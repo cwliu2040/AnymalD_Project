@@ -30,6 +30,9 @@ def generate_launch_description() -> LaunchDescription:
     fastlio_cloud_topic = LaunchConfiguration("fastlio_cloud_topic")
     candidate_odom_topic = LaunchConfiguration("candidate_odom_topic")
     enable_visual_outputs = LaunchConfiguration("enable_visual_outputs")
+    enable_effect_diagnostics = LaunchConfiguration(
+        "enable_effect_diagnostics"
+    )
     point_density = LaunchConfiguration("point_density")
 
     point_adapter = Node(
@@ -83,6 +86,10 @@ def generate_launch_description() -> LaunchDescription:
                     enable_visual_outputs,
                     value_type=bool,
                 ),
+                "publish.effect_en": ParameterValue(
+                    enable_effect_diagnostics,
+                    value_type=bool,
+                ),
             },
         ],
         # Keep the candidate's native TF visible for the backend-only view.
@@ -125,6 +132,11 @@ def generate_launch_description() -> LaunchDescription:
                     "Enable candidate path and registered-cloud publishers; "
                     "does not change estimator inputs"
                 ),
+            ),
+            DeclareLaunchArgument(
+                "enable_effect_diagnostics",
+                default_value="false",
+                description="Publish native effective points for diagnostics",
             ),
             point_adapter,
             fastlio,
