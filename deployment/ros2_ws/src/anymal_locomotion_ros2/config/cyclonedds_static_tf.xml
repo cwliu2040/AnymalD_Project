@@ -6,8 +6,8 @@
 >
   <Domain Id="any">
     <General>
-      <!-- Match the scan participants' explicit localhost discovery. -->
-      <AllowMulticast>false</AllowMulticast>
+      <!-- Match the scan participants' standard SPDP discovery contract. -->
+      <AllowMulticast>spdp</AllowMulticast>
     </General>
     <Discovery>
       <ParticipantIndex>auto</ParticipantIndex>

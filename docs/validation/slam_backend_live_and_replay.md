@@ -58,14 +58,14 @@ upstream RViz 的 fixed frame 是 `camera_init`，主要觀看
 `/cloud_registered`、`/Odometry` 與 `/path`。`/Laser_map` 因 upstream
 無界累積問題刻意停用。
 
-若要從另一個 terminal 使用 ROS CLI，該 terminal 也必須使用與 launch 相同的
-CycloneDDS 設定；launch 設定的 environment 不會反向修改父 shell：
+直接人工入口現在與正式 LIO-SAM bringup 使用相同的
+`ROS_LOCALHOST_ONLY` shell contract。另一個 terminal 只需 source 相同 ROS 2
+與 project overlay，即可使用一般 ROS 2 CLI：
 
 ```bash
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export ROS_LOCALHOST_ONLY=1
-export CYCLONEDDS_URI=file:///home/ros/anymal_locomotion/deployment/ros2_ws/install/anymal_locomotion_ros2/share/anymal_locomotion_ros2/config/cyclonedds_local.xml
-ros2 topic list --no-daemon
+source /opt/ros/humble/setup.bash
+source /home/ros/anymal_locomotion/deployment/ros2_ws/install/setup.bash
+ros2 topic list
 ```
 
 以下 `slam_backend_compare.launch.py` 保留給同一 selector 下切換兩個 backend

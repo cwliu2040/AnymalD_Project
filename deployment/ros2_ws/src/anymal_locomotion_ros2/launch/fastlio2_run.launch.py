@@ -292,7 +292,6 @@ def generate_launch_description() -> LaunchDescription:
             SetEnvironmentVariable(
                 "ROS_DOMAIN_ID", LaunchConfiguration("ros_domain_id")
             ),
-            SetEnvironmentVariable("ROS_LOCALHOST_ONLY", "1"),
             SetEnvironmentVariable(
                 "RMW_IMPLEMENTATION", "rmw_cyclonedds_cpp"
             ),

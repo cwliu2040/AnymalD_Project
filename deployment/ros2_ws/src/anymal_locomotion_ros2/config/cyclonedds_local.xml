@@ -6,9 +6,9 @@
 >
   <Domain Id="any">
     <General>
-      <!-- ROS_LOCALHOST_ONLY selects loopback, which lacks multicast on this
-           host.  Use explicit localhost peer discovery instead. -->
-      <AllowMulticast>false</AllowMulticast>
+      <!-- Allow standard ROS 2 terminals to discover this graph through SPDP.
+           User data still uses unicast or Iceoryx shared memory. -->
+      <AllowMulticast>spdp</AllowMulticast>
     </General>
     <Discovery>
       <ParticipantIndex>auto</ParticipantIndex>

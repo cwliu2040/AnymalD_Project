@@ -481,8 +481,15 @@ confidence observation 或 safety supervisor。
   `deployment/ros2_ws/vendor/livox_sdk2`；不使用 Docker。
 - project-owned CycloneDDS local/static-TF config 已補上 explicit localhost
   peer `127.0.0.1`；同一 `ROS_DOMAIN_ID` 的第二終端現在可 discovery
-  `/Odometry`、`/cloud_registered`、`/path` 與 TF。只設 `ROS_DOMAIN_ID` 而不
-  source 這個 DDS config，會看見空 graph 或只有 `/rosout`／parameter events。
+  `/Odometry`、`/cloud_registered`、`/path` 與 TF。2026-08-04 進一步確認
+  direct FAST-LIO2 launch 原本強制 `ROS_LOCALHOST_ONLY=1`，但一般使用者 shell
+  為 `0`，且 project profile 完全停用 multicast，造成第二終端 discovery
+  隔離。`fastlio2_run.launch.py` 已移除額外 localhost 覆寫，CycloneDDS
+  profile 則開放 discovery-only SPDP multicast；大型 user data 仍走 unicast
+  或 Iceoryx。第二終端只需 source ROS 2 與 project overlay，並使用相同
+  `ROS_DOMAIN_ID`，不再需要手動 export DDS profile。使用者已在正常 host
+  terminal 重新啟動 stack，確認另一個只 source ROS 2／project overlay 的
+  terminal 可以直接看到 FAST-LIO2 topics。
 - `scripts/setup_deployment.sh` 會由 Livox `package_ROS2.xml` 產生被忽略的
   `package.xml`、初始化 FAST-LIO2 submodule、冪等套用 downstream patch，並與
   project workspace 一起建置。candidate 內 nested driver 沒有 ROS 2
