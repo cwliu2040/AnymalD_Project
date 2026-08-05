@@ -109,8 +109,19 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
 - Blind review 已有 deterministic blind/reveal manifest generator 與固定視角
   MP4 renderer。相同單-cell smoke 的兩 backend 各產生 720×720、10 fps、273
   幀（27.3 s）影片；首／中／末幀非空白檢查通過。Blind manifest 不含 backend
-  對照，reveal manifest 分開保存。影片尚未完成人工標註，這不是 10-cell pilot
-  或裂圖盲測結論。
+  對照，reveal manifest 分開保存。這次 single-cell renderer smoke 本身不構成
+  10-cell pilot 或裂圖盲測結論；後續完整 pilot 結果另記於下一項。
+- 2026-08-04 已從 clean commit `649fcda` 完成 seed 42 yaw-stress pilot capture
+  與 full-density replay：10/10 source bags 通過 source/motion gate，每包 276
+  raw scans；20/20 backend replay reports 通過。20 支匿名影片皆為 720×720、
+  10 fps、273 幀（27.3 s），且通過可開啟、時長與非空白抽幀 contract。人工
+  blind annotation 於揭盲前完成：20/20 均無可見裂圖或形變，severity 0、無
+  onset、recovery 不適用。這表示本 pilot 未重現使用者原先看到的快速旋轉裂圖。
+- 揭盲後的軌跡數值並非完全等價：LIO-SAM／FAST-LIO2 全程 translation ATE
+  RMSE 中位數約為 0.0234／0.1214 m，full yaw RMSE 中位數約為
+  0.4009／0.4309 deg；hold translation ATE 中位數約為 0.0290／0.0466 m。
+  固定俯視累積點雲影片適合人工辨識裂圖，但對整體 translation drift 不敏感，
+  不可因影片看起來相同就宣稱兩 backend 軌跡等價。
 
 ## Formal policy
 

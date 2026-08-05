@@ -224,6 +224,56 @@ Python vendor directory。Isaac Lab 若不在 `~/IsaacLab`，只需設定
 才要求安裝 GTSAM。ONNX 使用 `pip --target` 安裝在 repository 的
 `deployment/python_vendor/`，不會覆寫 system Python package。
 
+### 此 branch：手動啟動原生 LIO-SAM／FAST-LIO2
+
+以下兩個入口專供相同 simulator、感測資料與 model1450 motion driver 下的
+backend 比較，**只使用各 backend 原生 deskew**，不啟動 project-owned motion
+deskew。一次只能啟動其中一個；切換 backend 前先在原 terminal 按 `Ctrl-C`，
+確認 simulator、RViz 與 teleop 都已關閉。
+
+LIO-SAM native deskew：
+
+```bash
+cd "${HOME}/anymal_locomotion"
+source /opt/ros/humble/setup.bash
+source deployment/ros2_ws/install/setup.bash
+
+ROS_LOG_DIR=/tmp/anymal_locomotion_ros_logs \
+ros2 launch anymal_locomotion_ros2 slam_backend_compare.launch.py \
+  slam_backend:=liosam deskew_mode:=native point_density:=1.0
+```
+
+FAST-LIO2 native deskew：
+
+```bash
+cd "${HOME}/anymal_locomotion"
+source /opt/ros/humble/setup.bash
+source deployment/ros2_ws/install/setup.bash
+
+ROS_LOG_DIR=/tmp/anymal_locomotion_ros_logs \
+ros2 launch anymal_locomotion_ros2 slam_backend_compare.launch.py \
+  slam_backend:=fastlio2 deskew_mode:=native point_density:=1.0
+```
+
+兩個 launch 預設都會開 RViz 與 teleop terminal。若 teleop terminal 沒有自動
+開啟，可另開一個已 source 相同 workspace 的 terminal：
+
+```bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args \
+  -p speed:=0.5 -p turn:=0.5 -r cmd_vel:=/cmd_vel
+```
+
+觀察 topic：
+
+- LIO-SAM：`/lio_sam/mapping/cloud_registered`、
+  `/lio_sam/mapping/odometry`、`/lio_sam/mapping/path`。
+- FAST-LIO2：`/cloud_registered`、`/Odometry`、`/path`。
+- 共用輸入：`/imu/data`、`/lidar/points_raw`、`/cmd_vel`。
+
+FAST-LIO2 的無界 `/Laser_map` publisher 預設關閉，只避免 RViz／DDS 因累積
+點雲過大而卡住，不影響 estimator、`/cloud_registered`、`/Odometry` 或後續
+獨立的 map export qualification。
+
 ## v1 Policy 契約
 
 - Observation：48 維
