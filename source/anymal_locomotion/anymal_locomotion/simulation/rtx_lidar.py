@@ -67,6 +67,12 @@ def create_rtx_lidar_sensor(
         translation=Gf.Vec3d(0.0, 0.0, 0.0),
         orientation=Gf.Quatd(1.0, 0.0, 0.0, 0.0),
         **{"omni:sensor:Core:outputFrameOfReference": "SENSOR"},
+        # FAST-LIO2/LIO-SAM must receive the raw, non-compensated scan and
+        # apply their own native IMU deskew.  Make the RTX contract explicit
+        # instead of relying on the simulator extension's default.
+        **{
+            "omni:sensor:Core:outputMotionCompensationState": "NONCOMPENSATED"
+        },
     )
     if not success or sensor is None or not sensor.IsValid():
         raise RuntimeError(
@@ -84,6 +90,15 @@ def create_rtx_lidar_sensor(
         raise RuntimeError(
             "RTX LiDAR output must remain in sensor coordinates, received "
             f"{frame_attribute.Get()!r}"
+        )
+    motion_attribute = sensor.GetAttribute(
+        "omni:sensor:Core:outputMotionCompensationState"
+    )
+    if motion_attribute.IsValid() and motion_attribute.Get() != "NONCOMPENSATED":
+        raise RuntimeError(
+            "RTX LiDAR output must remain non-compensated for native SLAM "
+            "deskew, received "
+            f"{motion_attribute.Get()!r}"
         )
 
     render_product = rep.create.render_product(

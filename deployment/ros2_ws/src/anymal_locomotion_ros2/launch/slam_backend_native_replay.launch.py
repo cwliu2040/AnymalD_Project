@@ -86,6 +86,28 @@ def _backend_actions(context, *_) -> list[object]:
     enable_effect_diagnostics = LaunchConfiguration(
         "enable_effect_diagnostics"
     )
+    fastlio_blind = LaunchConfiguration("fastlio_blind")
+    fastlio_point_filter_num = LaunchConfiguration(
+        "fastlio_point_filter_num"
+    )
+    fastlio_max_iteration = LaunchConfiguration("fastlio_max_iteration")
+    fastlio_filter_size_surf = LaunchConfiguration(
+        "fastlio_filter_size_surf"
+    )
+    fastlio_filter_size_map = LaunchConfiguration("fastlio_filter_size_map")
+    fastlio_cube_side_length = LaunchConfiguration(
+        "fastlio_cube_side_length"
+    )
+    fastlio_acc_cov = LaunchConfiguration("fastlio_acc_cov")
+    fastlio_gyr_cov = LaunchConfiguration("fastlio_gyr_cov")
+    fastlio_b_acc_cov = LaunchConfiguration("fastlio_b_acc_cov")
+    fastlio_b_gyr_cov = LaunchConfiguration("fastlio_b_gyr_cov")
+    fastlio_time_direction = LaunchConfiguration("fastlio_time_direction")
+    fastlio_time_source = LaunchConfiguration("fastlio_time_source")
+    fastlio_point_order = LaunchConfiguration("fastlio_point_order")
+    fastlio_raw_stamp_is_scan_end = LaunchConfiguration(
+        "fastlio_raw_stamp_is_scan_end"
+    )
     visual_video_path = LaunchConfiguration("visual_video_path").perform(
         context
     ).strip()
@@ -166,6 +188,20 @@ def _backend_actions(context, *_) -> list[object]:
                 "point_density": point_density,
                 "enable_visual_outputs": "true" if visual_video_path else "false",
                 "enable_effect_diagnostics": enable_effect_diagnostics,
+                "fastlio_blind": fastlio_blind,
+                "point_filter_num": fastlio_point_filter_num,
+                "max_iteration": fastlio_max_iteration,
+                "filter_size_surf": fastlio_filter_size_surf,
+                "filter_size_map": fastlio_filter_size_map,
+                "cube_side_length": fastlio_cube_side_length,
+                "acc_cov": fastlio_acc_cov,
+                "gyr_cov": fastlio_gyr_cov,
+                "b_acc_cov": fastlio_b_acc_cov,
+                "b_gyr_cov": fastlio_b_gyr_cov,
+                "time_direction": fastlio_time_direction,
+                "time_source": fastlio_time_source,
+                "point_order": fastlio_point_order,
+                "raw_stamp_is_scan_end": fastlio_raw_stamp_is_scan_end,
             }.items(),
         )
         estimate_topic = "/Odometry"
@@ -302,6 +338,46 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("yaw_stress_mode", default_value="false"),
             DeclareLaunchArgument(
                 "enable_effect_diagnostics", default_value="false"
+            ),
+            DeclareLaunchArgument("fastlio_blind", default_value="0.5"),
+            DeclareLaunchArgument(
+                "fastlio_point_filter_num", default_value="2"
+            ),
+            DeclareLaunchArgument(
+                "fastlio_max_iteration", default_value="4"
+            ),
+            DeclareLaunchArgument(
+                "fastlio_filter_size_surf", default_value="0.5"
+            ),
+            DeclareLaunchArgument(
+                "fastlio_filter_size_map", default_value="0.5"
+            ),
+            DeclareLaunchArgument(
+                "fastlio_cube_side_length", default_value="200.0"
+            ),
+            DeclareLaunchArgument(
+                "fastlio_acc_cov", default_value="0.1"
+            ),
+            DeclareLaunchArgument(
+                "fastlio_gyr_cov", default_value="0.1"
+            ),
+            DeclareLaunchArgument(
+                "fastlio_b_acc_cov", default_value="0.0001"
+            ),
+            DeclareLaunchArgument(
+                "fastlio_b_gyr_cov", default_value="0.0001"
+            ),
+            DeclareLaunchArgument(
+                "fastlio_time_direction", default_value="clockwise"
+            ),
+            DeclareLaunchArgument(
+                "fastlio_time_source", default_value="sensor_order"
+            ),
+            DeclareLaunchArgument(
+                "fastlio_point_order", default_value="staggered"
+            ),
+            DeclareLaunchArgument(
+                "fastlio_raw_stamp_is_scan_end", default_value="true"
             ),
             DeclareLaunchArgument(
                 "visual_video_path",

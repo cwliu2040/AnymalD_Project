@@ -24,9 +24,13 @@ def generate_launch_description() -> LaunchDescription:
     slam_odom_topic = LaunchConfiguration("slam_odom_topic")
     blind = LaunchConfiguration("blind")
     point_filter_num = LaunchConfiguration("point_filter_num")
+    max_iteration = LaunchConfiguration("max_iteration")
     filter_size_surf = LaunchConfiguration("filter_size_surf")
     filter_size_map = LaunchConfiguration("filter_size_map")
+    cube_side_length = LaunchConfiguration("cube_side_length")
     point_density = LaunchConfiguration("point_density")
+    time_source = LaunchConfiguration("time_source")
+    point_order = LaunchConfiguration("point_order")
 
     point_adapter = Node(
         package="anymal_locomotion_ros2",
@@ -43,6 +47,8 @@ def generate_launch_description() -> LaunchDescription:
                 "frame_id": "lidar_link",
                 "scan_rate_hz": 10.0,
                 "raw_stamp_is_scan_end": True,
+                "time_source": time_source,
+                "point_order": point_order,
                 "point_density": ParameterValue(
                     point_density,
                     value_type=float,
@@ -71,7 +77,10 @@ def generate_launch_description() -> LaunchDescription:
                     point_filter_num,
                     value_type=int,
                 ),
-                "max_iteration": 4,
+                "max_iteration": ParameterValue(
+                    max_iteration,
+                    value_type=int,
+                ),
                 "filter_size_surf": ParameterValue(
                     filter_size_surf,
                     value_type=float,
@@ -80,7 +89,10 @@ def generate_launch_description() -> LaunchDescription:
                     filter_size_map,
                     value_type=float,
                 ),
-                "cube_side_length": 200.0,
+                "cube_side_length": ParameterValue(
+                    cube_side_length,
+                    value_type=float,
+                ),
                 "runtime_pos_log_enable": False,
             },
         ],
@@ -155,6 +167,11 @@ def generate_launch_description() -> LaunchDescription:
                 description="FAST-LIO2 input point stride",
             ),
             DeclareLaunchArgument(
+                "max_iteration",
+                default_value="4",
+                description="Maximum iterated EKF update iterations",
+            ),
+            DeclareLaunchArgument(
                 "filter_size_surf",
                 default_value="0.5",
             ),
@@ -163,9 +180,27 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="0.5",
             ),
             DeclareLaunchArgument(
+                "cube_side_length",
+                default_value="200.0",
+                description="Local map cube side length in metres",
+            ),
+            DeclareLaunchArgument(
                 "point_density",
                 default_value="1.0",
                 description="Deterministic fraction of raw scan points retained",
+            ),
+            DeclareLaunchArgument(
+                "time_source",
+                default_value="sensor_order",
+                description="Official reconstructed Ouster column time",
+            ),
+            DeclareLaunchArgument(
+                "point_order",
+                default_value="staggered",
+                description=(
+                    "FAST-LIO2 input packing; staggered keeps the scan-end "
+                    "point at the end of the cloud"
+                ),
             ),
             point_adapter,
             fastlio,

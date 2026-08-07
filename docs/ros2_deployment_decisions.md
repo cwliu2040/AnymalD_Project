@@ -196,9 +196,16 @@ Isaac Sim RTX LiDAR
   32 channels、10 Hz、1024 個水平 sample。
 - LiDAR frame 為 `lidar_link`，相對 `base_link` 的 mounting translation
   為 `(0.20, 0, 0.35) m`，rotation 為 identity。
-- RTX raw PointCloud2 由外部 adapter 補上 LIO-SAM Ouster contract 所需的
-  `ring` 與每點相對時間 `t`；點依 `t` 排序，header 使用 scan-start
-  simulation time。
+- RTX raw PointCloud2 由外部 adapter 補上 LIO-SAM／FAST-LIO2 Ouster contract
+  所需的 `ring` 與每點相對時間 `t`。RTX scan buffer 的 ring 連續遞增與 wrap
+  用來重建水平欄位；正式 `sensor_order` 讓每欄共享 column timestamp，並輸出
+  官方 Ouster native 的 ring-major（ring outer、column inner）排列，header 使用
+  scan-start simulation time。per-emitter `fireTimeNs` 與 azimuth time 只保留
+  為離線診斷 A/B，不作正式 contract。
+- 由於 FAST-LIO2 的 Ouster handler 在排序前以最後一點的 `t` 推定 scan end，
+  FAST-LIO2 entry point 目前另以 `sensor_order + staggered` 保留 capture-column
+  順序；`destaggered` 仍可明確指定作官方排列 A/B。LIO-SAM 的正式 adapter
+  contract 不受此 FAST-LIO2 input-packing 實驗影響。
 - Official LIO-SAM ROS 2 branch 以 `lio_sam.repos` 固定 exact commit，不
   複製或修改 upstream source；專案擁有參數與 launch。
 - LIO-SAM 與專案 ROS package 已在乾淨的 ROS Humble environment 完成

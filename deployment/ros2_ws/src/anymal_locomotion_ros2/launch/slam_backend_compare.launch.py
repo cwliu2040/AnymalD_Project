@@ -60,10 +60,32 @@ def _backend_actions(context, *_) -> list[object]:
     )
     backend = LaunchConfiguration("slam_backend").perform(context).strip()
     deskew_mode = LaunchConfiguration("deskew_mode").perform(context).strip()
+    compare_use_rviz = LaunchConfiguration("compare_use_rviz").perform(
+        context
+    ).lower()
     point_density = LaunchConfiguration("point_density")
     static_tf_uri = LaunchConfiguration(
         "static_transform_cyclonedds_uri"
     ).perform(context)
+    fastlio_blind = LaunchConfiguration("fastlio_blind")
+    fastlio_point_filter_num = LaunchConfiguration(
+        "fastlio_point_filter_num"
+    )
+    fastlio_max_iteration = LaunchConfiguration("fastlio_max_iteration")
+    fastlio_filter_size_surf = LaunchConfiguration(
+        "fastlio_filter_size_surf"
+    )
+    fastlio_filter_size_map = LaunchConfiguration("fastlio_filter_size_map")
+    fastlio_cube_side_length = LaunchConfiguration(
+        "fastlio_cube_side_length"
+    )
+    fastlio_acc_cov = LaunchConfiguration("fastlio_acc_cov")
+    fastlio_gyr_cov = LaunchConfiguration("fastlio_gyr_cov")
+    fastlio_b_acc_cov = LaunchConfiguration("fastlio_b_acc_cov")
+    fastlio_b_gyr_cov = LaunchConfiguration("fastlio_b_gyr_cov")
+    fastlio_time_direction = LaunchConfiguration("fastlio_time_direction")
+    fastlio_time_source = LaunchConfiguration("fastlio_time_source")
+    fastlio_point_order = LaunchConfiguration("fastlio_point_order")
 
     if backend not in {"liosam", "fastlio2"}:
         raise RuntimeError(
@@ -83,6 +105,10 @@ def _backend_actions(context, *_) -> list[object]:
         )
 
     if backend == "liosam":
+        rviz_config = Path(
+            get_package_share_directory("lio_sam")
+        ) / "config" / "rviz2.rviz"
+        rviz_name = "lio_sam_official_rviz"
         if deskew_mode == "native":
             use_motion_deskew = "false"
             feature_cloud_info_topic = "/lio_sam/deskew/cloud_info"
@@ -96,7 +122,7 @@ def _backend_actions(context, *_) -> list[object]:
             apply_translation = "true"
             replace_rotation = "true"
 
-        return [
+        actions = [
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     str(package_share / "launch" / "lio_sam.launch.py")
@@ -115,6 +141,18 @@ def _backend_actions(context, *_) -> list[object]:
                 }.items(),
             )
         ]
+        if compare_use_rviz == "true":
+            actions.append(
+                Node(
+                    package="rviz2",
+                    executable="rviz2",
+                    name=rviz_name,
+                    arguments=["-d", str(rviz_config)],
+                    parameters=[{"use_sim_time": True}],
+                    output="screen",
+                )
+            )
+        return actions
 
     try:
         get_package_share_directory("fast_lio")
@@ -128,7 +166,7 @@ def _backend_actions(context, *_) -> list[object]:
     # FAST-LIO2 publishes camera_init -> body.  These static mechanical/frame
     # links make the native TF view visible in the common RViz fixed frame; they
     # are not used by the estimator or by the native odometry comparison.
-    return [
+    actions = [
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 str(package_share / "launch" / "fastlio2_native.launch.py")
@@ -143,6 +181,19 @@ def _backend_actions(context, *_) -> list[object]:
                 "candidate_odom_topic": "/Odometry",
                 "enable_visual_outputs": "true",
                 "point_density": point_density,
+                "fastlio_blind": fastlio_blind,
+                "point_filter_num": fastlio_point_filter_num,
+                "max_iteration": fastlio_max_iteration,
+                "filter_size_surf": fastlio_filter_size_surf,
+                "filter_size_map": fastlio_filter_size_map,
+                "cube_side_length": fastlio_cube_side_length,
+                "acc_cov": fastlio_acc_cov,
+                "gyr_cov": fastlio_gyr_cov,
+                "b_acc_cov": fastlio_b_acc_cov,
+                "b_gyr_cov": fastlio_b_gyr_cov,
+                "time_direction": fastlio_time_direction,
+                "time_source": fastlio_time_source,
+                "point_order": fastlio_point_order,
             }.items(),
         ),
         Node(
@@ -218,6 +269,21 @@ def _backend_actions(context, *_) -> list[object]:
             parameters=[{"use_sim_time": True}],
         ),
     ]
+    if compare_use_rviz == "true":
+        rviz_config = Path(
+            get_package_share_directory("fast_lio")
+        ) / "rviz_cfg" / "fastlio.rviz"
+        actions.append(
+            Node(
+                package="rviz2",
+                executable="rviz2",
+                name="fastlio2_official_rviz",
+                arguments=["-d", str(rviz_config)],
+                parameters=[{"use_sim_time": True}],
+                output="screen",
+            )
+        )
+    return actions
 
 
 def _simulation_action(context, *_) -> list[object]:
@@ -324,27 +390,6 @@ def generate_launch_description() -> LaunchDescription:
         output="screen",
     )
 
-    rviz = Node(
-        package="rviz2",
-        executable="rviz2",
-        name="slam_backend_compare_rviz",
-        arguments=[
-            "-d",
-            PathJoinSubstitution(
-                [package_share, "config", "slam_backend_compare.rviz"]
-            ),
-        ],
-        # Keep this name distinct from the nested LIO-SAM launch's ``use_rviz``
-        # argument.  IncludeLaunchDescription writes its arguments into the
-        # shared launch context; reusing the name would turn this outer RViz
-        # condition false for the LIO-SAM branch.
-        condition=IfCondition(
-            LaunchConfiguration("compare_use_rviz")
-        ),
-        parameters=[{"use_sim_time": True}],
-        output="screen",
-    )
-
     bag = ExecuteProcess(
         cmd=[
             "ros2",
@@ -432,6 +477,74 @@ def generate_launch_description() -> LaunchDescription:
                 "point_density",
                 default_value="1.0",
                 description="Deterministic fraction of raw scan points retained",
+            ),
+            DeclareLaunchArgument(
+                "fastlio_blind",
+                default_value="0.5",
+                description="FAST-LIO2 near-range exclusion in metres",
+            ),
+            DeclareLaunchArgument(
+                "fastlio_point_filter_num",
+                default_value="2",
+                description="FAST-LIO2 native input point stride",
+            ),
+            DeclareLaunchArgument(
+                "fastlio_max_iteration",
+                default_value="4",
+                description="FAST-LIO2 maximum EKF update iterations",
+            ),
+            DeclareLaunchArgument(
+                "fastlio_filter_size_surf",
+                default_value="0.5",
+                description="FAST-LIO2 surface voxel size in metres",
+            ),
+            DeclareLaunchArgument(
+                "fastlio_filter_size_map",
+                default_value="0.5",
+                description="FAST-LIO2 map voxel size in metres",
+            ),
+            DeclareLaunchArgument(
+                "fastlio_cube_side_length",
+                default_value="200.0",
+                description="FAST-LIO2 local map cube side length in metres",
+            ),
+            DeclareLaunchArgument(
+                "fastlio_acc_cov",
+                default_value="0.1",
+                description="FAST-LIO2 accelerometer process covariance",
+            ),
+            DeclareLaunchArgument(
+                "fastlio_gyr_cov",
+                default_value="0.1",
+                description="FAST-LIO2 gyroscope process covariance",
+            ),
+            DeclareLaunchArgument(
+                "fastlio_b_acc_cov",
+                default_value="0.0001",
+                description="FAST-LIO2 accelerometer-bias process covariance",
+            ),
+            DeclareLaunchArgument(
+                "fastlio_b_gyr_cov",
+                default_value="0.0001",
+                description="FAST-LIO2 gyroscope-bias process covariance",
+            ),
+            DeclareLaunchArgument(
+                "fastlio_time_direction",
+                default_value="clockwise",
+                description="Diagnostic RTX azimuth-to-time direction",
+            ),
+            DeclareLaunchArgument(
+                "fastlio_time_source",
+                default_value="sensor_order",
+                description="FAST-LIO2 reconstructed Ouster point-time source",
+            ),
+            DeclareLaunchArgument(
+                "fastlio_point_order",
+                default_value="staggered",
+                description=(
+                    "FAST-LIO2 point packing; destaggered is an explicit A/B "
+                    "mode"
+                ),
             ),
             DeclareLaunchArgument(
                 "compare_use_rviz",
@@ -537,7 +650,6 @@ def generate_launch_description() -> LaunchDescription:
                 actions=[
                     policy_node,
                     OpaqueFunction(function=_backend_actions),
-                    rviz,
                     teleop,
                     bag,
                     TimerAction(

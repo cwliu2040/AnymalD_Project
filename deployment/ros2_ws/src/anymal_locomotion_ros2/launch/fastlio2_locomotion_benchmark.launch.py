@@ -98,6 +98,16 @@ def generate_launch_description() -> LaunchDescription:
     fastlio_point_filter_num = LaunchConfiguration(
         "fastlio_point_filter_num"
     )
+    fastlio_max_iteration = LaunchConfiguration("fastlio_max_iteration")
+    fastlio_filter_size_surf = LaunchConfiguration(
+        "fastlio_filter_size_surf"
+    )
+    fastlio_filter_size_map = LaunchConfiguration("fastlio_filter_size_map")
+    fastlio_cube_side_length = LaunchConfiguration(
+        "fastlio_cube_side_length"
+    )
+    fastlio_time_source = LaunchConfiguration("fastlio_time_source")
+    fastlio_point_order = LaunchConfiguration("fastlio_point_order")
     slam_odom_topic = LaunchConfiguration("slam_odom_topic")
     imu_observation_parity_atol = LaunchConfiguration(
         "imu_observation_parity_atol"
@@ -168,8 +178,12 @@ def generate_launch_description() -> LaunchDescription:
             "slam_odom_topic": slam_odom_topic,
             "blind": fastlio_blind,
             "point_filter_num": fastlio_point_filter_num,
-            "filter_size_surf": "0.5",
-            "filter_size_map": "0.5",
+            "max_iteration": fastlio_max_iteration,
+            "filter_size_surf": fastlio_filter_size_surf,
+            "filter_size_map": fastlio_filter_size_map,
+            "cube_side_length": fastlio_cube_side_length,
+            "time_source": fastlio_time_source,
+            "point_order": fastlio_point_order,
         }.items(),
     )
     simulation = ExecuteProcess(
@@ -318,6 +332,35 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "fastlio_point_filter_num",
                 default_value="2",
+            ),
+            DeclareLaunchArgument(
+                "fastlio_max_iteration",
+                default_value="4",
+            ),
+            DeclareLaunchArgument(
+                "fastlio_filter_size_surf",
+                default_value="0.5",
+            ),
+            DeclareLaunchArgument(
+                "fastlio_filter_size_map",
+                default_value="0.5",
+            ),
+            DeclareLaunchArgument(
+                "fastlio_cube_side_length",
+                default_value="200.0",
+            ),
+            DeclareLaunchArgument(
+                "fastlio_time_source",
+                default_value="sensor_order",
+                description="Official reconstructed Ouster column time",
+            ),
+            DeclareLaunchArgument(
+                "fastlio_point_order",
+                default_value="staggered",
+                description=(
+                    "FAST-LIO2 input packing; staggered keeps the scan-end "
+                    "point at the end of the cloud"
+                ),
             ),
             DeclareLaunchArgument(
                 "slam_odom_topic",

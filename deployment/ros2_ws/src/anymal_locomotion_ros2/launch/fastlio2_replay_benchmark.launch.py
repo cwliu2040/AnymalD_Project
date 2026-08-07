@@ -77,11 +77,15 @@ def generate_launch_description() -> LaunchDescription:
     config_path = LaunchConfiguration("config_path")
     blind = LaunchConfiguration("blind")
     point_filter_num = LaunchConfiguration("point_filter_num")
+    max_iteration = LaunchConfiguration("max_iteration")
     filter_size_surf = LaunchConfiguration("filter_size_surf")
     filter_size_map = LaunchConfiguration("filter_size_map")
+    cube_side_length = LaunchConfiguration("cube_side_length")
     bag_rate = LaunchConfiguration("bag_rate")
     rmw_implementation = LaunchConfiguration("rmw_implementation")
     point_density = LaunchConfiguration("point_density")
+    time_source = LaunchConfiguration("time_source")
+    point_order = LaunchConfiguration("point_order")
 
     fastlio = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -96,9 +100,13 @@ def generate_launch_description() -> LaunchDescription:
             "slam_odom_topic": "/slam/odom",
             "blind": blind,
             "point_filter_num": point_filter_num,
+            "max_iteration": max_iteration,
             "filter_size_surf": filter_size_surf,
             "filter_size_map": filter_size_map,
+            "cube_side_length": cube_side_length,
             "point_density": point_density,
+            "time_source": time_source,
+            "point_order": point_order,
         }.items(),
     )
     evaluator = Node(
@@ -186,8 +194,10 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument("blind", default_value="0.5"),
             DeclareLaunchArgument("point_filter_num", default_value="2"),
+            DeclareLaunchArgument("max_iteration", default_value="4"),
             DeclareLaunchArgument("filter_size_surf", default_value="0.5"),
             DeclareLaunchArgument("filter_size_map", default_value="0.5"),
+            DeclareLaunchArgument("cube_side_length", default_value="200.0"),
             DeclareLaunchArgument(
                 "bag_rate",
                 default_value="1.0",
@@ -205,6 +215,16 @@ def generate_launch_description() -> LaunchDescription:
                 "point_density",
                 default_value="1.0",
                 description="Deterministic fraction of raw scan points retained",
+            ),
+            DeclareLaunchArgument(
+                "time_source",
+                default_value="sensor_order",
+                description="Official reconstructed Ouster column time",
+            ),
+            DeclareLaunchArgument(
+                "point_order",
+                default_value="staggered",
+                description="FAST-LIO2 input packing",
             ),
             SetEnvironmentVariable("ROS_DOMAIN_ID", ros_domain_id),
             SetEnvironmentVariable("ROS_LOCALHOST_ONLY", "1"),

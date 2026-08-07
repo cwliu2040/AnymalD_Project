@@ -258,9 +258,9 @@ def select_range_image_points(
     """Reproduce LIO-SAM's Ouster range-image point selection.
 
     Input order matters: upstream keeps the first point in each ring/column
-    cell. The project adapter sorts a scan by acquisition time before either
-    consumer receives it, so stable first-cell selection also recovers the
-    point whose timestamp upstream used for rotational deskew.
+    cell. The project adapter emits the official Ouster ring-major layout
+    after reconstructing the RTX acquisition column and timestamp, so stable
+    first-cell selection remains deterministic for rotational deskew.
     """
     points = np.asarray(points_xyz, dtype=np.float64)
     ring_values = np.asarray(rings)

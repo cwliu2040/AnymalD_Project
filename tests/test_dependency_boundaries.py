@@ -313,6 +313,10 @@ def test_rtx_lidar_is_project_owned_and_uses_official_ros2_bridge_writer() -> No
     assert '"IsaacSensorCreateRtxLidar"' in source
     assert 'variant: str = "OS1_REV6_32ch10hz1024res"' in source
     assert '"omni:sensor:Core:outputFrameOfReference": "SENSOR"' in source
+    assert (
+        '"omni:sensor:Core:outputMotionCompensationState": "NONCOMPENSATED"'
+        in source
+    )
     assert "rep.create.render_product" in source
     assert '"RtxLidarROS2PublishPointCloudBuffer"' in source
     assert "ros2_writer.attach([render_product])" in source

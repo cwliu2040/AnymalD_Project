@@ -131,6 +131,8 @@ def generate_launch_description() -> LaunchDescription:
                 "frame_id": "lidar_link",
                 "scan_rate_hz": 10.0,
                 "raw_stamp_is_scan_end": True,
+                "time_source": LaunchConfiguration("time_source"),
+                "point_order": LaunchConfiguration("point_order"),
                 "point_density": ParameterValue(
                     LaunchConfiguration("point_density"),
                     value_type=float,
@@ -150,11 +152,11 @@ def generate_launch_description() -> LaunchDescription:
             "rviz": LaunchConfiguration("use_rviz"),
             "rviz_cfg": str(fastlio_share / "rviz_cfg" / "fastlio.rviz"),
             "feature_extract_enable": "false",
-            "point_filter_num": "2",
-            "max_iteration": "4",
-            "filter_size_surf": "0.5",
-            "filter_size_map": "0.5",
-            "cube_side_length": "200.0",
+            "point_filter_num": LaunchConfiguration("point_filter_num"),
+            "max_iteration": LaunchConfiguration("max_iteration"),
+            "filter_size_surf": LaunchConfiguration("filter_size_surf"),
+            "filter_size_map": LaunchConfiguration("filter_size_map"),
+            "cube_side_length": LaunchConfiguration("cube_side_length"),
             "runtime_pos_log_enable": "false",
         }.items(),
     )
@@ -232,7 +234,45 @@ def generate_launch_description() -> LaunchDescription:
                 ),
             ),
             DeclareLaunchArgument("point_density", default_value="1.0"),
+            DeclareLaunchArgument(
+                "time_source",
+                default_value="sensor_order",
+                description="Official reconstructed Ouster column time",
+            ),
+            DeclareLaunchArgument(
+                "point_order",
+                default_value="staggered",
+                description=(
+                    "FAST-LIO2 input packing; staggered keeps the scan-end "
+                    "point at the end of the cloud"
+                ),
+            ),
             DeclareLaunchArgument("use_rviz", default_value="true"),
+            DeclareLaunchArgument(
+                "point_filter_num",
+                default_value="2",
+                description="Native input point stride",
+            ),
+            DeclareLaunchArgument(
+                "max_iteration",
+                default_value="4",
+                description="Maximum iterated EKF update iterations",
+            ),
+            DeclareLaunchArgument(
+                "filter_size_surf",
+                default_value="0.5",
+                description="Surface feature voxel size in metres",
+            ),
+            DeclareLaunchArgument(
+                "filter_size_map",
+                default_value="0.5",
+                description="Map voxel size in metres",
+            ),
+            DeclareLaunchArgument(
+                "cube_side_length",
+                default_value="200.0",
+                description="Local map cube side length in metres",
+            ),
             DeclareLaunchArgument(
                 "open_teleop_terminal", default_value="true"
             ),

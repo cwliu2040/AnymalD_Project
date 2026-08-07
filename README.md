@@ -228,8 +228,11 @@ Python vendor directory。Isaac Lab 若不在 `~/IsaacLab`，只需設定
 
 以下兩個入口專供相同 simulator、感測資料與 model1450 motion driver 下的
 backend 比較，**只使用各 backend 原生 deskew**，不啟動 project-owned motion
-deskew。一次只能啟動其中一個；切換 backend 前先在原 terminal 按 `Ctrl-C`，
-確認 simulator、RViz 與 teleop 都已關閉。
+deskew。`slam_backend_compare.launch.py` 會依 selector 自動載入該 backend
+官方 RViz 設定：LIO-SAM 使用 `map` fixed frame，FAST-LIO2 使用
+`camera_init` fixed frame；兩者不會同時顯示。一次只能啟動其中一個；切換
+backend 前先在原 terminal 按 `Ctrl-C`，確認 simulator、RViz 與 teleop 都已
+關閉。
 
 LIO-SAM native deskew：
 
@@ -255,8 +258,28 @@ ros2 launch anymal_locomotion_ros2 slam_backend_compare.launch.py \
   slam_backend:=fastlio2 deskew_mode:=native point_density:=1.0
 ```
 
-兩個 launch 預設都會開 RViz 與 teleop terminal。若 teleop terminal 沒有自動
-開啟，可另開一個已 source 相同 workspace 的 terminal：
+兩個 launch 預設都會開對應的官方 RViz 與 teleop terminal。若 teleop terminal
+沒有自動開啟，可另開一個已 source 相同 workspace 的 terminal：
+
+FAST-LIO2 調參時可直接在同一個 launch 覆寫候選參數，例如：
+
+```bash
+ROS_LOG_DIR=/tmp/anymal_locomotion_ros_logs \
+ros2 launch anymal_locomotion_ros2 slam_backend_compare.launch.py \
+  slam_backend:=fastlio2 deskew_mode:=native \
+  fastlio_point_filter_num:=1
+```
+
+目前可調的是 `fastlio_blind`、`fastlio_point_filter_num`、
+`fastlio_max_iteration`、`fastlio_filter_size_surf`、
+`fastlio_filter_size_map`、`fastlio_cube_side_length`，以及 replay/native
+校準用的 `fastlio_acc_cov`、`fastlio_gyr_cov`、`fastlio_b_acc_cov`、
+`fastlio_b_gyr_cov`；預設仍維持 branch 候選值。`fastlio_time_direction` 只
+保留作 per-point timestamp 方向的離線 A/B 診斷，預設為已確認的
+`clockwise`，不應作為正式 sensor contract 參數切換。`scan_line`、
+`timestamp_unit`、scan rate、ring／per-point time 與 LiDAR-IMU 外參屬於
+sensor contract，不在這一輪任意改動；這些入口全都只跑 FAST-LIO2 native
+deskew。
 
 ```bash
 ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args \

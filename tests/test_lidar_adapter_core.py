@@ -7,10 +7,13 @@ import numpy as np
 from anymal_locomotion_ros2.lidar_adapter_core import (
     FASTLIO_POINT_DTYPE,
     OS1_32_ELEVATION_DEG,
+    OS1_32_FIRE_TIME_NS,
     OUSTER_POINT_DTYPE,
     convert_rtx_points_to_ouster,
     deterministic_point_indices,
     scan_start_nanoseconds,
+    sensor_order_fire_time_nanoseconds,
+    sensor_order_time_nanoseconds,
 )
 
 
@@ -38,6 +41,7 @@ def test_conversion_assigns_hardware_ring_and_monotonic_relative_time() -> None:
     converted = convert_rtx_points_to_ouster(
         xyz,
         np.asarray([0.4, 0.1, 0.2, 0.3], dtype=np.float32),
+        time_source="azimuth",
     )
 
     assert converted.dtype == OUSTER_POINT_DTYPE
@@ -45,6 +49,90 @@ def test_conversion_assigns_hardware_ring_and_monotonic_relative_time() -> None:
     np.testing.assert_allclose(converted["t"], [0, 25_000_000, 50_000_000, 75_000_000])
     assert np.all(np.diff(converted["t"].astype(np.int64)) >= 0)
     np.testing.assert_allclose(converted["range"], 10_000, atol=1)
+
+
+def test_conversion_exposes_reverse_time_direction_for_offline_diagnostics() -> None:
+    xyz = np.asarray(
+        [
+            _point(float(OS1_32_ELEVATION_DEG[31]), -270.0),
+            _point(float(OS1_32_ELEVATION_DEG[0]), 0.0),
+            _point(float(OS1_32_ELEVATION_DEG[15]), -90.0),
+            _point(float(OS1_32_ELEVATION_DEG[16]), -180.0),
+        ],
+        dtype=np.float32,
+    )
+    converted = convert_rtx_points_to_ouster(
+        xyz,
+        clockwise=False,
+        time_source="azimuth",
+    )
+
+    # The diagnostic switch reverses azimuth-to-time ordering while retaining
+    # the same point fields and monotonic timestamps.
+    np.testing.assert_array_equal(converted["ring"], [0, 31, 16, 15])
+    assert np.all(np.diff(converted["t"].astype(np.int64)) >= 0)
+
+
+def test_sensor_order_time_keeps_beams_in_one_firing_column() -> None:
+    ring = np.asarray([0, 1, 2, 31, 0, 1, 4, 5], dtype=np.uint8)
+    relative_time_ns = sensor_order_time_nanoseconds(ring)
+
+    # Official Ouster ROS native output uses one timestamp per horizontal
+    # column, so every beam in the first column shares t=0.
+    np.testing.assert_array_equal(relative_time_ns[:4], [0, 0, 0, 0])
+    # A missing return does not create a fake column; only ring wrap does.
+    assert relative_time_ns[4] == 97_656
+    assert np.all(np.diff(relative_time_ns.astype(np.int64)) >= 0)
+
+
+def test_sensor_order_fire_time_is_explicitly_diagnostic() -> None:
+    ring = np.asarray([0, 1, 31, 0], dtype=np.uint8)
+    relative_time_ns = sensor_order_fire_time_nanoseconds(ring)
+
+    np.testing.assert_array_equal(
+        relative_time_ns[:3],
+        OS1_32_FIRE_TIME_NS[[0, 1, 31]].astype(np.uint32),
+    )
+    assert relative_time_ns[3] == 99_181
+
+
+def test_sensor_order_conversion_matches_official_ring_major_order() -> None:
+    xyz = np.asarray(
+        [
+            _point(float(OS1_32_ELEVATION_DEG[ring]), -4.0)
+            for ring in (0, 1, 2, 31, 0, 1)
+        ],
+        dtype=np.float32,
+    )
+    converted = convert_rtx_points_to_ouster(xyz, time_source="sensor_order")
+
+    # RTX acquisition is column-major, but the official Ouster ROS native
+    # cloud is packed ring-major (ring/row outer, column inner).  The adapter
+    # must emit that layout so FAST-LIO2's point_filter_num acts per ring.
+    np.testing.assert_array_equal(converted["ring"], [0, 0, 1, 1, 2, 31])
+    np.testing.assert_array_equal(converted["t"], [0, 97_656, 0, 97_656, 0, 0])
+
+
+def test_sensor_order_conversion_applies_os1_destagger_shifts() -> None:
+    xyz = np.asarray(
+        [
+            _point(float(OS1_32_ELEVATION_DEG[ring]), -4.0 + column)
+            for column, ring in ((0, 0), (0, 1), (0, 2), (0, 3))
+        ],
+        dtype=np.float32,
+    )
+    intensities = np.asarray([0.0, 1.0, 2.0, 3.0], dtype=np.float32)
+    converted = convert_rtx_points_to_ouster(
+        xyz,
+        intensities,
+        time_source="sensor_order",
+    )
+
+    # With one point per ring, ring-major order is unchanged, but the
+    # underlying source columns become 12, 4, 1020, and 1012 after OS1's
+    # [12, 4, -4, -12] destagger shifts.  Preserve the source column time.
+    np.testing.assert_array_equal(converted["intensity"], intensities)
+    np.testing.assert_array_equal(converted["t"], [0, 0, 0, 0])
 
 
 def test_conversion_drops_nonfinite_points_and_supplies_zero_intensity() -> None:

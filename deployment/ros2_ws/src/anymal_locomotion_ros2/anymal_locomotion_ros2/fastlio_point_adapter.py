@@ -18,6 +18,7 @@ from sensor_msgs_py import point_cloud2
 
 from anymal_locomotion_ros2.lidar_adapter_core import (
     FASTLIO_POINT_DTYPE,
+    OS1_32_HORIZONTAL_RESOLUTION,
     convert_rtx_points_to_ouster,
     deterministic_point_indices,
     scan_start_nanoseconds,
@@ -68,6 +69,14 @@ class FastlioPointAdapter(Node):
         self.declare_parameter("scan_rate_hz", 10.0)
         self.declare_parameter("raw_stamp_is_scan_end", True)
         self.declare_parameter("point_density", 1.0)
+        self.declare_parameter("time_direction", "clockwise")
+        self.declare_parameter("time_source", "sensor_order")
+        # FAST-LIO2's native Ouster handler uses the last point to infer the
+        # scan end before it sorts by ``t``.  The official destaggered
+        # ring-major layout can therefore end with an early-capture point;
+        # keep the physically staggered ring-major layout as the safe FAST
+        # input default.  ``destaggered`` remains available for explicit A/B.
+        self.declare_parameter("point_order", "staggered")
 
         self._frame_id = str(self.get_parameter("frame_id").value)
         scan_rate_hz = float(self.get_parameter("scan_rate_hz").value)
@@ -82,6 +91,40 @@ class FastlioPointAdapter(Node):
         )
         if not 0.0 < self._point_density <= 1.0:
             raise ValueError("point_density must be in (0, 1]")
+        time_direction = str(
+            self.get_parameter("time_direction").value
+        ).strip().lower()
+        if time_direction not in {"clockwise", "counterclockwise"}:
+            raise ValueError(
+                "time_direction must be clockwise or counterclockwise"
+            )
+        self._clockwise = time_direction == "clockwise"
+        self._time_source = str(
+            self.get_parameter("time_source").value
+        ).strip().lower()
+        if self._time_source not in {
+            "sensor_order",
+            "sensor_order_fire_time",
+            "sensor_order_destaggered",
+            "azimuth",
+        }:
+            raise ValueError(
+                "time_source must be sensor_order, sensor_order_fire_time, "
+                "sensor_order_destaggered, or azimuth"
+            )
+        self._point_order = str(
+            self.get_parameter("point_order").value
+        ).strip().lower()
+        if self._point_order not in {
+            "destaggered",
+            "staggered",
+            "column",
+            "column_shift1",
+        }:
+            raise ValueError(
+                "point_order must be destaggered, staggered, column, or "
+                "column_shift1"
+            )
         self._logged_contract = False
 
         # The candidate fork uses the default reliable PointCloud2
@@ -134,21 +177,23 @@ class FastlioPointAdapter(Node):
         raw = np.frombuffer(message.data, dtype=input_dtype, count=message.width)
         xyz = np.column_stack((raw["x"], raw["y"], raw["z"]))
         intensity = raw["intensity"] if "intensity" in raw.dtype.names else None
-        indices = deterministic_point_indices(
-            xyz.shape[0],
-            self._point_density,
-        )
-        xyz = xyz[indices]
-        if intensity is not None:
-            intensity = intensity[indices]
         converted = convert_rtx_points_to_ouster(
             xyz,
             intensity,
             scan_period_s=self._scan_period_s,
+            clockwise=self._clockwise,
+            time_source=self._time_source,
+            point_order=self._point_order,
+            horizontal_resolution=OS1_32_HORIZONTAL_RESOLUTION,
         )
         if converted.size == 0:
             self.get_logger().warning("Raw scan contained no finite points")
             return
+        indices = deterministic_point_indices(
+            converted.size,
+            self._point_density,
+        )
+        converted = converted[indices]
 
         stamp_ns = (
             int(message.header.stamp.sec) * 1_000_000_000
@@ -180,6 +225,8 @@ class FastlioPointAdapter(Node):
                 "Publishing FAST-LIO2 Ouster scans with ring/t/ambient "
                 f"fields: points={output.width}, "
                 f"point_density={self._point_density:.2f}, "
+                f"time_source={self._time_source}, "
+                f"point_order={self._point_order}, "
                 f"frame={output.header.frame_id}, "
                 f"scan_period={self._scan_period_s:.3f}s, "
                 f"rings={int(converted['ring'].min())}.."
