@@ -31,6 +31,10 @@ def generate_launch_description() -> LaunchDescription:
     point_density = LaunchConfiguration("point_density")
     time_source = LaunchConfiguration("time_source")
     point_order = LaunchConfiguration("point_order")
+    time_sync_en = LaunchConfiguration("time_sync_en")
+    time_offset_lidar_to_imu = LaunchConfiguration(
+        "time_offset_lidar_to_imu"
+    )
 
     point_adapter = Node(
         package="anymal_locomotion_ros2",
@@ -87,6 +91,14 @@ def generate_launch_description() -> LaunchDescription:
                 ),
                 "filter_size_map": ParameterValue(
                     filter_size_map,
+                    value_type=float,
+                ),
+                "common.time_sync_en": ParameterValue(
+                    time_sync_en,
+                    value_type=bool,
+                ),
+                "common.time_offset_lidar_to_imu": ParameterValue(
+                    time_offset_lidar_to_imu,
                     value_type=float,
                 ),
                 "cube_side_length": ParameterValue(
@@ -173,15 +185,15 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "filter_size_surf",
-                default_value="0.5",
+                default_value="0.3",
             ),
             DeclareLaunchArgument(
                 "filter_size_map",
-                default_value="0.5",
+                default_value="0.6",
             ),
             DeclareLaunchArgument(
                 "cube_side_length",
-                default_value="200.0",
+                default_value="1000.0",
                 description="Local map cube side length in metres",
             ),
             DeclareLaunchArgument(
@@ -201,6 +213,18 @@ def generate_launch_description() -> LaunchDescription:
                     "FAST-LIO2 input packing; staggered keeps the scan-end "
                     "point at the end of the cloud"
                 ),
+            ),
+            DeclareLaunchArgument(
+                "time_sync_en",
+                default_value="false",
+                description=(
+                    "Use FAST-LIO2 native online LiDAR--IMU time sync"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "time_offset_lidar_to_imu",
+                default_value="0.0",
+                description="Native LiDAR-to-IMU timestamp offset in seconds",
             ),
             point_adapter,
             fastlio,

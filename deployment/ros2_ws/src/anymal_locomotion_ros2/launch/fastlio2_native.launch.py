@@ -48,6 +48,10 @@ def generate_launch_description() -> LaunchDescription:
     raw_stamp_is_scan_end = LaunchConfiguration("raw_stamp_is_scan_end")
     time_source = LaunchConfiguration("time_source")
     point_order = LaunchConfiguration("point_order")
+    time_sync_en = LaunchConfiguration("time_sync_en")
+    time_offset_lidar_to_imu = LaunchConfiguration(
+        "time_offset_lidar_to_imu"
+    )
 
     point_adapter = Node(
         package="anymal_locomotion_ros2",
@@ -132,6 +136,18 @@ def generate_launch_description() -> LaunchDescription:
                     b_gyr_cov,
                     value_type=float,
                 ),
+                # Keep FAST-LIO2's native LiDAR--IMU timing calibration
+                # explicit at the project launch boundary.  This only shifts
+                # the timestamps consumed by the upstream estimator; it does
+                # not add a project deskew stage.
+                "common.time_sync_en": ParameterValue(
+                    time_sync_en,
+                    value_type=bool,
+                ),
+                "common.time_offset_lidar_to_imu": ParameterValue(
+                    time_offset_lidar_to_imu,
+                    value_type=float,
+                ),
                 # These are output-only visualization switches.  The native
                 # benchmark passes false; the interactive launch passes true.
                 "publish.path_en": ParameterValue(
@@ -202,17 +218,17 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "filter_size_surf",
-                default_value="0.5",
+                default_value="0.3",
                 description="Surface feature voxel size in metres",
             ),
             DeclareLaunchArgument(
                 "filter_size_map",
-                default_value="0.5",
+                default_value="0.6",
                 description="Map voxel size in metres",
             ),
             DeclareLaunchArgument(
                 "cube_side_length",
-                default_value="200.0",
+                default_value="1000.0",
                 description="Local map cube side length in metres",
             ),
             DeclareLaunchArgument(
@@ -268,6 +284,22 @@ def generate_launch_description() -> LaunchDescription:
                     "preserves the raw capture-column end point; "
                     "destaggered follows the official driver default and "
                     "column is a raw-order A/B mode"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "time_sync_en",
+                default_value="false",
+                description=(
+                    "Use FAST-LIO2's native online LiDAR--IMU time sync; "
+                    "normally false when both streams share simulation time"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "time_offset_lidar_to_imu",
+                default_value="0.0",
+                description=(
+                    "Native FAST-LIO2 LiDAR-to-IMU timestamp offset in "
+                    "seconds; applied before estimator synchronization"
                 ),
             ),
             DeclareLaunchArgument(

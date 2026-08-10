@@ -86,6 +86,10 @@ def generate_launch_description() -> LaunchDescription:
     point_density = LaunchConfiguration("point_density")
     time_source = LaunchConfiguration("time_source")
     point_order = LaunchConfiguration("point_order")
+    time_sync_en = LaunchConfiguration("time_sync_en")
+    time_offset_lidar_to_imu = LaunchConfiguration(
+        "time_offset_lidar_to_imu"
+    )
 
     fastlio = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -107,6 +111,8 @@ def generate_launch_description() -> LaunchDescription:
             "point_density": point_density,
             "time_source": time_source,
             "point_order": point_order,
+            "time_sync_en": time_sync_en,
+            "time_offset_lidar_to_imu": time_offset_lidar_to_imu,
         }.items(),
     )
     evaluator = Node(
@@ -195,9 +201,9 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("blind", default_value="0.5"),
             DeclareLaunchArgument("point_filter_num", default_value="2"),
             DeclareLaunchArgument("max_iteration", default_value="4"),
-            DeclareLaunchArgument("filter_size_surf", default_value="0.5"),
-            DeclareLaunchArgument("filter_size_map", default_value="0.5"),
-            DeclareLaunchArgument("cube_side_length", default_value="200.0"),
+            DeclareLaunchArgument("filter_size_surf", default_value="0.3"),
+            DeclareLaunchArgument("filter_size_map", default_value="0.6"),
+            DeclareLaunchArgument("cube_side_length", default_value="1000.0"),
             DeclareLaunchArgument(
                 "bag_rate",
                 default_value="1.0",
@@ -225,6 +231,16 @@ def generate_launch_description() -> LaunchDescription:
                 "point_order",
                 default_value="staggered",
                 description="FAST-LIO2 input packing",
+            ),
+            DeclareLaunchArgument(
+                "time_sync_en",
+                default_value="false",
+                description="Use FAST-LIO2 native online LiDAR--IMU time sync",
+            ),
+            DeclareLaunchArgument(
+                "time_offset_lidar_to_imu",
+                default_value="0.0",
+                description="Native LiDAR-to-IMU timestamp offset in seconds",
             ),
             SetEnvironmentVariable("ROS_DOMAIN_ID", ros_domain_id),
             SetEnvironmentVariable("ROS_LOCALHOST_ONLY", "1"),

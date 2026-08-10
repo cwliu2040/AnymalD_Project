@@ -260,17 +260,17 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "filter_size_surf",
-                default_value="0.5",
+                default_value="0.3",
                 description="Surface feature voxel size in metres",
             ),
             DeclareLaunchArgument(
                 "filter_size_map",
-                default_value="0.5",
+                default_value="0.6",
                 description="Map voxel size in metres",
             ),
             DeclareLaunchArgument(
                 "cube_side_length",
-                default_value="200.0",
+                default_value="1000.0",
                 description="Local map cube side length in metres",
             ),
             DeclareLaunchArgument(

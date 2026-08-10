@@ -108,6 +108,10 @@ def generate_launch_description() -> LaunchDescription:
     )
     fastlio_time_source = LaunchConfiguration("fastlio_time_source")
     fastlio_point_order = LaunchConfiguration("fastlio_point_order")
+    fastlio_time_sync_en = LaunchConfiguration("fastlio_time_sync_en")
+    fastlio_time_offset_lidar_to_imu = LaunchConfiguration(
+        "fastlio_time_offset_lidar_to_imu"
+    )
     slam_odom_topic = LaunchConfiguration("slam_odom_topic")
     imu_observation_parity_atol = LaunchConfiguration(
         "imu_observation_parity_atol"
@@ -184,6 +188,8 @@ def generate_launch_description() -> LaunchDescription:
             "cube_side_length": fastlio_cube_side_length,
             "time_source": fastlio_time_source,
             "point_order": fastlio_point_order,
+            "time_sync_en": fastlio_time_sync_en,
+            "time_offset_lidar_to_imu": fastlio_time_offset_lidar_to_imu,
         }.items(),
     )
     simulation = ExecuteProcess(
@@ -339,15 +345,15 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "fastlio_filter_size_surf",
-                default_value="0.5",
+                default_value="0.3",
             ),
             DeclareLaunchArgument(
                 "fastlio_filter_size_map",
-                default_value="0.5",
+                default_value="0.6",
             ),
             DeclareLaunchArgument(
                 "fastlio_cube_side_length",
-                default_value="200.0",
+                default_value="1000.0",
             ),
             DeclareLaunchArgument(
                 "fastlio_time_source",
@@ -361,6 +367,16 @@ def generate_launch_description() -> LaunchDescription:
                     "FAST-LIO2 input packing; staggered keeps the scan-end "
                     "point at the end of the cloud"
                 ),
+            ),
+            DeclareLaunchArgument(
+                "fastlio_time_sync_en",
+                default_value="false",
+                description="Use FAST-LIO2 native online LiDAR--IMU time sync",
+            ),
+            DeclareLaunchArgument(
+                "fastlio_time_offset_lidar_to_imu",
+                default_value="0.0",
+                description="Native LiDAR-to-IMU timestamp offset in seconds",
             ),
             DeclareLaunchArgument(
                 "slam_odom_topic",

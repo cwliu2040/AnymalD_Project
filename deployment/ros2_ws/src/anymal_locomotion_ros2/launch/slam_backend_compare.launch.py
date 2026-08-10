@@ -495,17 +495,17 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "fastlio_filter_size_surf",
-                default_value="0.5",
+                default_value="0.3",
                 description="FAST-LIO2 surface voxel size in metres",
             ),
             DeclareLaunchArgument(
                 "fastlio_filter_size_map",
-                default_value="0.5",
+                default_value="0.6",
                 description="FAST-LIO2 map voxel size in metres",
             ),
             DeclareLaunchArgument(
                 "fastlio_cube_side_length",
-                default_value="200.0",
+                default_value="1000.0",
                 description="FAST-LIO2 local map cube side length in metres",
             ),
             DeclareLaunchArgument(

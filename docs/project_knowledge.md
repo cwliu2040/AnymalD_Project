@@ -1,6 +1,6 @@
 # Current project knowledge
 
-更新日期：2026-08-06
+更新日期：2026-08-10
 
 這份文件保存跨對話補充知識，讓 Work locally 模式的新對話在直接閱讀
 repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產物、近期
@@ -15,14 +15,15 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   閉環驗證`）；benchmark base branch
   `benchmark/slam-liosam-fastlio2` 與目前實驗 branch 都以
   `fee8c9f 建立 SLAM backend 比較基線` 為共同基礎。
-- `exp/slam-fastlio2` 已建立並 push 到 `origin/exp/slam-fastlio2`。目前 HEAD
-  為 `326f3b3 文件：補充原生 SLAM 啟動與壓力測試結果`；其前的
+- `exp/slam-fastlio2` 已建立並 push 到 `origin/exp/slam-fastlio2`。本文件所在
+  的最新里程碑 commit 為 `校準 FAST-LIO2 並建立 confidence 前置基線`；其 parent
+  `7b9994d 修正虛擬雷射輸入與 FAST-LIO2 校準流程` 固定虛擬 Ouster input
+  contract。更早的
   `649fcda 實作：加入原地旋轉 SLAM 壓力測試` 包含 yaw-stress、renderer、
-  effective-support diagnostics 與 pilot tooling。目前 root worktree 同時有
-  本輪尚未提交的 native calibration adapter／launch／文件／測試修改，以及使用者手動調整的
-  `deployment/ros2_ws/src/anymal_locomotion_ros2/config/
-  slam_backend_compare.rviz`；後者不應覆蓋、stage 或還原。
-  runtime 產物位於 project-local `logs/`／`outputs/`，未列入提交清單。
+  effective-support diagnostics 與 pilot tooling。目前 root worktree 有 7 個
+  project-owned FAST-LIO2 launch 與 2 個 docs 的本輪待提交修改；root
+  `build/`、`install/`、`log/` 是未追蹤／ignored runtime 產物，不納入提交，
+  其他 `logs/`／`outputs/` 實驗產物也不提交。
 - 更早的核心修正仍位於歷史 commit，包括：
   `e34f023 修正：改用增量診斷並穩定視窗效能`、
   `a76981c 修正：更正 IMU 座標並加入狀態回放診斷`，以及
@@ -33,6 +34,9 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   `deployment/ros2_ws/src/lio_sam`，目前是 detached HEAD。
 - Nested LIO-SAM 的 `config/rviz2.rviz` 有對話開始前就存在的 dirty；
   不可還原、stage 或提交。
+- Nested FAST-LIO2 checkout 的 `FAST_LIO/src/laserMapping.cpp` 是既有 downstream
+  visualization-only map publisher patch，`FAST_LIO/Log/*.txt` 是 runtime
+  輸出；不可把 nested checkout 的 dirty stage 到本輪 root commit。
 
 ## Non-negotiable boundaries
 
@@ -50,8 +54,8 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
 - 使用者目前先比較 LIO-SAM 與 FAST-LIO2，並計畫把標準化的 SLAM
   tracking confidence 輸入 locomotion PPO，使 policy 在特徵不足或 tracking
   退化時學會降低速度、減少機身晃動。FAST-LIO2 的第一階段 adapter／replay
-  baseline 已在 `exp/slam-fastlio2` 建立；confidence contract 與 PPO
-  observation/training 尚未開始。
+  baseline 已在 `exp/slam-fastlio2` 建立；下一個里程碑是 confidence contract
+  與 backend-specific extractor，PPO observation/training 尚未開始。
 - 不為每個「SLAM 方法 × PPO 版本」建立永久 branch。先在共用介面 branch
   定義 backend selector、共同輸出與 benchmark，再合併穩定的中性基礎回
   `main`。每個侵入性較大的 SLAM 實作可暫時使用獨立實驗 branch，例如
@@ -148,7 +152,7 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
 - FAST-LIO2 native launch 現在提供 project-owned calibration overrides：
   `fastlio_blind`、`fastlio_point_filter_num`、`fastlio_max_iteration`、
   `fastlio_filter_size_surf`、`fastlio_filter_size_map` 與
-  `fastlio_cube_side_length`；預設仍是 `0.5/2/4/0.5/0.5/200`。這些只覆寫
+  `fastlio_cube_side_length`；目前預設為 `0.5/2/4/0.3/0.6/1000`。這些只覆寫
   estimator parameter，不加入 project-based deskew；`scan_line`、timestamp
   unit、scan rate、ring／per-point time 與 LiDAR-IMU 外參仍固定為 sensor
   contract。`point_filter_num=2` 目前只是 calibration 起點，不是完成 holdout
@@ -163,7 +167,8 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   通過但左右 `wz=2.0` 失敗；`map=0.4` 通過側移／混合／曲線與右轉，但左轉
   yaw 1.202°、急切換 ATE 0.1068 m 仍失敗；`map=0.58` 左右 yaw 通過但側移
   失敗。stride、iteration、blind、IMU covariance 的額外 sweep 也沒有消除
-  此方向／運動型態取捨，因此目前沒有可誠實鎖定的單一 static candidate。
+  此方向／運動型態取捨；這是後來確認使用錯誤 `cube=200` 時的歷史結果，
+  不再代表目前 `cube=1000` baseline 的 gate 狀態。
 - 同一批 bag 的 LIO-SAM native control 全部通過（前進 ATE 0.0596 m、側移
   0.0430 m、混合 0.0509 m、曲線 0.0576 m、左右 yaw 0.0278／0.0298 m），
   將問題定位在 FAST-LIO2 estimator／live transport，而非 evaluator 或 source
@@ -209,6 +214,72 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   timeout。這是目前最強的虛擬 LiDAR contract 證據；該 staggered run 另有
   simulation IMU parity `0.021747 > 0.01` 的獨立 validation failure，不能誤記
   成 FAST-LIO2 crash。
+- 2026-08-07 已在 commit `7b9994d` 固定上述虛擬 LiDAR contract，並以同一
+  `sensor_order + staggered`、native deskew 做新的 estimator sweep；測試產物在
+  `logs/fastlio2_tuning/calibration_20260807`。`surf=.3/map=.5` 的
+  `forward_3_0` ATE `0.055355 m` 通過，但 `combined` ATE `0.132723 m` 失敗，
+  證明不能用單一平移包選參數。
+- 在 `surf=.3` 的 combined sweep 中，`map=.52` ATE `0.168713 m`、`.58`
+  ATE `0.285471 m` 失敗；`.55` ATE `0.086879 m` 與 `.60` ATE `0.086487 m`
+  通過，顯示 voxel leaf 對場景幾何有離散效應，不是單調的「越大越穩」。
+  `.3/.55` 的 curve 通過（ATE `0.086864 m`），但 lateral/warehouse 分別為
+  `0.149239/0.161322 m`，仍失敗。
+- 固定 `map=.6` 的 surface sweep 沒有消除 holdout 取捨：
+  `surf=.35` 讓 lateral ATE `0.119846 m`，但 warehouse ATE `0.138215 m`；
+  `point_filter_num=1` 與 `max_iteration=5` 也沒有改善兩個 holdout。補測
+  `map=.4/.45` 時 warehouse 最佳約 `0.102514 m`，但 lateral 仍為
+  `0.143658 m`。這只證明固定 `cube=200` 的該輪沒有可鎖定 candidate；後續
+  cube audit 已取代這個暫時結論。
+- `surf=.3/map=.6`、stride 2、iteration 4 的 live
+  `yaw_stress_left_2_0`（IMU bridge parity atol `0.03` 僅用於隔離 bridge gate）
+  完成 27.1 s、1,334 筆 policy odometry、0 termination/truncation，classification
+  `no_instability`；這是 cube audit 前的 live-safe calibration evidence，不等於
+  新的 `cube=1000` 預設已完成 live qualification。
+- 2026-08-07 將 FAST-LIO2 原生 `common.time_sync_en` 與
+  `common.time_offset_lidar_to_imu` 暴露到 project-owned native/replay/live
+  launch；預設仍為 `false/0.0`，不改 sensor contract，也不加入 project
+  deskew。固定 `.3/.6`、`sensor_order+staggered` 的 offset holdout 中，
+  `lateral_1_5` 在 `-10/-5/+5/+10 ms` 分別為 `0.1544/0.1484/0.1299/0.1285 m`，
+  `warehouse_final_turn` 為 `0.1030/0.1068/0.1470/0.1907 m`；沒有通用 offset，
+  且 offset `-10 ms` 仍未將 warehouse 穩定壓到 `0.1 m` gate。
+- 重新驗證舊的 azimuth time 假設後，`time_source=azimuth` 在 forward/lateral/
+  combined/curve 分別得到 `0.0893/0.0946/0.0897/0.0922 m`，但
+  `warehouse_final_turn` 惡化至 `0.1803 m`；因此 azimuth 只保留 diagnostic，
+  正式實驗仍用 `sensor_order`。在 `sensor_order` 下對 `map=.46-.50`、
+  `surf=.25-.35` 做 holdout fine sweep；在兩個難場景局部最佳為
+  `surf=.3,map=.49` 的 lateral `0.1027 m`／warehouse `0.0798 m`，以及
+  `surf=.25,map=.49` 的 lateral `0.0874 m`／warehouse `0.1034 m`，但完整驗證
+  `surf=.3,map=.49` 的 forward/combined/curve 又分別失敗於
+  `0.1469/0.1924/0.1914 m`。`.33-.345` 也沒有找到兩者同時通過的組合，
+  `.345` warehouse replay 還觸發 180 s timeout。這是固定 `cube=200` 時的
+  voxel 結論；後續 `cube=1000` 已使五個 translation ATE gate 全數通過。
+- `surf=.3/map=.6` diagnostics 沒有發現 transport 掉包：raw/adapted scan gap
+  median 約 `0.1 s`、odometry receipt age median 約 `40 ms`。FAST selected
+  effective point 數 lateral 為 p10 `3602`、min `1434`，warehouse 為 p10
+  `1831`、min `889`；後者退化較明顯，支持把 effective support 納入未來
+  confidence，但這些 backend-specific counts 尚不能直接當成跨 backend 比例。
+
+- 2026-08-07 完整 parameter audit 發現先前漏測官方 Ouster launch 的
+  `cube_side_length=1000`；專案原本 `cube=200`、`det_range=100` 會讓 estimator
+  從初始化開始就反覆進入 local-map 搬移條件。固定 corrected contract、native
+  deskew、stride 2、iteration 4、`surf=.3/map=.6`，只改 cube 為 1000 後，
+  forward/lateral/combined/curve/warehouse ATE 分別為
+  `0.065137/0.099775/0.041051/0.023490/0.045948 m`，五包全數通過；project-owned
+  FAST launch 預設已統一為 `surf=.3/map=.6/cube=1000`，尚待這組預設的 live
+  長時間急轉 qualification。
+- 官方 Ouster YAML 的 `blind=2.0` 在新 cube baseline 上補測後，lateral/
+  warehouse ATE 為 `0.099982/0.045983 m`，和專案 `blind=.5` 的
+  `0.099775/0.045948 m` 幾乎相同，因此保留 `.5`。官方 `det_range=200` 在此
+  fork 只參與 local-map 搬移、不裁切 scan；對 cube=1000、約 10 m 的 replay
+  不會改變 estimator。其餘 scan line 32、stride 2、iteration 4 與 LiDAR–IMU
+  extrinsic 都是依虛擬硬體與既有 sweep 有意選定，不是遺漏的官方 default。
+- 同批 bag header stamp 實測 IMU `200.000 Hz`、LiDAR `10.000 Hz`，不是 sensor
+  頻率不足；lateral/warehouse 每個 raw scan 都可重建完整 1024 column 與
+  `0..99.902344 ms` point-time span。`/lidar/points_raw` 實際只有 `x/y/z`，不是
+  官方 Ouster driver output；adapter 重建 Ouster-like 欄位與 column time，且為
+  配合 candidate 的 scan-end inference 使用 `staggered` packing。因此仍缺真實
+  UDP packet、sensor/PTP clock、packet loss、measurement-id 與硬體回波特性，
+  不可把目前 topic 描述成「完全等同正式 Ouster driver」。
 
 ## Formal policy
 
@@ -854,23 +925,24 @@ Checkpoint：
 
 依目前 gate 順序：
 
-1. Loop-closure gate、FAST-LIO2 持久化、direct launch 與一般第二終端 DDS
-   discovery 已完成；official per-backend RViz selector 也已加入。
-2. FAST-LIO2 的 live continuous `/cmd_vel` `wz=2.0` 已完成虛擬 LiDAR
-   point-order A/B；下一個 gate 是在 `sensor_order + staggered` 固定後，量測
-   queue／throughput／timestamp age，並完成 estimator parameter calibration；
-   不得先加入 project-based deskew。
-3. FAST-LIO2 calibration 必須用獨立 calibration bags 選定
-   `point_filter_num`、range／voxel／iteration 與 covariance 等參數，再以
-   holdout bags 驗證並鎖定 config。現有 `point_filter_num=2` 只是候選，不是
-   正式 baseline；調參前不做 LIO-SAM／FAST-LIO2 final comparison。
-4. FAST-LIO2 通過 live／replay／holdout gate 後，才重做 paired backend
-   comparison、point-density matrix 與 effective support／latency／queue
-   analysis。
-5. 資料與 calibration label 足夠後，定義 backend-neutral
-   `/slam_confidence [0,1]`、`/slam_tracking_valid`、timestamp／age contract；
-   不可直接把不同 backend 的 raw residual 當成可比較 confidence。
-6. confidence gate 通過後，才建立 `feature/ppo-slam-confidence`，先做
+1. FAST-LIO2 的虛擬 Ouster input contract、estimator calibration 與五個主要
+   replay holdout 已完成；branch baseline 固定為 native deskew、
+   `sensor_order+staggered`、stride 2、iteration 4、`surf=.3/map=.6/cube=1000`。
+   不加入 project-based deskew。
+2. 新 baseline 尚需補做 live 長時間左右 `wz=2.0` 多圈與 lateral 驗證；這不
+   阻擋 confidence interface／instrumentation，但在鎖定正式 confidence threshold
+   與開始 PPO training 前必須完成。
+3. 下一個實作里程碑是定義 backend-neutral confidence contract：
+   `/slam_confidence` 是 `[0,1]` 連續品質、`/slam_tracking_valid` 是可否使用 pose
+   的 hard gate、confidence age 是 source timestamp 距現在的時間，另保留
+   degradation reason。stale high-confidence 必須仍判為 invalid。
+4. FAST-LIO2 與 LIO-SAM 各自建立 extractor／calibration；不同 backend 的 raw
+   effective-point count、feature count、residual 或 covariance 不可直接互比。
+   GT `/odom` 只可作 offline label，不能進 deployment confidence 或 policy
+   observation。先驗證 confidence 是否能在 ATE／yaw error 或 tracking failure
+   前下降，並量測 false positive、lead time 與 calibration。
+5. confidence contract／offline gate 通過後，才建立
+   `feature/ppo-slam-confidence`，先做
    simulated confidence perturbation 與 PPO observation parity，再進行
    confidence-conditioned training 與 locomotion matrix；實體 ANYmal-D
    sensor extrinsic、
@@ -878,7 +950,7 @@ Checkpoint：
    必須維持 sensor-local `base_link` semantics。目前尚無 driver／SDK、實測
    extrinsic 或 safety controller；準備清單見
    `docs/physical_anymal_d_integration.md`。
-7. Recovery v0.5 model2402/model2420 維持實驗候選封存；除非正式 bridge
+6. Recovery v0.5 model2402/model2420 維持實驗候選封存；除非正式 bridge
    gate 再次出現 policy failure，否則不切換 policy、不立即續訓。
 
 GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfactual；
@@ -886,12 +958,13 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
 
 ## Next diagnostic gate
 
-目前已正式分類為 ROS 2 Bridge IMU angular-velocity frame bug；可控 reset gate、
-三次 map-quality benchmark、修正版 12/12 loop-closure matrix，以及 FAST-LIO2
-point-order 的 replay/live A/B 都已完成各自的初步 gate。下一步不是 confidence
-或 PPO，而是以 `sensor_order + staggered` 固定 input contract 後完成 FAST-LIO2
-estimator parameter calibration 與 holdout validation。Recovery v0.4.0 仍是正式
-policy。
+可控 reset gate、三次 LIO-SAM map-quality benchmark、修正版 12/12 loop-closure
+matrix，以及 FAST-LIO2 input contract、parameter audit 與五個主要 translation
+ATE holdout 都已完成。下一步是先定義 confidence／tracking-valid／age contract，
+再做 backend-specific instrumentation 與 offline calibration；不是直接開始 PPO
+training。FAST-LIO2 新 baseline 的 live 多圈 yaw／lateral qualification 可與介面
+實作並行，但必須在正式 threshold 與 training dataset 凍結前完成。Recovery
+v0.4.0 仍是正式 policy。
 
 Recovery v0.5 的 `curve_3_0_left_0_5 <= 0.2` 仍是未來 candidate 的必要
 gate，但目前不是 bridge fix 發布前置條件，也不可用未通過的 model2420

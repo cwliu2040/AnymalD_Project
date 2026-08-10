@@ -105,10 +105,10 @@ CycloneDDS/Iceoryx 下約 4.36 MB 就會超過預設 4 MB chunk 並使 node abor
 
 ### FAST-LIO2 native calibration knobs
 
-目前 native launch 已把演算法參數做成可重現的 launch override，預設值仍是
-branch 上的候選基線：`fastlio_point_filter_num=2`、
-`fastlio_max_iteration=4`、`fastlio_filter_size_surf=0.5`、
-`fastlio_filter_size_map=0.5`、`fastlio_cube_side_length=200.0`、
+目前 native launch 已把演算法參數做成可重現的 launch override；完成 cube
+audit 後的 branch baseline 為：`fastlio_point_filter_num=2`、
+`fastlio_max_iteration=4`、`fastlio_filter_size_surf=0.3`、
+`fastlio_filter_size_map=0.6`、`fastlio_cube_side_length=1000.0`、
 `fastlio_blind=0.5`；replay/native 另可覆寫 `fastlio_acc_cov`、
 `fastlio_gyr_cov`、`fastlio_b_acc_cov`、`fastlio_b_gyr_cov`。例如只改 input
 stride：
@@ -127,6 +127,12 @@ per-point time、IMU-LiDAR 外參、topic 與 frame 仍由 sensor contract 固�
 拿來當調參旋鈕。每次校準只改一個參數或一組預先登記的 candidate，先在
 calibration bag 觀察 crash／queue／throughput 與 tracking，再用未參與選參數的
 holdout bag 鎖定結果。
+
+native/replay/benchmark launch 另外提供 FAST-LIO2 原生時間參數
+`fastlio_time_sync_en`（預設 `false`）與
+`fastlio_time_offset_lidar_to_imu`（預設 `0.0` 秒）。兩者只作用在 upstream
+FAST-LIO2 的 LiDAR/IMU timestamp，不能拿來代替 per-point time 或 project
+deskew；模擬器兩個 topic 共用 `/clock` 時，先保持預設值。
 
 目前的 smoke sanity check（不是正式 qualification）結果如下：
 
@@ -239,6 +245,114 @@ replay／live entry points 現在預設 `sensor_order + staggered`，而
 `destaggered` 僅保留為明確的 diagnostic A/B。這個 input ordering 結論已通過
 package build、adapter tests 與 live A/B，但 estimator 的 voxel／iteration／
 covariance 尚未完成跨運動 holdout，因此不代表 FAST-LIO2 已經整體調好。
+
+### Corrected-contract estimator sweep（2026-08-07）
+
+以下結果全部固定 `sensor_order + staggered`、scan-end header correction、
+native deskew、`point_filter_num=2`、`max_iteration=4`，只改 estimator
+參數；產物位於 `logs/fastlio2_tuning/calibration_20260807`。目前的
+`surf=.3/map=.6` replay baseline 為：`forward_3_0` ATE `0.061231 m`、
+`combined` `0.086487 m`、curve `0.084040 m`（均通過），但 lateral
+`0.124354 m` 與 warehouse `0.125046 m` 仍失敗。
+
+| Candidate | Calibration / holdout evidence | 判讀 |
+| --- | --- | --- |
+| `surf=.3,map=.5` | forward `0.055355 m` 通過；combined `0.132723 m` 失敗 | 不能用單一平移包選參數 |
+| `surf=.3,map=.55` | combined `0.086879 m`、curve `0.086864 m` 通過；lateral/warehouse `0.149239/0.161322 m` 失敗 | 不如 `.3/.6` 的 holdout 折衷 |
+| `surf=.3,map=.6` | smooth/combined/curve 通過；lateral/warehouse 略超 gate | 目前最好的 static/live baseline，尚未 qualification |
+| `surf=.35,map=.6` | lateral `0.119846 m`，warehouse `0.138215 m` | lateral 略改善、warehouse 變差 |
+| `surf=.3,map=.45` | warehouse `0.102514 m`，lateral `0.143658 m` | high-yaw 較好、側移較差 |
+
+`point_filter_num=1` 與 `max_iteration=5` 在 lateral／warehouse 也沒有消除
+失敗。因此現階段不是「只能接受一組參數」的結論，而是已觀察到 static
+parameter 的 Pareto trade-off；下一步應先確認 timestamp age、effective-point
+coverage、queue 與 IMU/LiDAR offset，再決定保守 static profile 或 motion-aware
+profile。不得因這輪結果直接修改正式 YAML，也不先加入 project-based deskew。
+
+`.3/.6` 的 live `yaw_stress_left_2_0` candidate run（bridge IMU parity atol
+`0.03` 僅用於隔離 bridge gate）完成 27.1 s、1,334 policy odometry records、
+0 termination/truncation、`no_instability`；這只確認 live stability，不取代
+replay accuracy holdout。
+
+### 時間與 voxel fine sweep（2026-08-07）
+
+以下均固定 `sensor_order+staggered`、scan-end header correction、native deskew、
+stride 2、iteration 4。原生 LiDAR–IMU offset 的 `±5/±10 ms` 網格沒有形成
+共同候選；`-10 ms` 雖讓 warehouse ATE 到 `0.1030 m`，卻讓 lateral 到
+`0.1544 m`。把虛擬 RTX time 改成 azimuth 也不是解法：平移／側移約
+`0.089–0.094 m`，但 warehouse 為 `0.1803 m`。
+
+在 `map=.49` 細掃 surface 時，結果呈現離散 Pareto trade-off：
+
+| `surf` | `lateral_1_5` ATE | `warehouse_final_turn` ATE | 判讀 |
+| ---: | ---: | ---: | --- |
+| `.25` | `0.0874 m`（pass） | `0.1034 m`（fail） | 側移較好、急轉差一點 |
+| `.325` | `0.1052 m`（fail） | `0.0558 m`（pass） | 急轉最好、側移略超 gate |
+| `.35` | `0.0912 m`（pass） | `0.1496 m`（fail） | 不可泛化 |
+| `.33–.345` | `0.1060–0.1297 m` | `0.0651–0.0961 m`（`.345` timeout） | 沒有共同 pass |
+
+因此這輪仍不修改正式 YAML，也不把接近 gate 的單場最佳當成 baseline；下一個
+診斷應是 effective-point coverage、timestamp age/queue 與 live throughput，
+再決定保守 static profile 或明確的 motion-aware profile。任何 confidence/PPO
+整合都必須等 backend gate 定義完成後才開始。
+
+補做 `surf=.3/map=.49` 的完整運動集合驗證後，forward/combined/curve 的 ATE
+分別為 `0.1469/0.1924/0.1914 m`，所以它只能算兩個難場景的局部折衷，不能
+取代目前較保守的 `.3/.6` live-safe candidate。`.3/.6` 的 diagnostics 也沒有
+觀察到 transport 掉包：raw/adapted scan gap median 約 `0.1 s`、odometry receipt
+age median 約 `40 ms`；但 FAST selected effective points 的 lateral p10/min
+為 `3602/1434`，warehouse 為 `1831/889`，顯示 warehouse 的 tracking support
+較容易退化。這項 count 只作 FAST-LIO2 自身的 calibration/confidence feature，
+不可直接宣稱與 LIO-SAM 的 feature count 同義。
+
+### FAST-LIO2 完整參數與 sensor audit（2026-08-07）
+
+逐項對照 candidate source、官方 `mapping_ouster64.launch.py` 與專案 launch 後，
+確認先前 estimator sweep 漏掉了 `cube_side_length`：專案一直使用 candidate
+source fallback 的 `200 m`，官方 Ouster launch 則明確使用 `1000 m`。FAST-LIO2
+以 `1.5 * det_range` 判斷 local-map 邊界；專案 `det_range=100 m` 時，`200 m`
+cube 的初始中心到任一邊界只有 `100 m`，所以 mapping 一開始就會反覆觸發
+local-map 搬移。這是參數組合錯誤，不是 upstream 演算法限制。
+
+固定 corrected input contract、native deskew、stride 2、iteration 4、
+`surf=.3/map=.6`，只把 cube 改為官方的 `1000 m` 後，五個 replay 全部通過：
+
+| Bag | cube `200 m` ATE | cube `1000 m` ATE | LIO-SAM control ATE |
+| --- | ---: | ---: | ---: |
+| `forward_3_0` | `0.061231 m` | `0.065137 m` | `0.0596 m` |
+| `lateral_1_5` | `0.124354 m` | `0.099775 m` | `0.0430 m` |
+| `combined` | `0.086487 m` | `0.041051 m` | `0.0509 m` |
+| `curve_3_0_left_0_5` | `0.084040 m` | `0.023490 m` | `0.0576 m` |
+| `warehouse_final_turn` | `0.125046 m` | `0.045948 m` | `0.046419 m` |
+
+FAST-LIO2 的 translation 已可作比較 baseline；lateral 仍明顯弱於 LIO-SAM，
+而五場景 yaw RMSE 也仍比 LIO-SAM 高，不能宣稱全面優於 LIO-SAM。project-owned
+FAST-LIO2 launch 預設因此統一為 `surf=.3/map=.6/cube=1000`，但尚需用這組預設
+補做 live 長時間急轉，才升格為 qualification baseline。結果保存在
+`logs/fastlio2_tuning/cube1000_20260807`。
+
+bag header stamp 實測 IMU 為 `200.000 Hz`、LiDAR 為 `10.000 Hz`，間隔穩定；
+metadata 顯示的較低 wall-clock rate 是 Isaac Sim real-time factor，而不是 sensor
+掉頻。lateral 與 warehouse 每一個 raw scan 都能重建完整 `1024` 個 column，
+relative point time 均覆蓋 `0..99.902344 ms`，所以這兩包沒有 column reconstruction
+缺口。
+
+官方 Ouster YAML 的 `blind=2.0 m` 也在 cube=1000 baseline 上做了 isolate A/B：
+lateral 為 `0.099982 m`（`blind=.5` 為 `0.099775 m`），warehouse 為
+`0.045983 m`（`blind=.5` 為 `0.045948 m`），差異可忽略，因此保留較適合低位
+32-channel 虛擬 LiDAR 的 `.5 m`。官方 `det_range=200 m` 與專案 `100 m` 的差異
+在此 fork 只參與 local-map 搬移，並不裁切 scan；cube=1000 且路徑僅約 10 m 時
+不會改變本輪估測。`scan_line=32`、stride 2、iteration 4 與非零 extrinsic 則是
+針對 32-channel sensor、運算負載及實際安裝位置的有意設定，不是漏填官方值。
+
+`/lidar/points_raw` 不是官方 Ouster driver topic：bag 實測它是 unorganized
+`x/y/z`、12-byte point，沒有 `t/ring/range/reflectivity/ambient/intensity`；專案
+adapter 才依 RTX OS1 profile 重建 32-ring、1024-column timing 並發布 Ouster-like
+32-byte PointCloud2。FAST-LIO2 目前刻意使用 `staggered` packing，以避開 candidate
+Ouster handler 在排序前使用 `points.back().t` 推定 scan end 的問題；這也不同於
+官方 driver 可選的 native/destagger 行為。故目前只能稱為「符合 FAST-LIO2 所需
+欄位與時序的虛擬 Ouster adapter」，不可稱為實際官方 driver output；它不包含
+真實 UDP packet、sensor/PTP clock、packet loss、measurement-id 或硬體回波資料。
 
 FAST-LIO2 的 `map -> camera_init`、`body -> base_link` 與機械
 `base_link -> lidar_link` 只為共同 RViz 視圖提供 frame chain，不是 odometry

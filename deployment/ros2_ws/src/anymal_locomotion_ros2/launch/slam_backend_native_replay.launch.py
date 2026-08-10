@@ -105,6 +105,10 @@ def _backend_actions(context, *_) -> list[object]:
     fastlio_time_direction = LaunchConfiguration("fastlio_time_direction")
     fastlio_time_source = LaunchConfiguration("fastlio_time_source")
     fastlio_point_order = LaunchConfiguration("fastlio_point_order")
+    fastlio_time_sync_en = LaunchConfiguration("fastlio_time_sync_en")
+    fastlio_time_offset_lidar_to_imu = LaunchConfiguration(
+        "fastlio_time_offset_lidar_to_imu"
+    )
     fastlio_raw_stamp_is_scan_end = LaunchConfiguration(
         "fastlio_raw_stamp_is_scan_end"
     )
@@ -201,6 +205,8 @@ def _backend_actions(context, *_) -> list[object]:
                 "time_direction": fastlio_time_direction,
                 "time_source": fastlio_time_source,
                 "point_order": fastlio_point_order,
+                "time_sync_en": fastlio_time_sync_en,
+                "time_offset_lidar_to_imu": fastlio_time_offset_lidar_to_imu,
                 "raw_stamp_is_scan_end": fastlio_raw_stamp_is_scan_end,
             }.items(),
         )
@@ -347,13 +353,13 @@ def generate_launch_description() -> LaunchDescription:
                 "fastlio_max_iteration", default_value="4"
             ),
             DeclareLaunchArgument(
-                "fastlio_filter_size_surf", default_value="0.5"
+                "fastlio_filter_size_surf", default_value="0.3"
             ),
             DeclareLaunchArgument(
-                "fastlio_filter_size_map", default_value="0.5"
+                "fastlio_filter_size_map", default_value="0.6"
             ),
             DeclareLaunchArgument(
-                "fastlio_cube_side_length", default_value="200.0"
+                "fastlio_cube_side_length", default_value="1000.0"
             ),
             DeclareLaunchArgument(
                 "fastlio_acc_cov", default_value="0.1"
@@ -375,6 +381,12 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "fastlio_point_order", default_value="staggered"
+            ),
+            DeclareLaunchArgument(
+                "fastlio_time_sync_en", default_value="false"
+            ),
+            DeclareLaunchArgument(
+                "fastlio_time_offset_lidar_to_imu", default_value="0.0"
             ),
             DeclareLaunchArgument(
                 "fastlio_raw_stamp_is_scan_end", default_value="true"
