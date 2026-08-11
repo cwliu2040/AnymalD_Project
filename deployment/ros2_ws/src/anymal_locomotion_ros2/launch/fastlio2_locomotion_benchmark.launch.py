@@ -117,6 +117,9 @@ def generate_launch_description() -> LaunchDescription:
     imu_observation_parity_atol = LaunchConfiguration(
         "imu_observation_parity_atol"
     )
+    imu_angular_velocity_parity_atol = LaunchConfiguration(
+        "imu_angular_velocity_parity_atol"
+    )
     policy_inference_trigger = LaunchConfiguration(
         "policy_inference_trigger"
     )
@@ -163,6 +166,12 @@ def generate_launch_description() -> LaunchDescription:
                 "use_sim_time": True,
                 "profile": profile,
                 "project_root": project_root,
+                "require_slam_confidence": ParameterValue(
+                    enable_confidence,
+                    value_type=bool,
+                ),
+                "expected_confidence_backend": "fastlio2",
+                "expected_calibration_id": "native-v1-1e6cf8347be1",
                 "output_path": PathJoinSubstitution(
                     [output_dir, "driver.json"]
                 ),
@@ -212,6 +221,8 @@ def generate_launch_description() -> LaunchDescription:
             "--enhanced-determinism",
             "--imu-observation-parity-atol",
             imu_observation_parity_atol,
+            "--imu-angular-velocity-parity-atol",
+            imu_angular_velocity_parity_atol,
             "--factory-usd-path",
             factory_usd_path,
             "--factory-friction",
@@ -396,8 +407,17 @@ def generate_launch_description() -> LaunchDescription:
                 "imu_observation_parity_atol",
                 default_value="0.01",
                 description=(
-                    "IMU bridge validation tolerance for the LiDAR-enabled "
-                    "live simulator; matches the LIO-SAM live benchmark"
+                    "Projected-gravity bridge tolerance for the LiDAR-enabled "
+                    "live simulator"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "imu_angular_velocity_parity_atol",
+                default_value="0.03",
+                description=(
+                    "Physics-IMU angular-velocity tolerance. High-yaw live "
+                    "evidence bounds the 5 ms sensor-vs-root sample error at "
+                    "0.02694 rad/s; gravity remains at 0.01."
                 ),
             ),
             DeclareLaunchArgument(

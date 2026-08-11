@@ -124,8 +124,8 @@ def _pose_disagreement(mapping_pose: PoseTuple, incremental_pose: PoseTuple) -> 
 class LiosamConfidenceExtractor(Node):
     """Assemble public LIO-SAM signals into the common fail-closed schema."""
 
-    def __init__(self) -> None:
-        super().__init__("anymal_liosam_confidence_extractor")
+    def __init__(self, **node_kwargs: object) -> None:
+        super().__init__("anymal_liosam_confidence_extractor", **node_kwargs)
         self.declare_parameter(
             "native_odometry_topic",
             "/lio_sam/mapping/odometry",

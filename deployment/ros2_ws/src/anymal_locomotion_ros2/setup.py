@@ -26,6 +26,7 @@ setup(
     maintainer="CW Liu",
     maintainer_email="133053216+cwliu2040@users.noreply.github.com",
     description="External ROS 2 runtime for the ANYmal-D locomotion policy.",
+    url="https://github.com/cwliu2040/AnymalD_Project",
     license="BSD-3-Clause",
     entry_points={
         "console_scripts": [
@@ -38,6 +39,7 @@ setup(
             "fastlio_odom_adapter = anymal_locomotion_ros2.fastlio_odom_adapter:main",
             "fastlio_confidence_extractor = anymal_locomotion_ros2.fastlio_confidence_node:main",
             "fastlio_confidence_fault_validation = anymal_locomotion_ros2.fastlio_confidence_fault_validation:main",
+            "slam_confidence_dds_fault_validation = anymal_locomotion_ros2.slam_confidence_dds_fault_validation:main",
             "liosam_odom_adapter = anymal_locomotion_ros2.liosam_odom_adapter:main",
             "liosam_confidence_extractor = anymal_locomotion_ros2.liosam_confidence_node:main",
             "policy_node = anymal_locomotion_ros2.policy_node:main",

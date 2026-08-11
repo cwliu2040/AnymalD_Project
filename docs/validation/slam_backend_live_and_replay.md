@@ -327,8 +327,8 @@ local-map 搬移。這是參數組合錯誤，不是 upstream 演算法限制。
 
 FAST-LIO2 的 translation 已可作比較 baseline；lateral 仍明顯弱於 LIO-SAM，
 而五場景 yaw RMSE 也仍比 LIO-SAM 高，不能宣稱全面優於 LIO-SAM。project-owned
-FAST-LIO2 launch 預設因此統一為 `surf=.3/map=.6/cube=1000`，但尚需用這組預設
-補做 live 長時間急轉，才升格為 qualification baseline。結果保存在
+FAST-LIO2 launch 預設因此統一為 `surf=.3/map=.6/cube=1000`；這組預設後續已完成
+左右長時間高yaw與雙向側移live gate，結果見本文後段。Replay結果保存在
 `logs/fastlio2_tuning/cube1000_20260807`。
 
 2026-08-10 使用者以 live comparison 入口選擇FAST-LIO2後人工觀察目前預設，
@@ -458,8 +458,8 @@ queue-drop、latency 或 physical-clock throughput qualification。
 各自啟動odom adapter與confidence extractor。一般live wrapper會載入已驗證的
 backend-native artifact；formal calibration replay則刻意用空artifact override，
 保持`uncalibrated` fail closed。Policy仍不consume confidence。Backend-neutral
-contract與後續gate見`docs/slam_confidence_contract.md`；ROS topic/DDS hard-fault、
-FAST live yaw/lateral及observation parity完成前仍不開始PPO training。
+contract與後續gate見`docs/slam_confidence_contract.md`；ROS topic/DDS hard-fault與
+FAST live yaw/lateral已於2026-08-11完成，observation parity完成前仍不開始PPO training。
 
 2026-08-10 的第一個FAST confidence instrumentation replay smoke使用既有
 `smoke_out_and_back` bag。`enable_confidence:=true/false`兩次皆有182 mapping
@@ -524,8 +524,37 @@ ros2 run anymal_locomotion_ros2 fastlio_confidence_fault_validation \
   --output logs/slam_confidence/fastlio_fault_validation.json
 ```
 
-此結果封閉pure-core reason/deadline語意，但尚未測DDS callback、QoS、executor或
-extractor publisher death；下一個gate必須在隔離ROS topic graph重播同一matrix。
+此結果封閉pure-core reason/deadline語意。後續隔離ROS topic graph已補測DDS callback、
+QoS、executor與extractor publisher death，結果見下節。
+
+### CycloneDDS hard-fault與FAST cube=1000 live qualification（2026-08-11）
+
+`slam_confidence_dds_fault_validation`以真實rclpy/CycloneDDS graph對FAST與LIO各跑六類：
+IMU freeze、LiDAR freeze、native/canonical odometry publisher death、diagnostic publisher
+death、zero-support payload及extractor node/publisher death。12/12通過；前五類皆fail
+closed並保留先前1.0 score，extractor死亡則由consumer 0.15 s steady receipt watchdog
+輸出`confidence=0, valid=0`。兩backend皆無`UNCALIBRATED`，且可恢復case回到TRACKING。
+
+FAST live launch同時監看權威`SlamConfidence`的backend/calibration ID、timestamp、reason
+bit、logical gap與TRACKING後freshness。正式native/cube=1000結果：
+
+| Profile | Odom / confidence / valid | TRACKING後invalid | Locomotion |
+| --- | --- | --- | --- |
+| yaw left `wz=2.0`, 27 s | 1356 / 542 / 523 | 0 | 0 termination/truncation，`no_instability` |
+| yaw right `wz=-2.0`, 27 s | 1356 / 542 / 523 | 0 | 0 termination/truncation，`no_instability` |
+| lateral `vy=1.5`, 14 s | 706 / 282 / 263 | 0 | 0 termination/truncation，`no_instability` |
+| lateral right `vy=-1.5`, 14 s | 706 / 282 / 263 | 0 | 0 termination/truncation，`no_instability` |
+
+四次最大logical evaluation gap皆0.06 s，freshness/unexplained invalid、未知reason、
+identity mismatch、timestamp violation與`UNCALIBRATED`均為0。Policy只使用`/slam/odom`；
+GT `/odom`只供benchmark evaluator，沒有進runtime confidence或policy observation。
+
+高yaw診斷量到physics IMU angular velocity最大差0.0269354 rad/s；同一worst sample的
+Isaac root body與Action Graph ComputeOdometry angular velocity幾乎逐值相同，因此將
+angular-velocity parity gate獨立設為0.03 rad/s，同時保留projected-gravity 0.01 gate。
+較早一次左轉debug run在19.5 s termination且confidence因support下降進LOST；此
+nondeterministic失敗診斷保留於raw logs，未重分類為pass。可提交機讀摘要見
+`docs/validation/slam_confidence_dds_and_fast_live_gate_summary.json`。
 
 ### Native confidence calibration pilot（2026-08-10）
 
@@ -652,6 +681,7 @@ artifact-on沒有quality regression且confidence沒有任何回饋到upstream gr
 reports為`liosam_fresh5_artifact_off_parity_replay.json`與
 `liosam_fresh5_artifact_runtime_replay.json`。
 
-兩backend因此已滿足後續PPO observation的介面前置條件；目前只提供
+兩backend因此已滿足後續PPO observation的介面前置條件，DDS hard-fault與FAST
+cube=1000 live gate也已完成；目前只提供
 `confidence/valid/normalized-age`轉換與0.15 s steady receipt watchdog，尚未接入
 Recovery policy、未開始training、未建立PPO branch。

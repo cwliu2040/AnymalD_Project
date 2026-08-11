@@ -4,7 +4,9 @@
 native-only calibration pipeline已凍結。FAST-LIO2 的24-group與LIO-SAM 的40-group
 strict group-split calibration皆已通過最後未看過的holdout，兩者都已安裝可發布
 非零分數的fingerprinted artifact。FAST 的13-case synthetic hard-fault matrix與
-兩backend的實際replay source assembly、artifact ID／score／timestamp驗證也已通過。
+兩backend的實際replay source assembly、artifact ID／score／timestamp驗證也已通過；
+兩backend在CycloneDDS隔離graph上的12-case topic/publisher fault qualification，及
+FAST cube=1000的左右`wz=2.0`與雙向lateral live qualification亦已通過。
 共同介面已達後續PPO observation的資料前置條件；本階段仍不修改SLAM演算法、
 不把confidence接入正式Recovery v0.4.0 policy，也不開始PPO。
 
@@ -423,6 +425,31 @@ trajectory的frame不得跨split；threshold與calibration ID在final holdout前
 
 Gate輸出必須逐 backend列event count、capture groups、threshold/calibration ID、
 false positive、lead time、AUROC/calibration與所有failures，不只報平均ATE。
+
+### ROS 2/DDS hard-fault與FAST live gate（2026-08-11）
+
+安裝型`slam_confidence_dds_fault_validation`在兩個隔離topic namespace直接建立
+rclpy publisher、extractor與subscriber，實際使用`rmw_cyclonedds_cpp`。FAST與LIO
+各測IMU/LiDAR freeze、odometry publisher death、diagnostic publisher death、
+zero-support payload及extractor publisher death，共12/12通過。前五類皆在對應
+freshness/join期限加一個20 Hz排程容差內fail closed；可用score為1.0時仍令tracking
+invalid。Extractor死亡後consumer的0.15 s steady receipt watchdog將adapter中的
+confidence與valid強制為0。可恢復case均回到TRACKING；FAST zero-support因凍結artifact
+的causal support memory約需8.5 s恢復，屬預期模型歷史而非DDS失效。
+
+FAST正式live gate使用native deskew、cube=1000、正式Recovery v0.4.0 model1450，
+policy feedback為`/slam/odom`，GT `/odom`沒有進runtime confidence或policy observation。
+左右`wz=2.0`各27 s與左右`vy=1.5`各14 s共四個profile皆完成：共1,648筆confidence
+snapshot，進入TRACKING後0次invalid、0 freshness loss、0 unknown reason/ID/timestamp/
+UNCALIBRATED violation；四次locomotion均0 termination、0 truncation、0 non-finite且
+分類為`no_instability`。高yaw IMU parity將projected gravity容差維持0.01，僅angular
+velocity依量測上限0.0269354 rad/s分離為0.03 rad/s；root-body與Action Graph odometry
+angular velocity彼此一致，差異來自獨立取樣的physics IMU時序。
+
+一次較早的`yaw_left_2_0_imu_debug`在19.5 s termination，confidence隨support下降由
+TRACKING轉DEGRADED/LOST；此失敗診斷保留、不算入正式pass run。機讀摘要為
+`docs/validation/slam_confidence_dds_and_fast_live_gate_summary.json`，詳細raw reports
+位於ignored `logs/slam_confidence/`。
 
 ## 先前 pilot 停止點（已由下節取代）
 

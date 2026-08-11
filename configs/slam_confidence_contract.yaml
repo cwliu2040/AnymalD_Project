@@ -7,11 +7,11 @@ implementation_status:
   artifact_provenance_schema: 2
   fastlio2_extractor: calibrated_native_v2_artifact_installed
   fastlio2_synthetic_fault_matrix: 13_cases_passed
-  fastlio2_ros_topic_fault_injection: pending
+  fastlio2_ros_topic_fault_injection: six_cases_cyclonedds_passed
   offline_label_core: implemented
   liosam_extractor: calibrated_native_v3_artifact_installed
   liosam_replay_source_assembly: project_and_native_deskew_passed
-  liosam_ros_topic_fault_injection: pending
+  liosam_ros_topic_fault_injection: six_cases_cyclonedds_passed
   calibration_capture_pipeline: implemented_native_only
   calibration_estimator: logistic_isotonic_causal_support_motion_guard
   calibration_pilot: superseded_by_gradual_v2
@@ -19,6 +19,7 @@ implementation_status:
   liosam_final_holdout: passed_40_independent_events_fresh5
   runtime_nonzero_artifact: fastlio2_and_liosam
   probability_cluster_bootstrap: 2000_draws_seed_0_passed
+  fastlio2_cube1000_live_yaw_lateral: four_profiles_passed
 
 topics:
   authoritative: /slam_confidence

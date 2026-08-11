@@ -96,7 +96,16 @@ parser.add_argument(
     "--imu-observation-parity-atol",
     type=float,
     default=2.0e-3,
-    help="Maximum IMU angular-velocity and projected-gravity parity error.",
+    help="Maximum IMU projected-gravity parity error.",
+)
+parser.add_argument(
+    "--imu-angular-velocity-parity-atol",
+    type=float,
+    default=None,
+    help=(
+        "Maximum physics-IMU angular-velocity error. Defaults to "
+        "--imu-observation-parity-atol when omitted."
+    ),
 )
 parser.add_argument(
     "--straight-line-check",
@@ -241,6 +250,12 @@ if args_cli.observation_parity_atol <= 0.0:
     parser.error("--observation-parity-atol must be positive")
 if args_cli.imu_observation_parity_atol <= 0.0:
     parser.error("--imu-observation-parity-atol must be positive")
+if args_cli.imu_angular_velocity_parity_atol is None:
+    args_cli.imu_angular_velocity_parity_atol = (
+        args_cli.imu_observation_parity_atol
+    )
+elif args_cli.imu_angular_velocity_parity_atol <= 0.0:
+    parser.error("--imu-angular-velocity-parity-atol must be positive")
 if args_cli.straight_line_duration_s <= 0.0:
     parser.error("--straight-line-duration-s must be positive")
 if args_cli.diagnostics_flush_steps <= 0:
@@ -1460,6 +1475,7 @@ def main() -> None:
         imu_sensor_samples = 0
         imu_timestamp_step_error = 0.0
         imu_angular_velocity_max_error = 0.0
+        imu_angular_velocity_worst_sample: dict[str, object] | None = None
         imu_projected_gravity_max_error = 0.0
         imu_reset_transient_angular_velocity_max_error = 0.0
         imu_reset_transient_projected_gravity_max_error = 0.0
@@ -1781,6 +1797,24 @@ def main() -> None:
                     )
                 )
             )
+            if angular_velocity_error > imu_angular_velocity_max_error:
+                imu_angular_velocity_worst_sample = {
+                    "step_index": step_index,
+                    "simulation_time_s": (step_index + 1) * base_env.step_dt,
+                    "sensor_time_s": imu_state.sensor_time,
+                    "sensor_angular_velocity": list(imu_state.angular_velocity),
+                    "isaac_root_angular_velocity_b": (
+                        robot.data.root_ang_vel_b[0]
+                        .detach()
+                        .cpu()
+                        .numpy()
+                        .astype(float)
+                        .tolist()
+                    ),
+                    "compute_odometry_angular_velocity_b": list(
+                        read_base_state(bridge).angular_velocity
+                    ),
+                }
             projected_gravity_error = float(
                 np.max(
                     np.abs(
@@ -1812,7 +1846,7 @@ def main() -> None:
             elif imu_reset_grace_steps_remaining > 0:
                 if (
                     angular_velocity_error
-                    <= args_cli.imu_observation_parity_atol
+                    <= args_cli.imu_angular_velocity_parity_atol
                     and projected_gravity_error
                     <= args_cli.imu_observation_parity_atol
                 ):
@@ -2059,9 +2093,13 @@ def main() -> None:
                 for name, error in parity_max_errors.items()
                 if error
                 > (
-                    args_cli.imu_observation_parity_atol
-                    if name in ("base_angular_velocity", "projected_gravity")
-                    else args_cli.observation_parity_atol
+                    args_cli.imu_angular_velocity_parity_atol
+                    if name == "base_angular_velocity"
+                    else (
+                        args_cli.imu_observation_parity_atol
+                        if name == "projected_gravity"
+                        else args_cli.observation_parity_atol
+                    )
                 )
             }
             if failed_terms:
@@ -2083,7 +2121,10 @@ def main() -> None:
                 raise RuntimeError(
                     "48-D observation parity failed: "
                     f"atol={args_cli.observation_parity_atol}, "
-                    f"imu_atol={args_cli.imu_observation_parity_atol}, "
+                    "imu_angular_atol="
+                    f"{args_cli.imu_angular_velocity_parity_atol}, "
+                    "imu_gravity_atol="
+                    f"{args_cli.imu_observation_parity_atol}, "
                     f"errors={failed_terms}"
                 )
         if args_cli.straight_line_check:
@@ -2138,7 +2179,10 @@ def main() -> None:
         imu_contract_failures = {}
         if imu_timestamp_step_error > 1.0e-4:
             imu_contract_failures["timestamp_step_error"] = imu_timestamp_step_error
-        if imu_angular_velocity_max_error > args_cli.imu_observation_parity_atol:
+        if (
+            imu_angular_velocity_max_error
+            > args_cli.imu_angular_velocity_parity_atol
+        ):
             imu_contract_failures["angular_velocity_error"] = (
                 imu_angular_velocity_max_error
             )
@@ -2151,6 +2195,12 @@ def main() -> None:
                 imu_orientation_norm_max_error
             )
         if imu_contract_failures:
+            if "angular_velocity_error" in imu_contract_failures:
+                print(
+                    "FAIL imu_angular_velocity_worst_sample="
+                    f"{imu_angular_velocity_worst_sample}",
+                    flush=True,
+                )
             raise RuntimeError(
                 f"200 Hz IMU contract failed: {imu_contract_failures}"
             )

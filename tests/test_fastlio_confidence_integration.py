@@ -160,6 +160,10 @@ def test_package_installs_config_and_console_entry_point() -> None:
         "fastlio_confidence_fault_validation = "
         "anymal_locomotion_ros2.fastlio_confidence_fault_validation:main"
     ) in setup_source
+    assert (
+        "slam_confidence_dds_fault_validation = "
+        "anymal_locomotion_ros2.slam_confidence_dds_fault_validation:main"
+    ) in setup_source
 
 
 def test_benchmark_gates_effect_output_and_extractor_together() -> None:

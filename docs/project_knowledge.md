@@ -16,17 +16,15 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   `benchmark/slam-liosam-fastlio2` 與目前實驗 branch 都以
   `fee8c9f 建立 SLAM backend 比較基線` 為共同基礎。
 - `exp/slam-fastlio2` 已建立並 push 到 `origin/exp/slam-fastlio2`。目前 Git
-  baseline 是 `cb9e3e2 校準 FAST-LIO2 並建立 confidence 前置基線`；其 parent
+  baseline 是 `b8b8c89 完成雙後端 SLAM confidence 校準與執行期契約`；其先前
+  baseline `cb9e3e2 校準 FAST-LIO2 並建立 confidence 前置基線`與parent
   `7b9994d 修正虛擬雷射輸入與 FAST-LIO2 校準流程` 固定虛擬 Ouster input
   contract。更早的
   `649fcda 實作：加入原地旋轉 SLAM 壓力測試` 包含 yaw-stress、renderer、
-  effective-support diagnostics 與 pilot tooling。目前 root worktree 有尚未
-  commit 的 confidence milestone：共同 interface/state machine/offline label core、
-  FAST-LIO2與LIO-SAM exact-stamp assembler／extractor、native-only gradual capture、
-  calibration/holdout tooling、兩份正式artifact、PPO-ready observation adapter、YAML、
-  文件、deterministic tests，以及 deployment build-closure／launch 調整。v1 wire
-  schema 已凍結，兩backend calibration與artifact-enabled runtime replay均已通過；
-  尚未接入Recovery policy或開始PPO training。
+  effective-support diagnostics 與 pilot tooling。目前 root worktree 有尚未commit的
+  後續deployment gate變更：兩backend真實DDS fault qualification、FAST live confidence
+  monitor、IMU parity gate分離、四個cube=1000 live profiles及文件。Confidence milestone
+  已在`b8b8c89`提交並push；尚未接入Recovery policy或開始PPO training。
   root `build/`、`install/`、`log/`
   是未追蹤／ignored runtime 產物，不納入提交，其他 `logs/`／`outputs/` 實驗
   產物也不提交。
@@ -399,8 +397,8 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   deskew、stride 2、iteration 4、`surf=.3/map=.6`，只改 cube 為 1000 後，
   forward/lateral/combined/curve/warehouse ATE 分別為
   `0.065137/0.099775/0.041051/0.023490/0.045948 m`，五包全數通過；project-owned
-  FAST launch 預設已統一為 `surf=.3/map=.6/cube=1000`，尚待這組預設的 live
-  長時間急轉 qualification。
+  FAST launch 預設已統一為 `surf=.3/map=.6/cube=1000`；2026-08-11後續正式
+  live左右長時間急轉與雙向lateral qualification皆已通過。
 - 2026-08-10 使用者以 live backend comparison 入口選擇FAST-LIO2，人工觀察
   目前cube=1000預設點雲，回報「沒什麼裂圖、調整看起來不錯」，並同意繼續
   confidence工作。這是user-observed visual smoke，沒有保存本次量化log、左右
@@ -1048,7 +1046,7 @@ Checkpoint：
   enabled cases 全部符合 required／forbidden expectation；open-backward
   三個 run 均為 0 marker／0 edge。disabled control reports 沿用同一 sensor
   bags 的既有 passed reports，因 loop closure 明確 disabled，不使用搜尋門檻。
-- `exp/slam-fastlio2` 目前 Python pytest 為 `265 passed, 3 skipped`；confidence
+- `exp/slam-fastlio2` 目前 Python pytest 為 `267 passed, 3 skipped`；confidence
   tests涵蓋共同state machine、兩backend exact-stamp assembler、offline label core、
   contract、launch/config integration與FAST 13-case synthetic fault matrix。3個skip
   仍是Isaac Sim runtime unavailable的既有external-project tests。
@@ -1063,8 +1061,11 @@ Checkpoint：
   timestamp/frame fault同tickinvalid。missing scan可在新完整bundle後經0.50 s
   recovery回TRACKING；除clock reset清source/score外，所有case都證明約0.90的
   stale-high score仍會invalid。Report是runtime artifact
-  `logs/slam_confidence/fastlio_fault_validation_installed_20260810.json`，不提交；
-  ROS topic/DDS fault injection仍待做。
+  `logs/slam_confidence/fastlio_fault_validation_installed_20260810.json`，不提交。
+  後續實際CycloneDDS qualification已補FAST與LIO各6類共12/12通過，包括topic
+  freeze、publisher death、zero-support payload及extractor死亡的0.15 s receipt
+  watchdog；機讀摘要為
+  `docs/validation/slam_confidence_dds_and_fast_live_gate_summary.json`。
 - Generated `SlamConfidence` serialization round-trip為80 bytes，超過32-byte的
   `backend_id`會被ROS generated type拒絕。localhost-only runtime smoke實際收到
   `backend_id=fastlio2`、`calibration_id=uncalibrated`、score 0、valid false、
@@ -1086,18 +1087,19 @@ Checkpoint：
    replay holdout 已完成；branch baseline 固定為 native deskew、
    `sensor_order+staggered`、stride 2、iteration 4、`surf=.3/map=.6/cube=1000`。
    不加入 project-based deskew。
-2. 新 baseline 尚需補做 live 長時間左右 `wz=2.0` 多圈與 lateral 驗證；這不
-   阻擋 confidence interface／instrumentation，但在鎖定正式 confidence threshold
-   與開始 PPO training 前必須完成。
+2. 新 baseline的live左右`wz=2.0`與雙向lateral共四個正式profile已通過；進入
+   TRACKING後0 invalid，locomotion皆0 termination/truncation。一次較早左轉debug run
+   在19.5 s跌倒且confidence隨support下降進LOST，保留為失敗診斷，不計入pass。
 3. Backend-neutral confidence v1 wire schema與共同state/time語意已freeze；兩個
    backend extractor、offline label、strict capture-group calibration/fresh holdout與
    artifact-enabled runtime replay都已通過。正式artifact為FAST
    `slam_confidence_fastlio2_native_v2.json`（`native-v1-1e6cf8347be1`）及LIO
    `slam_confidence_liosam_native_v3.json`（`native-v1-edc098b0bd98`）。Stale
    high-confidence仍必須invalid；不同backend raw count不可直接互比，GT `/odom`
-   仍只可作offline label。兩backend的隔離ROS topic/DDS hard-fault injection仍待完成。
-4. 建立`feature/ppo-slam-confidence`前，先補FAST新baseline的live多圈yaw/lateral、
-   freeze正式artifact provenance，並把PPO observation adapter接入training config做
+   仍只可作offline label。兩backend隔離CycloneDDS graph的12-case hard-fault
+   qualification已全數通過。
+4. 建立`feature/ppo-slam-confidence`前，freeze正式artifact provenance，並把PPO
+   observation adapter接入training config做
    observation dimension/name/order/parity測試；不得把GT或backend-specific raw feature
    放入PPO observation。
 5. 上述前置完成後才建立
@@ -1121,9 +1123,10 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
 matrix，以及 FAST-LIO2 input contract、parameter audit 與五個主要 translation
 ATE holdout 都已完成。Confidence／tracking-valid／age v1 wire schema、兩backend
 extractor、native-only calibration/fresh holdout、正式artifact與runtime replay均已
-完成；兩backend目前都具備PPO-ready資料介面。下一步是補FAST-LIO2新baseline的
-live多圈yaw／lateral qualification、兩backend ROS topic/DDS hard-fault injection，
-並在獨立`feature/ppo-slam-confidence` branch接入observation、完成parity後才開始
+完成；兩backend目前都具備PPO-ready資料介面。FAST-LIO2新baseline的live多圈yaw／
+lateral qualification與兩backend ROS topic/DDS hard-fault injection均已完成。下一步
+是在獨立`feature/ppo-slam-confidence` branch接入observation、完成dimension/name/order/
+export parity後才開始
 confidence-conditioned training。Recovery v0.4.0仍是正式policy。
 
 Recovery v0.5 的 `curve_3_0_left_0_5 <= 0.2` 仍是未來 candidate 的必要

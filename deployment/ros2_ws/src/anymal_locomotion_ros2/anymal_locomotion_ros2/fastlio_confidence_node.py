@@ -100,8 +100,8 @@ def _point_cloud_layout_valid(message: PointCloud2) -> bool:
 class FastlioConfidenceExtractor(Node):
     """Assemble deployable FAST-LIO2 signals and publish a fail-closed snapshot."""
 
-    def __init__(self) -> None:
-        super().__init__("anymal_fastlio_confidence_extractor")
+    def __init__(self, **node_kwargs: object) -> None:
+        super().__init__("anymal_fastlio_confidence_extractor", **node_kwargs)
         self.declare_parameter("native_odometry_topic", "/Odometry")
         self.declare_parameter("canonical_odometry_topic", "/slam/odom")
         self.declare_parameter("effective_points_topic", "/cloud_effected")
