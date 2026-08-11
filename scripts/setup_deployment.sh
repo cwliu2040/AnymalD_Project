@@ -215,6 +215,8 @@ git -C "${FAST_LIO_ROOT}" apply --reverse --check "${FAST_LIO_DIAGNOSTICS_PATCH}
 
 [[ -f "${ROS_WORKSPACE}/install/setup.bash" ]] \
     || fail "ROS workspace is not built"
+[[ -f "${ROS_WORKSPACE}/install/anymal_locomotion_interfaces/share/anymal_locomotion_interfaces/msg/SlamConfidence.msg" ]] \
+    || fail "SLAM confidence interface package is not built"
 PYTHONPATH="${PYTHON_VENDOR}${PYTHONPATH:+:${PYTHONPATH}}" \
     python3 -c "from onnx.reference import ReferenceEvaluator" \
     || fail "Project-local ONNX runtime is unavailable"

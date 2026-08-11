@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import math
 import sys
 from collections import deque
@@ -382,7 +383,10 @@ class MotionDeskewNode(Node):
         translation: np.ndarray | None,
     ) -> None:
         status = Vector3Stamped()
-        status.header = message.header
+        # ROS Python messages retain nested-object identity on assignment.
+        # Keep the CloudInfo/lidar frame contract intact when encoding the
+        # project deskew status in the diagnostic header frame_id.
+        status.header = copy.deepcopy(message.header)
         if translation is None:
             status.header.frame_id = "motion_deskew_unavailable"
             status.vector.x = math.nan

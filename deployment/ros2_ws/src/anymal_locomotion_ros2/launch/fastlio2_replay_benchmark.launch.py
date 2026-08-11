@@ -25,6 +25,7 @@ from launch.substitutions import (
     PathJoinSubstitution,
 )
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def _find_project_root(package_share: Path) -> Path:
@@ -84,12 +85,23 @@ def generate_launch_description() -> LaunchDescription:
     bag_rate = LaunchConfiguration("bag_rate")
     rmw_implementation = LaunchConfiguration("rmw_implementation")
     point_density = LaunchConfiguration("point_density")
+    point_density_profile = LaunchConfiguration("point_density_profile")
+    point_density_min = LaunchConfiguration("point_density_min")
     time_source = LaunchConfiguration("time_source")
     point_order = LaunchConfiguration("point_order")
     time_sync_en = LaunchConfiguration("time_sync_en")
     time_offset_lidar_to_imu = LaunchConfiguration(
         "time_offset_lidar_to_imu"
     )
+    enable_confidence = LaunchConfiguration("enable_confidence")
+    confidence_dataset_path = LaunchConfiguration("confidence_dataset_path")
+    confidence_artifact_path = LaunchConfiguration(
+        "confidence_artifact_path"
+    )
+    expected_confidence_calibration_id = LaunchConfiguration(
+        "expected_confidence_calibration_id"
+    )
+    capture_group = LaunchConfiguration("capture_group")
 
     fastlio = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -109,10 +121,14 @@ def generate_launch_description() -> LaunchDescription:
             "filter_size_map": filter_size_map,
             "cube_side_length": cube_side_length,
             "point_density": point_density,
+            "point_density_profile": point_density_profile,
+            "point_density_min": point_density_min,
             "time_source": time_source,
             "point_order": point_order,
             "time_sync_en": time_sync_en,
             "time_offset_lidar_to_imu": time_offset_lidar_to_imu,
+            "enable_confidence": enable_confidence,
+            "confidence_artifact_path": confidence_artifact_path,
         }.items(),
     )
     evaluator = Node(
@@ -125,8 +141,20 @@ def generate_launch_description() -> LaunchDescription:
                 "project_root": project_root,
                 "output_path": output_path,
                 "estimate_topic": "/slam/odom",
+                "backend_kind": "fastlio2",
+                "adapted_cloud_topic": "/fastlio/points",
                 "ground_truth_sensor_offset_xyz": [0.0, 0.0, 0.0],
                 "loop_closure_expectation": "forbidden",
+                "confidence_expected": ParameterValue(
+                    enable_confidence,
+                    value_type=bool,
+                ),
+                "confidence_dataset_path": confidence_dataset_path,
+                "expected_confidence_calibration_id": (
+                    expected_confidence_calibration_id
+                ),
+                "capture_group": capture_group,
+                "deskew_mode": "native",
             }
         ],
         output="screen",
@@ -223,6 +251,12 @@ def generate_launch_description() -> LaunchDescription:
                 description="Deterministic fraction of raw scan points retained",
             ),
             DeclareLaunchArgument(
+                "point_density_profile",
+                default_value="constant",
+                description="constant or causal gradual_v1 replay degradation",
+            ),
+            DeclareLaunchArgument("point_density_min", default_value="0.01"),
+            DeclareLaunchArgument(
                 "time_source",
                 default_value="sensor_order",
                 description="Official reconstructed Ouster column time",
@@ -242,6 +276,38 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="0.0",
                 description="Native LiDAR-to-IMU timestamp offset in seconds",
             ),
+            DeclareLaunchArgument(
+                "enable_confidence",
+                default_value="false",
+                description=(
+                    "Enable uncalibrated confidence instrumentation; false "
+                    "preserves the qualified replay baseline"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "confidence_dataset_path",
+                default_value="",
+                description=(
+                    "Offline labelled dataset output; requires confidence "
+                    "instrumentation and a capture_group"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "confidence_artifact_path",
+                default_value="",
+                description=(
+                    "Optional installed confidence artifact; formal calibration "
+                    "capture leaves this empty"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "expected_confidence_calibration_id",
+                default_value="uncalibrated",
+                description=(
+                    "Exact artifact ID expected by replay evaluation"
+                ),
+            ),
+            DeclareLaunchArgument("capture_group", default_value=""),
             SetEnvironmentVariable("ROS_DOMAIN_ID", ros_domain_id),
             SetEnvironmentVariable("ROS_LOCALHOST_ONLY", "1"),
             SetEnvironmentVariable(

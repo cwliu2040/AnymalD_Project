@@ -1,0 +1,41 @@
+anymal_liosam_confidence_extractor:
+  ros__parameters:
+    # Launch resolves the validated native-v3 artifact. An empty override is
+    # retained for fail-closed calibration capture. GT /odom is absent here.
+    calibration_artifact_path: ""
+    native_odometry_topic: /lio_sam/mapping/odometry
+    canonical_odometry_topic: /slam/odom
+    incremental_odometry_topic: /lio_sam/mapping/odometry_incremental
+    feature_cloud_info_topic: /lio_sam/feature/cloud_info
+    lidar_input_topic: /lio_sam/points
+    imu_topic: /imu/data
+    motion_deskew_topic: /lio_sam/deskew/motion
+    motion_deskew_required: false
+    confidence_topic: /slam_confidence
+    tracking_valid_topic: /slam_tracking_valid
+
+    publish_rate_hz: 20.0
+    source_timeout_s: 0.50
+    odometry_timeout_s: 0.50
+    lidar_timeout_s: 0.50
+    imu_timeout_s: 0.05
+    future_stamp_tolerance_s: 0.005
+
+    # Feature CloudInfo precedes map optimization. This provisional grace is
+    # deliberately larger than FAST's cross-publisher reorder grace and must
+    # be qualified from replay receipt traces before calibration is frozen.
+    diagnostic_match_timeout_s: 0.20
+    max_pending_bundles: 64
+
+    # Upstream scan2MapOptimization runs only when post-voxel counts are
+    # strictly greater than these minima. Published pre-voxel counts at or
+    # below a minimum are therefore a conservative definite hard failure.
+    edge_feature_min_valid: 10
+    surface_feature_min_valid: 100
+
+    degrade_below: 0.45
+    degrade_dwell_s: 0.10
+    invalidate_below: 0.25
+    invalidate_dwell_s: 0.20
+    recover_at_or_above: 0.55
+    recover_dwell_s: 0.50

@@ -331,6 +331,10 @@ FAST-LIO2 launch 預設因此統一為 `surf=.3/map=.6/cube=1000`，但尚需用
 補做 live 長時間急轉，才升格為 qualification baseline。結果保存在
 `logs/fastlio2_tuning/cube1000_20260807`。
 
+2026-08-10 使用者以 live comparison 入口選擇FAST-LIO2後人工觀察目前預設，
+回報沒有明顯裂圖、可繼續 confidence工作。這次沒有保存量化log，也不是左右
+多圈`wz=2.0`與lateral qualification；只記為user-observed visual smoke。
+
 bag header stamp 實測 IMU 為 `200.000 Hz`、LiDAR 為 `10.000 Hz`，間隔穩定；
 metadata 顯示的較低 wall-clock rate 是 Isaac Sim real-time factor，而不是 sensor
 掉頻。lateral 與 warehouse 每一個 raw scan 都能重建完整 `1024` 個 column，
@@ -374,8 +378,8 @@ ros2 launch anymal_locomotion_ros2 slam_backend_compare.launch.py \
 ```
 
 `point_density` 預設 `1.0`。只有在受控退化實驗才改成 `0.75`、`0.50` 或
-`0.25`。目前 `point_filter_num: 2` 仍只是校準起點，不是已完成 holdout
-validation 的正式 baseline。
+`0.25`。目前 `point_filter_num: 2` 是cube=1000五包translation replay baseline
+的一部分，但不代表yaw/lateral live gate已完成。
 
 ## 同一份 raw bag 的 native replay
 
@@ -447,5 +451,207 @@ evaluator JSON。evaluator 明確回報的 backend/scene failure 會標為
 
 這些 launch 會驗證可啟動、topic/frame contract、raw point coverage、native
 odometry 與 simulator/rosbag 時間對齊；它們不宣稱完成多場景、退化點雲、
-queue-drop、latency 或 physical-clock throughput qualification。confidence
-與 PPO observation 尚未在這個入口中加入。
+queue-drop、latency 或 physical-clock throughput qualification。
+`slam_backend_compare.launch.py` 刻意維持native視覺比較、沒有canonical
+`/slam/odom`，所以不在此入口啟動confidence。LIO與FAST project replay wrapper
+都可明確加`enable_confidence:=true`；FAST此時才同時開`/cloud_effected`，兩者
+各自啟動odom adapter與confidence extractor。一般live wrapper會載入已驗證的
+backend-native artifact；formal calibration replay則刻意用空artifact override，
+保持`uncalibrated` fail closed。Policy仍不consume confidence。Backend-neutral
+contract與後續gate見`docs/slam_confidence_contract.md`；ROS topic/DDS hard-fault、
+FAST live yaw/lateral及observation parity完成前仍不開始PPO training。
+
+2026-08-10 的第一個FAST confidence instrumentation replay smoke使用既有
+`smoke_out_and_back` bag。`enable_confidence:=true/false`兩次皆有182 mapping
+samples、ATE `0.05350850477000207 m`、yaw RMSE
+`0.19210894896032746 deg`；兩份evaluator JSON byte-for-byte相同，SHA-256皆為
+`efbac866e183de08f95bc98ec8d717c1359a81b88c17b4c6fa03636089e02add`。On run
+另實際觀察到source-valid confidence，age `0.160097654 s`，reason只有
+`UNCALIBRATED`。這證明此單bag的join與estimator parity smoke，尚未涵蓋不同
+replay rate、dropout/NaN/zero-support fault injection、physical overhead或score
+calibration。
+
+### LIO-SAM confidence instrumentation replay
+
+2026-08-10 以同一份 `smoke_out_and_back` bag驗證project motion deskew與native
+deskew兩種arm。兩個confidence-on run都收到371筆snapshot，其中363筆有完整
+source；backend/calibration固定為`liosam/uncalibrated`，tracking-valid筆數為0，
+evaluation/source stamp violation皆為0。Project arm的native mapping、canonical
+body odom、incremental odom、feature `CloudInfo`與motion status各有182筆且182筆
+exact-match；native arm不要求motion status，其他四個source也各有182筆。
+
+Project arm第一次replay暴露一個project-owned adapter bug：motion deskew status
+直接重用`CloudInfo.header`，改status frame_id時連帶把feature message改成
+`motion_deskew_applied/unavailable`，健康source因此被判`BACKEND_ERROR`。改成
+deep-copy header後，feature frame保持`lidar_link`，完整source assembly通過；
+沒有修改nested LIO-SAM。
+
+Project arm confidence-on為182 mapping samples、ATE `0.0368126861 m`、yaw RMSE
+`0.0984778069 deg`；confidence-off同為182 samples、ATE `0.0366413784 m`、yaw
+RMSE `0.0981068103 deg`。差約0.17 mm與0.00037 deg，未見instrumentation造成
+軌跡退化。Native arm confidence-on亦通過，ATE `0.0506361 m`、yaw RMSE
+`0.156756 deg`。Artifacts位於`logs/slam_confidence/`且不提交；這只完成單bag
+source coverage與trajectory parity smoke，尚未完成不同rate、DDS fault injection、
+physical overhead或calibration。
+
+### FAST confidence synthetic hard-fault matrix
+
+2026-08-10 新增安裝型
+`fastlio_confidence_fault_validation`，直接驅動與runtime extractor相同的
+ROS-independent assembler/state-machine core，在固定20 Hz logical grid上執行
+13個可重播case：
+
+- odometry/source、LiDAR與IMU freeze；
+- `/cloud_effected` missing、zero support與malformed layout；
+- future、regressing與conflicting-duplicate timestamp；
+- native NaN、frame contract violation與clock backward；
+- 掉一張effect diagnostic後由較新完整bundle觸發一次性`SIGNAL_MISSING`，再完成
+  0.50 s recovery。
+
+13/13 case通過。IMU freeze在其50 ms期限偵測；odom與LiDAR freeze皆在fault
+onset後250 ms偵測；effect missing因50 ms grace與20 Hz邊界在100 ms偵測；
+zero/numeric/timestamp/frame fault在同tick invalid。除clock reset依contract清除
+source/score外，其餘case在wire-float32 confidence約0.90時仍進`LOST`，驗證
+stale-high不會保持valid。安裝後的report位於runtime artifact
+`logs/slam_confidence/fastlio_fault_validation_installed_20260810.json`，不提交。
+
+執行方式：
+
+```bash
+source /home/ros/anymal_locomotion/deployment/ros2_ws/install/setup.bash
+ros2 run anymal_locomotion_ros2 fastlio_confidence_fault_validation \
+  --project-root /home/ros/anymal_locomotion \
+  --output logs/slam_confidence/fastlio_fault_validation.json
+```
+
+此結果封閉pure-core reason/deadline語意，但尚未測DDS callback、QoS、executor或
+extractor publisher death；下一個gate必須在隔離ROS topic graph重播同一matrix。
+
+### Native confidence calibration pilot（2026-08-10）
+
+正式capture入口已固定native deskew：`lio_sam.launch.py`、bringup、比較入口與
+replay calibration預設都不啟動project motion deskew；project arm只保留顯式
+相容性測試。Evaluator可用`confidence_dataset_path`與`capture_group`輸出20 Hz
+raw-feature/GT-label sidecar，若deskew profile不是native會直接拒絕。
+
+Pilot使用五個既有source bags及`1.00/0.50/0.10` uniform point-density variants，
+FAST與LIO-SAM各15個native replays。來源bag未修改；derived JSON位於
+`logs/slam_confidence/calibration_pilot/`，屬runtime artifacts不提交。Split依
+source capture group固定為2 train、1 probability-calibration、1
+threshold-validation、1 final-holdout，
+同一bag的density variants不跨split。每backend有4,392個labelled rows、4,272個
+source-valid complete-feature rows，source signal coverage為100%。
+
+Offline label過程修正了一項重要語意：`0.30 s odometry outage`是source停止推進
+的時間，不是`evaluation_stamp-source_stamp`的固定pipeline latency。後者保留為
+`confidence_age`；否則LIO-SAM正常約0.34 s pipeline age會被錯標為全程outage。
+既有pilot derived files只在驗證max source-advance gap小於0.30 s後升級到schema 2。
+
+Holdout結果：FAST probability-calibration group只有單一label class，因此isotonic
+fit被拒絕，未計算或偷看final-holdout score metrics；holdout label inventory是819
+frames、failure prevalence 38.22%、3 events。LIO-SAM holdout AUROC 0.9632、Brier
+0.2502、ECE 0.3498、1 event、recall 100%、median lead 0.50 s、healthy false-low
+75.26%。LIO未過false-low；兩者都未達至少20 independent gradual events。Pilot
+report均為`pilot_blocked`且`runtime_activation_authorized=false`，沒有產生artifact。
+
+### Native gradual-v2 calibration／fresh holdout（2026-08-11）
+
+本節取代上面的pilot狀態。`configs/slam_confidence_gradual_capture_manifest.yaml`
+登錄不同motion direction、loop pattern與獨立run的source bags；每份bag只產生一個
+causal gradual event，source DB3 SHA互異。同一source沒有複製variant冒充獨立
+event。Profile為native deskew、sensor-order-preserving ring/FOV/density loss：
+3.0 s healthy、1.5 s ramp、4.5 s最低0.1% support、3.0 s recovery。
+
+Capture runner：
+
+```bash
+source deployment/ros2_ws/install/setup.bash
+python3 scripts/validation/run_slam_confidence_gradual_matrix.py \
+  --backend fastlio2 --domain-id 76
+python3 scripts/validation/run_slam_confidence_gradual_matrix.py \
+  --backend liosam --domain-id 75
+```
+
+Runner固定`ROS_LOCALHOST_ONLY=1`、各backend獨立domain、native deskew，並驗證每個
+replay及dataset確實產生。Dataset schema 2記錄20 Hz evaluation tick、source stamp/
+age、當下可deployment的backend signals、causal odometry motion與offline-only
+H=0.5 s GT label；extractor沒有GT subscription。Abrupt stale/reset/numeric rows從
+gradual model fit與predictive metrics排除，仍由hard validity matrix評分。
+
+FAST第一組holdout因healthy false-low 25.73%失敗後已retire。固定
+`configs/slam_confidence_fastlio2_split.yaml`並加入四個未看過的model1450 run01
+bags後，24個independent groups的新final holdout結果如下：
+
+- 1,198 frames、4 capture groups、4 gradual events、failure prevalence 72.95%；
+- AUROC 0.973621、Brier 0.036620、ECE 0.078300；
+- `C<0.45` event recall 100%、median lead 0.199999996 s；
+- healthy false-low 0.049383；
+- support hard-gate advance recall 100%、median lead 0.499999989 s。
+
+FAST全部契約gate通過，runtime artifact為
+`slam_confidence_fastlio2_native_v2.json`，目前ID為
+`native-v1-1e6cf8347be1`。已安裝artifact的native gradual-v2 replay收到332筆訊息，
+artifact ID正確、score範圍0..1且有6個不同float32值、72筆tracking-valid、0筆
+`UNCALIBRATED`；同版本artifact-off/on的166 scans、162 mapping samples與trajectory
+metrics逐欄完全相同。該bag刻意降到0.1% support，因此整段trajectory quality gate失敗是
+預期fault outcome，不是confidence instrumentation造成的parity regression。
+Runtime reports為`logs/slam_confidence/gradual_v2/fastlio2_artifact_runtime_replay.json`
+與`fastlio2_artifact_off_parity_replay.json`。
+
+後續review沒有重訓或refit estimator；只用凍結artifact重算final holdout的
+capture-cluster bootstrap。FAST AUROC/Brier/ECE 95% CI為
+`[0.971146,0.977826]`／`[0.022120,0.046795]`／`[0.039236,0.108795]`。
+
+LIO-SAM第二組完全未看過的model1450 run02 final holdout只執行一次，沒有用它調參：
+
+- 1,198 frames、4 capture groups、4 gradual events、failure prevalence 72.79%；
+- AUROC 0.991663、Brier 0.013104、ECE 0.007010；
+- `C<0.45` event recall 25%、median lead 0.299999994 s；
+- healthy false-low 0.012270；
+- support hard-gate advance recall 75%、median lead 0.299999994 s。
+
+雖然ranking/calibration/false-low良好，predictive event recall與support advance recall
+均未達契約，所以report是`pilot_blocked`、`runtime_activation_authorized=false`；
+此結果已保留為retired evidence。一次性final report為
+`logs/slam_confidence/gradual_v2/liosam_fresh2_final_holdout_report.json`。
+
+0.20 s gate使用1 us tolerance吸收rosbag timestamp數奈秒量化。FAST全部gate通過並
+產生`slam_confidence_fastlio2_native_v2.json`；artifact具input/config/code SHA與
+fingerprint，offline loader在fresh holdout觀察到score範圍0..1且7個distinct values。
+
+LIO後續保持每輪group isolation：run03 final雖AUROC 0.96857、Brier 0.02303、
+ECE 0.02382、recall 100%、lead 0.40 s，但healthy false-low 8.0%而retire；fresh4
+final為1,822 frames、AUROC 0.95001、false-low 1.653%、recall 50%、lead 0.20 s，
+亦retire。兩輪都完整保留為development history，沒有改寫成pass。
+
+使用retired evidence加入可部署的causal-v3 guard：backend-local support ratio/trend、
+0.2 s projection、support memory、motion-conditioned exposure，以及只在mapping odom
+可用時套用的degeneracy soft cap。模型與threshold先在train/calibration/
+threshold-validation凍結，development gate為AUROC 0.978737、recall 80%、lead
+0.20 s、healthy false-low 4.090%。最後才capture四個內容SHA全新且未曾用於任何fit或
+threshold決策的yaw groups；同一source只屬一個group，全部native deskew。
+
+Fresh5 final holdout只作一次決策性評估：2,132 frames、4 capture groups、5 gradual
+events、failure prevalence 85.084%；AUROC 0.986497、Brier 0.021720、ECE 0.034500；
+`C<0.45` event recall 100%、median lead 0.199999996 s、healthy false-low 3.145%；
+support hard-gate advance recall 100%、median lead 0.299999994 s。所有契約gate通過，
+report為`logs/slam_confidence/gradual_v2/liosam_fresh5_final_holdout_report.json`，
+artifact為`slam_confidence_liosam_native_v3.json`，ID
+`native-v1-edc098b0bd98`。
+
+同一凍結artifact的capture-cluster bootstrap AUROC/Brier/ECE 95% CI為
+`[0.964587,0.999549]`／`[0.011747,0.031692]`／`[0.033189,0.037379]`；可提交摘要
+見`docs/validation/slam_confidence_final_holdout_summary.json`。
+
+Artifact-enabled LIO native replay收到552筆confidence，11個distinct float32 score、
+243筆tracking-valid、0筆`UNCALIBRATED`，artifact ID、backend ID與source/evaluation
+timestamp均正確；沒有motion-deskew stream，extractor source code與runtime config皆無
+GT `/odom` subscription。Artifact-off/on使用相同276 scans、273 mapping samples與完全
+相同GT path；LIO-SAM的估計trajectory因thread scheduling不具bitwise determinism，但
+artifact-on沒有quality regression且confidence沒有任何回饋到upstream graph。Runtime
+reports為`liosam_fresh5_artifact_off_parity_replay.json`與
+`liosam_fresh5_artifact_runtime_replay.json`。
+
+兩backend因此已滿足後續PPO observation的介面前置條件；目前只提供
+`confidence/valid/normalized-age`轉換與0.15 s steady receipt watchdog，尚未接入
+Recovery policy、未開始training、未建立PPO branch。

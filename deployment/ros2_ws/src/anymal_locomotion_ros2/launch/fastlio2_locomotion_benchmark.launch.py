@@ -112,6 +112,7 @@ def generate_launch_description() -> LaunchDescription:
     fastlio_time_offset_lidar_to_imu = LaunchConfiguration(
         "fastlio_time_offset_lidar_to_imu"
     )
+    enable_confidence = LaunchConfiguration("enable_confidence")
     slam_odom_topic = LaunchConfiguration("slam_odom_topic")
     imu_observation_parity_atol = LaunchConfiguration(
         "imu_observation_parity_atol"
@@ -190,6 +191,7 @@ def generate_launch_description() -> LaunchDescription:
             "point_order": fastlio_point_order,
             "time_sync_en": fastlio_time_sync_en,
             "time_offset_lidar_to_imu": fastlio_time_offset_lidar_to_imu,
+            "enable_confidence": enable_confidence,
         }.items(),
     )
     simulation = ExecuteProcess(
@@ -377,6 +379,14 @@ def generate_launch_description() -> LaunchDescription:
                 "fastlio_time_offset_lidar_to_imu",
                 default_value="0.0",
                 description="Native LiDAR-to-IMU timestamp offset in seconds",
+            ),
+            DeclareLaunchArgument(
+                "enable_confidence",
+                default_value="false",
+                description=(
+                    "Enable calibrated FAST-LIO2 confidence instrumentation; "
+                    "the locomotion policy does not consume it"
+                ),
             ),
             DeclareLaunchArgument(
                 "slam_odom_topic",

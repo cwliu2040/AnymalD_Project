@@ -189,6 +189,51 @@ def deterministic_point_indices(
     ).astype(np.int64)
 
 
+def gradual_density_ratio(
+    elapsed_s: float,
+    *,
+    nominal_ratio: float = 1.0,
+    minimum_ratio: float = 0.01,
+    healthy_s: float = 3.0,
+    ramp_down_s: float = 3.0,
+    hold_s: float = 2.0,
+    ramp_up_s: float = 3.0,
+) -> float:
+    """Return the causal native-input density for gradual-degradation v1."""
+
+    values = (
+        elapsed_s,
+        nominal_ratio,
+        minimum_ratio,
+        healthy_s,
+        ramp_down_s,
+        hold_s,
+        ramp_up_s,
+    )
+    if not all(math.isfinite(value) for value in values):
+        raise ValueError("gradual density parameters must be finite")
+    if elapsed_s < 0.0:
+        raise ValueError("elapsed_s must be non-negative")
+    if not 0.0 < minimum_ratio <= nominal_ratio <= 1.0:
+        raise ValueError("density ratios must satisfy 0 < minimum <= nominal <= 1")
+    if min(healthy_s, ramp_down_s, hold_s, ramp_up_s) <= 0.0:
+        raise ValueError("gradual density phase durations must be positive")
+    ramp_down_end = healthy_s + ramp_down_s
+    hold_end = ramp_down_end + hold_s
+    ramp_up_end = hold_end + ramp_up_s
+    if elapsed_s < healthy_s:
+        return nominal_ratio
+    if elapsed_s < ramp_down_end:
+        phase = (elapsed_s - healthy_s) / ramp_down_s
+        return nominal_ratio + phase * (minimum_ratio - nominal_ratio)
+    if elapsed_s < hold_end:
+        return minimum_ratio
+    if elapsed_s < ramp_up_end:
+        phase = (elapsed_s - hold_end) / ramp_up_s
+        return minimum_ratio + phase * (nominal_ratio - minimum_ratio)
+    return nominal_ratio
+
+
 def scan_start_nanoseconds(
     stamp_nanoseconds: int,
     *,

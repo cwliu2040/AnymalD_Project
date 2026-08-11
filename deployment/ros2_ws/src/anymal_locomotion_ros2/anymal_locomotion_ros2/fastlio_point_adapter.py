@@ -21,6 +21,7 @@ from anymal_locomotion_ros2.lidar_adapter_core import (
     OS1_32_HORIZONTAL_RESOLUTION,
     convert_rtx_points_to_ouster,
     deterministic_point_indices,
+    gradual_density_ratio,
     scan_start_nanoseconds,
 )
 
@@ -69,6 +70,8 @@ class FastlioPointAdapter(Node):
         self.declare_parameter("scan_rate_hz", 10.0)
         self.declare_parameter("raw_stamp_is_scan_end", True)
         self.declare_parameter("point_density", 1.0)
+        self.declare_parameter("point_density_profile", "constant")
+        self.declare_parameter("point_density_min", 0.01)
         self.declare_parameter("time_direction", "clockwise")
         self.declare_parameter("time_source", "sensor_order")
         # FAST-LIO2's native Ouster handler uses the last point to infer the
@@ -91,6 +94,17 @@ class FastlioPointAdapter(Node):
         )
         if not 0.0 < self._point_density <= 1.0:
             raise ValueError("point_density must be in (0, 1]")
+        self._point_density_profile = str(
+            self.get_parameter("point_density_profile").value
+        ).strip().lower()
+        if self._point_density_profile not in {"constant", "gradual_v1", "gradual_v2"}:
+            raise ValueError("unsupported point_density_profile")
+        self._point_density_min = float(
+            self.get_parameter("point_density_min").value
+        )
+        if not 0.0 < self._point_density_min <= self._point_density:
+            raise ValueError("point_density_min must be in (0, point_density]")
+        self._first_stamp_ns: int | None = None
         time_direction = str(
             self.get_parameter("time_direction").value
         ).strip().lower()
@@ -189,16 +203,36 @@ class FastlioPointAdapter(Node):
         if converted.size == 0:
             self.get_logger().warning("Raw scan contained no finite points")
             return
-        indices = deterministic_point_indices(
-            converted.size,
-            self._point_density,
-        )
-        converted = converted[indices]
-
         stamp_ns = (
             int(message.header.stamp.sec) * 1_000_000_000
             + int(message.header.stamp.nanosec)
         )
+        if self._first_stamp_ns is None:
+            self._first_stamp_ns = stamp_ns
+        elapsed_s = max(0, stamp_ns - self._first_stamp_ns) * 1.0e-9
+        density = self._point_density
+        if self._point_density_profile in {"gradual_v1", "gradual_v2"}:
+            phases = (
+                {"healthy_s": 3.0, "ramp_down_s": 1.5, "hold_s": 4.5, "ramp_up_s": 3.0}
+                if self._point_density_profile == "gradual_v2"
+                else {}
+            )
+            density = gradual_density_ratio(
+                elapsed_s,
+                nominal_ratio=self._point_density,
+                minimum_ratio=self._point_density_min,
+                **phases,
+            )
+        if self._point_density_profile == "gradual_v2":
+            # Preserve sensor order while progressively losing the trailing
+            # rings/FOV.  This models partial receiver/path failures rather
+            # than the geometry-preserving uniform-thinning control profile.
+            indices = np.arange(
+                max(1, int(round(converted.size * density))), dtype=np.int64
+            )
+        else:
+            indices = deterministic_point_indices(converted.size, density)
+        converted = converted[indices]
         output_stamp_ns = scan_start_nanoseconds(
             stamp_ns,
             scan_period_s=self._scan_period_s,
@@ -224,7 +258,8 @@ class FastlioPointAdapter(Node):
             self.get_logger().info(
                 "Publishing FAST-LIO2 Ouster scans with ring/t/ambient "
                 f"fields: points={output.width}, "
-                f"point_density={self._point_density:.2f}, "
+                f"point_density={density:.3f}, "
+                f"density_profile={self._point_density_profile}, "
                 f"time_source={self._time_source}, "
                 f"point_order={self._point_order}, "
                 f"frame={output.header.frame_id}, "

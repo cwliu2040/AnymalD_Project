@@ -8,10 +8,27 @@ import numpy as np
 import pytest
 
 from anymal_locomotion_ros2.slam_odom_adapter_core import (
+    body_pose_from_sensor_pose,
     body_velocity_from_pose_delta,
     normalized_quaternion_xyzw,
     rotation_matrix_from_quaternion_xyzw,
 )
+
+
+def test_body_pose_removes_rotated_sensor_offset() -> None:
+    half_yaw = math.sin(math.pi / 4.0)
+    position, quaternion = body_pose_from_sensor_pose(
+        (2.0, 3.0, 1.0),
+        (0.0, 0.0, half_yaw, half_yaw),
+        (0.20, 0.0, 0.35),
+    )
+
+    np.testing.assert_allclose(position, (2.0, 2.8, 0.65), atol=1.0e-12)
+    np.testing.assert_allclose(
+        quaternion,
+        (0.0, 0.0, half_yaw, half_yaw),
+        atol=1.0e-12,
+    )
 
 
 def test_normalized_quaternion_rejects_zero_norm() -> None:

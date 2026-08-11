@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "evaluation": "frozen_artifact_final_holdout_cluster_bootstrap",
+  "bootstrap": {
+    "confidence_level": 0.95,
+    "iterations": 2000,
+    "random_seed": 0,
+    "unit": "capture_instance"
+  },
+  "backends": {
+    "fastlio2": {
+      "artifact": "deployment/ros2_ws/src/anymal_locomotion_ros2/config/slam_confidence_fastlio2_native_v2.json",
+      "artifact_fingerprint_sha256": "facec1d123ac81e61be0d9a21c1938f205479ed876f74fe11046385bb81cb05d",
+      "calibration_id": "native-v1-1e6cf8347be1",
+      "split_manifest": "configs/slam_confidence_fastlio2_split.yaml",
+      "split_manifest_sha256": "b0572014071776d0a6a502bed20a4e60cda488031a471522a6f19a494c9f708f",
+      "final_holdout_capture_groups": 4,
+      "final_holdout_gradual_events": 4,
+      "sample_count": 1198,
+      "auroc": 0.9736206458174421,
+      "auroc_95_ci": [0.9711460001813291, 0.9778262867647058],
+      "brier": 0.03662016778487214,
+      "brier_95_ci": [0.02211997036067825, 0.04679502222741729],
+      "ece": 0.07829986998718311,
+      "ece_95_ci": [0.0392359017770376, 0.10879462862500346],
+      "low_confidence_event_recall": 1.0,
+      "median_lead_time_s": 0.19999999550000003,
+      "healthy_false_low_time_fraction": 0.04938271604938271,
+      "support_hard_gate_advance_recall": 1.0,
+      "support_hard_gate_median_lead_time_s": 0.49999998900000003
+    },
+    "liosam": {
+      "artifact": "deployment/ros2_ws/src/anymal_locomotion_ros2/config/slam_confidence_liosam_native_v3.json",
+      "artifact_fingerprint_sha256": "2e84ff634db9b508a8523050778ed08a392e58c44140512776813f02ad399103",
+      "calibration_id": "native-v1-edc098b0bd98",
+      "split_manifest": "configs/slam_confidence_liosam_split.yaml",
+      "split_manifest_sha256": "86976d2ba4be5028ddf375e95d24350ef3c589c09055cde233d624fb1f2e8534",
+      "final_holdout_capture_groups": 4,
+      "final_holdout_gradual_events": 5,
+      "sample_count": 2132,
+      "auroc": 0.9864974031467344,
+      "auroc_95_ci": [0.9645872129112353, 0.999549168779938],
+      "brier": 0.02171965518192008,
+      "brier_95_ci": [0.011747315432301954, 0.03169199493153821],
+      "ece": 0.034499918939731776,
+      "ece_95_ci": [0.03318863224000406, 0.03737900529707079],
+      "low_confidence_event_recall": 1.0,
+      "median_lead_time_s": 0.199999996,
+      "healthy_false_low_time_fraction": 0.031446540880503145,
+      "support_hard_gate_advance_recall": 1.0,
+      "support_hard_gate_median_lead_time_s": 0.299999994
+    }
+  },
+  "notes": [
+    "This evaluation reuses the frozen artifact weights and does not refit or retrain either estimator.",
+    "Input datasets remain runtime artifacts; their individual SHA-256 values are embedded in each fingerprinted artifact.",
+    "Confidence intervals resample complete capture instances rather than treating 20 Hz frames as independent."
+  ]
+}

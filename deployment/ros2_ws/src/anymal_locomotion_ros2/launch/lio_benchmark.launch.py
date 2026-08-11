@@ -91,6 +91,7 @@ def generate_launch_description() -> LaunchDescription:
     spawn_yaw = LaunchConfiguration("spawn_yaw")
     seed = LaunchConfiguration("seed")
     record_bag = LaunchConfiguration("record_bag")
+    enable_confidence = LaunchConfiguration("enable_confidence")
     use_motion_deskew = LaunchConfiguration("use_motion_deskew")
     feature_cloud_info_topic = LaunchConfiguration(
         "feature_cloud_info_topic"
@@ -142,6 +143,7 @@ def generate_launch_description() -> LaunchDescription:
         ),
         launch_arguments={
             "use_rviz": "false",
+            "enable_confidence": enable_confidence,
             "use_motion_deskew": use_motion_deskew,
             "feature_cloud_info_topic": feature_cloud_info_topic,
             "motion_deskew_apply_translation": (
@@ -298,8 +300,15 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument("record_bag", default_value="false"),
             DeclareLaunchArgument(
+                "enable_confidence",
+                default_value="false",
+                description=(
+                    "Enable fail-closed LIO-SAM confidence instrumentation"
+                ),
+            ),
+            DeclareLaunchArgument(
                 "use_motion_deskew",
-                default_value="true",
+                default_value="false",
                 description=(
                     "Enable project-owned motion deskew; false selects "
                     "LIO-SAM native deskew"
@@ -307,7 +316,7 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "feature_cloud_info_topic",
-                default_value="/lio_sam/deskew/cloud_info_motion_corrected",
+                default_value="/lio_sam/deskew/cloud_info",
                 description="CloudInfo topic used by LIO-SAM and benchmark",
             ),
             DeclareLaunchArgument(

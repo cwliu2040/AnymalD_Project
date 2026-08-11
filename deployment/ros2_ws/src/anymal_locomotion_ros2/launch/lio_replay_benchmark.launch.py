@@ -25,6 +25,7 @@ from launch.substitutions import (
     PathJoinSubstitution,
 )
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def _find_project_root(package_share: Path) -> Path:
@@ -93,6 +94,17 @@ def generate_launch_description() -> LaunchDescription:
     loop_search_keyframes = LaunchConfiguration("loop_search_keyframes")
     loop_fitness_score = LaunchConfiguration("loop_fitness_score")
     point_density = LaunchConfiguration("point_density")
+    point_density_profile = LaunchConfiguration("point_density_profile")
+    point_density_min = LaunchConfiguration("point_density_min")
+    enable_confidence = LaunchConfiguration("enable_confidence")
+    confidence_dataset_path = LaunchConfiguration("confidence_dataset_path")
+    confidence_artifact_path = LaunchConfiguration(
+        "confidence_artifact_path"
+    )
+    expected_confidence_calibration_id = LaunchConfiguration(
+        "expected_confidence_calibration_id"
+    )
+    capture_group = LaunchConfiguration("capture_group")
 
     lio_sam = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -100,6 +112,8 @@ def generate_launch_description() -> LaunchDescription:
         ),
         launch_arguments={
             "use_rviz": "false",
+            "enable_confidence": enable_confidence,
+            "confidence_artifact_path": confidence_artifact_path,
             "use_motion_deskew": use_motion_deskew,
             "feature_cloud_info_topic": feature_cloud_info_topic,
             "motion_deskew_apply_translation": (
@@ -122,6 +136,8 @@ def generate_launch_description() -> LaunchDescription:
             "loop_search_keyframes": loop_search_keyframes,
             "loop_fitness_score": loop_fitness_score,
             "point_density": point_density,
+            "point_density_profile": point_density_profile,
+            "point_density_min": point_density_min,
         }.items(),
     )
     evaluator = Node(
@@ -134,6 +150,16 @@ def generate_launch_description() -> LaunchDescription:
                 "project_root": project_root,
                 "output_path": output_path,
                 "loop_closure_expectation": loop_closure_expectation,
+                "confidence_expected": ParameterValue(
+                    enable_confidence,
+                    value_type=bool,
+                ),
+                "confidence_dataset_path": confidence_dataset_path,
+                "expected_confidence_calibration_id": (
+                    expected_confidence_calibration_id
+                ),
+                "capture_group": capture_group,
+                "deskew_mode": "native",
             }
         ],
         output="screen",
@@ -203,7 +229,7 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "use_motion_deskew",
-                default_value="true",
+                default_value="false",
                 description=(
                     "Enable project-owned motion deskew; false selects "
                     "LIO-SAM native deskew"
@@ -211,7 +237,7 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "feature_cloud_info_topic",
-                default_value="/lio_sam/deskew/cloud_info_motion_corrected",
+                default_value="/lio_sam/deskew/cloud_info",
                 description="CloudInfo topic used by LIO-SAM",
             ),
             DeclareLaunchArgument(
@@ -247,6 +273,43 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="1.0",
                 description="Deterministic fraction of raw scan points retained",
             ),
+            DeclareLaunchArgument(
+                "point_density_profile",
+                default_value="constant",
+                description="constant or causal gradual_v1 replay degradation",
+            ),
+            DeclareLaunchArgument("point_density_min", default_value="0.01"),
+            DeclareLaunchArgument(
+                "enable_confidence",
+                default_value="false",
+                description=(
+                    "Enable fail-closed LIO-SAM confidence instrumentation"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "confidence_dataset_path",
+                default_value="",
+                description=(
+                    "Offline labelled dataset output. This formal capture "
+                    "path is native-deskew only."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "confidence_artifact_path",
+                default_value="",
+                description=(
+                    "Optional validated LIO-SAM confidence artifact; formal "
+                    "calibration capture leaves this empty"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "expected_confidence_calibration_id",
+                default_value="uncalibrated",
+                description=(
+                    "Exact artifact ID expected by replay evaluation"
+                ),
+            ),
+            DeclareLaunchArgument("capture_group", default_value=""),
             SetEnvironmentVariable("ROS_DOMAIN_ID", ros_domain_id),
             SetEnvironmentVariable("ROS_LOCALHOST_ONLY", "1"),
             SetEnvironmentVariable(

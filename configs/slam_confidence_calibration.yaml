@@ -1,0 +1,31 @@
+schema_version: 1
+profile_id: slam-confidence-native-v1
+status: fastlio2_and_liosam_native_holdouts_passed
+
+capture_contract:
+  deskew_mode: native
+  evaluation_rate_hz: 20.0
+  prediction_horizon_s: 0.50
+  runtime_ground_truth_topic: forbidden
+  offline_label_ground_truth_topic: /odom
+  source_bag_mutation: forbidden
+  point_density_semantics: deterministic_progressive_ring_fov_and_density
+
+split:
+  unit: capture_group
+  train_fraction: 0.40
+  probability_calibration_fraction: 0.20
+  threshold_validation_fraction: 0.20
+  final_holdout_fraction: 0.20
+  frame_level_split: forbidden
+
+estimator:
+  family: standardized_logistic_plus_isotonic_with_causal_support_guard
+  neural_network: false
+  backend_specific_feature_schemas: true
+  abrupt_hard_faults_in_gradual_gate: false
+
+activation:
+  install_nonzero_runtime_artifact_only_after_all_holdout_gates_pass: true
+  fastlio2_runtime_artifact: slam_confidence_fastlio2_native_v2.json
+  liosam_runtime_artifact: slam_confidence_liosam_native_v3.json

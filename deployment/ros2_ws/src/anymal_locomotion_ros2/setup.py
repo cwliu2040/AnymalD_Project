@@ -16,7 +16,8 @@ setup(
             f"share/{package_name}/config",
             glob("config/*.yaml")
             + glob("config/*.xml")
-            + glob("config/*.rviz"),
+            + glob("config/*.rviz")
+            + glob("config/*.json"),
         ),
         (f"share/{package_name}/launch", launch_files),
     ],
@@ -35,6 +36,10 @@ setup(
             "lidar_point_adapter = anymal_locomotion_ros2.lidar_point_adapter:main",
             "fastlio_point_adapter = anymal_locomotion_ros2.fastlio_point_adapter:main",
             "fastlio_odom_adapter = anymal_locomotion_ros2.fastlio_odom_adapter:main",
+            "fastlio_confidence_extractor = anymal_locomotion_ros2.fastlio_confidence_node:main",
+            "fastlio_confidence_fault_validation = anymal_locomotion_ros2.fastlio_confidence_fault_validation:main",
+            "liosam_odom_adapter = anymal_locomotion_ros2.liosam_odom_adapter:main",
+            "liosam_confidence_extractor = anymal_locomotion_ros2.liosam_confidence_node:main",
             "policy_node = anymal_locomotion_ros2.policy_node:main",
             "motion_deskew = anymal_locomotion_ros2.motion_deskew_node:main",
             "yaw_visualizer = anymal_locomotion_ros2.yaw_visualizer_node:main",

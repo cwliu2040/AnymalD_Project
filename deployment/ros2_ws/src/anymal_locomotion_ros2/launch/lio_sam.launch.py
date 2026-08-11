@@ -18,6 +18,11 @@ def generate_launch_description() -> LaunchDescription:
     default_params = package_share / "config" / "lio_sam_params.yaml"
     params_file = LaunchConfiguration("params_file")
     use_rviz = LaunchConfiguration("use_rviz")
+    enable_confidence = LaunchConfiguration("enable_confidence")
+    confidence_config_path = LaunchConfiguration("confidence_config_path")
+    confidence_artifact_path = LaunchConfiguration(
+        "confidence_artifact_path"
+    )
     use_motion_deskew = LaunchConfiguration("use_motion_deskew")
     motion_deskew_apply_translation = LaunchConfiguration(
         "motion_deskew_apply_translation"
@@ -29,6 +34,8 @@ def generate_launch_description() -> LaunchDescription:
         "feature_cloud_info_topic"
     )
     point_density = LaunchConfiguration("point_density")
+    point_density_profile = LaunchConfiguration("point_density_profile")
+    point_density_min = LaunchConfiguration("point_density_min")
     static_transform_cyclonedds_uri = LaunchConfiguration(
         "static_transform_cyclonedds_uri"
     )
@@ -106,6 +113,44 @@ def generate_launch_description() -> LaunchDescription:
         remappings=[("/tf", "/lio_sam/map_optimization_tf")],
         output="screen",
     )
+    odom_adapter = Node(
+        package="anymal_locomotion_ros2",
+        executable="liosam_odom_adapter",
+        name="anymal_liosam_odom_adapter",
+        parameters=[
+            {
+                "use_sim_time": True,
+                "source_topic": "/lio_sam/mapping/odometry",
+                "output_topic": "/slam/odom",
+                "source_frame_id": "odom",
+                "source_child_frame_id": "odom_mapping",
+                "output_frame_id": "map",
+                "output_child_frame_id": "base_link",
+                "sensor_translation_in_body_xyz": [0.20, 0.0, 0.35],
+                "derive_twist_from_pose": True,
+            }
+        ],
+        condition=IfCondition(enable_confidence),
+        output="screen",
+    )
+    confidence = Node(
+        package="anymal_locomotion_ros2",
+        executable="liosam_confidence_extractor",
+        name="anymal_liosam_confidence_extractor",
+        parameters=[
+            confidence_config_path,
+            {
+                "use_sim_time": True,
+                "motion_deskew_required": ParameterValue(
+                    use_motion_deskew,
+                    value_type=bool,
+                ),
+                "calibration_artifact_path": confidence_artifact_path,
+            },
+        ],
+        condition=IfCondition(enable_confidence),
+        output="screen",
+    )
 
     return LaunchDescription(
         [
@@ -118,6 +163,32 @@ def generate_launch_description() -> LaunchDescription:
                 "use_rviz",
                 default_value="false",
                 description="Start RViz2 with the upstream LIO-SAM view",
+            ),
+            DeclareLaunchArgument(
+                "enable_confidence",
+                default_value="false",
+                description=(
+                    "Enable fail-closed LIO-SAM confidence instrumentation "
+                    "and canonical /slam/odom adapter"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "confidence_config_path",
+                default_value=str(
+                    package_share / "config" / "slam_confidence_liosam.yaml"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "confidence_artifact_path",
+                default_value=str(
+                    package_share
+                    / "config"
+                    / "slam_confidence_liosam_native_v3.json"
+                ),
+                description=(
+                    "Validated native LIO-SAM confidence artifact; override "
+                    "with an empty path for fail-closed capture/replay"
+                ),
             ),
             DeclareLaunchArgument(
                 "static_transform_cyclonedds_uri",
@@ -172,6 +243,11 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="1.0",
                 description="Deterministic fraction of raw scan points retained",
             ),
+            DeclareLaunchArgument(
+                "point_density_profile",
+                default_value="constant",
+            ),
+            DeclareLaunchArgument("point_density_min", default_value="0.01"),
             DeclareLaunchArgument(
                 "motion_deskew_apply_translation",
                 default_value="true",
@@ -257,6 +333,11 @@ def generate_launch_description() -> LaunchDescription:
                             point_density,
                             value_type=float,
                         ),
+                        "point_density_profile": point_density_profile,
+                        "point_density_min": ParameterValue(
+                            point_density_min,
+                            value_type=float,
+                        ),
                     }
                 ],
                 output="screen",
@@ -279,6 +360,8 @@ def generate_launch_description() -> LaunchDescription:
             ),
             *lio_nodes,
             map_optimization,
+            odom_adapter,
+            confidence,
             Node(
                 package="rviz2",
                 executable="rviz2",

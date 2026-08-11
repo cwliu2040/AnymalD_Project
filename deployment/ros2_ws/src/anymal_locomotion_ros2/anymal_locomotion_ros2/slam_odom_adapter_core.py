@@ -45,6 +45,38 @@ def rotation_matrix_from_quaternion_xyzw(
     )
 
 
+def body_pose_from_sensor_pose(
+    sensor_position_xyz: tuple[float, float, float] | np.ndarray,
+    sensor_quaternion_xyzw: tuple[float, float, float, float] | np.ndarray,
+    sensor_translation_in_body_xyz: tuple[float, float, float] | np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Convert a world sensor pose to the aligned body-frame origin pose.
+
+    ``sensor_translation_in_body_xyz`` is the sensor origin expressed in the
+    body frame. The sensor and body axes are required to be aligned; the
+    returned orientation is therefore the normalized sensor orientation.
+    """
+
+    sensor_position = np.asarray(sensor_position_xyz, dtype=np.float64)
+    translation = np.asarray(
+        sensor_translation_in_body_xyz,
+        dtype=np.float64,
+    )
+    if (
+        sensor_position.shape != (3,)
+        or translation.shape != (3,)
+        or not np.isfinite(sensor_position).all()
+        or not np.isfinite(translation).all()
+    ):
+        raise ValueError("sensor position and translation must be finite XYZ")
+    quaternion = normalized_quaternion_xyzw(sensor_quaternion_xyzw)
+    rotation_world_from_body = rotation_matrix_from_quaternion_xyzw(
+        quaternion
+    )
+    body_position = sensor_position - rotation_world_from_body @ translation
+    return body_position, quaternion
+
+
 def _multiply_quaternions_xyzw(first: np.ndarray, second: np.ndarray) -> np.ndarray:
     x1, y1, z1, w1 = first
     x2, y2, z2, w2 = second

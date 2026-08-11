@@ -1,0 +1,203 @@
+schema_version: 1
+contract_id: slam-confidence-v1
+status: both_backends_calibrated_native_artifacts_installed
+
+implementation_status:
+  wire_schema: frozen
+  artifact_provenance_schema: 2
+  fastlio2_extractor: calibrated_native_v2_artifact_installed
+  fastlio2_synthetic_fault_matrix: 13_cases_passed
+  fastlio2_ros_topic_fault_injection: pending
+  offline_label_core: implemented
+  liosam_extractor: calibrated_native_v3_artifact_installed
+  liosam_replay_source_assembly: project_and_native_deskew_passed
+  liosam_ros_topic_fault_injection: pending
+  calibration_capture_pipeline: implemented_native_only
+  calibration_estimator: logistic_isotonic_causal_support_motion_guard
+  calibration_pilot: superseded_by_gradual_v2
+  fastlio2_final_holdout: passed_24_independent_events
+  liosam_final_holdout: passed_40_independent_events_fresh5
+  runtime_nonzero_artifact: fastlio2_and_liosam
+  probability_cluster_bootstrap: 2000_draws_seed_0_passed
+
+topics:
+  authoritative: /slam_confidence
+  tracking_valid_mirror: /slam_tracking_valid
+  canonical_odometry: /slam/odom
+  forbidden_runtime_ground_truth: /odom
+
+qos:
+  history: keep_last
+  depth: 1
+  reliability: reliable
+  durability: volatile
+
+source_stamp:
+  matches_canonical_odometry_header: true
+  advanced_by_imu_only: false
+  advanced_by_lidar_only: false
+  no_source_uses_explicit_validity_field: true
+
+score_semantics:
+  forecast_anchor: evaluation_stamp
+  update_trigger: logical_evaluation_tick
+  source_features_between_bundles: hold_latest_complete_bundle
+  calibrated_score: first_logical_evaluation_after_source_then_sample_hold
+  source_age_feature: captured_on_first_logical_evaluation_after_source
+  missing_score_on_healthy_tick: hard_signal_missing
+  wire_quantization_before_threshold: float32
+  no_source_score: 0.0
+  rejected_or_incomplete_input: hold_last_source_and_score
+  accepted_complete_hard_bundle: advance_source_and_hold_score
+  clear_source_and_score:
+    - no_source_epoch_start
+    - clock_reset
+    - backend_or_calibration_instance_switch
+  zero_support_complete_bundle: advance_source
+
+state_invariants:
+  valid_states: [STATE_TRACKING, STATE_DEGRADED]
+  invalid_states: [STATE_INITIALIZING, STATE_LOST]
+  nonzero_reason_required: [STATE_INITIALIZING, STATE_DEGRADED, STATE_LOST]
+
+reason_classes:
+  immediate_hard:
+    - REASON_SOURCE_STALE
+    - REASON_ODOMETRY_STALE
+    - REASON_LIDAR_STALE
+    - REASON_IMU_STALE
+    - REASON_ESTIMATOR_RESET
+    - REASON_TIMESTAMP_INVALID
+    - REASON_NUMERIC_INVALID
+    - REASON_BACKEND_ERROR
+    - REASON_CLOCK_RESET
+    - REASON_UNCALIBRATED
+  calibrated_soft:
+    - REASON_DEGENERATE_GEOMETRY
+    - REASON_HIGH_RESIDUAL
+    - REASON_NOT_CONVERGED
+  conditional:
+    # Zero support / a missing required signal is hard. Low support / a missing
+    # optional signal is a calibrated soft feature.
+    - REASON_INSUFFICIENT_SUPPORT
+    - REASON_SIGNAL_MISSING
+  lifecycle:
+    - REASON_INITIALIZING
+    - REASON_LOW_CONFIDENCE
+    - REASON_RECOVERY_PENDING
+
+timing:
+  logical_publish_rate_hz: 20.0
+  future_stamp_tolerance_s: 0.005
+  # This is a consumer-local steady-clock watchdog, not a ROS timestamp or a
+  # replay feature. A deployment profile may make it stricter.
+  physical_receipt_timeout_s: 0.15
+
+  # These are instrumentation/unit-test starting points, not frozen production
+  # thresholds. Each value is part of the calibration artifact and must be
+  # re-qualified after a sensor, timestamp, or backend pipeline change.
+  provisional_freshness_s:
+    fastlio2:
+      confidence_source: 0.30
+      canonical_odometry: 0.30
+      lidar_input: 0.30
+      imu_input: 0.05
+    liosam:
+      # LIO-SAM mapping odometry is scan-start stamped and imageProjection
+      # intentionally buffers scans. Existing replay age is therefore larger
+      # than FAST-LIO2 and must not inherit its threshold silently.
+      confidence_source: 0.50
+      canonical_odometry: 0.50
+      lidar_input: 0.50
+      imu_input: 0.05
+
+bundle_assembly:
+  fastlio2:
+    required_exact_stamp_inputs:
+      - native_odometry
+      - canonical_odometry
+      - effective_points
+    diagnostic_match_timeout_s: 0.05
+    timeout_anchor: first_required_input_arrival_logical_time
+    timeout_clock: ros_logical_time
+    max_pending_bundles: 64
+    pending_overflow: one_shot_signal_missing_then_evict_oldest
+    commit_order: monotonic_source_stamp
+    older_incomplete_crossed_by_new_complete: one_shot_signal_missing_then_evict
+    same_stamp_duplicate: idempotent_if_content_equal
+    same_stamp_conflict: timestamp_invalid
+  liosam:
+    required_exact_stamp_inputs:
+      - native_mapping_odometry
+      - canonical_odometry
+      - incremental_mapping_odometry
+      - feature_cloud_info
+    conditionally_required_exact_stamp_input: motion_deskew_status
+    motion_deskew_required_when: project_motion_deskew_enabled
+    diagnostic_match_timeout_s: 0.20
+    timeout_anchor: first_required_input_arrival_logical_time
+    timeout_clock: ros_logical_time
+    max_pending_bundles: 64
+    pending_overflow: one_shot_signal_missing_then_evict_oldest
+    commit_order: monotonic_source_stamp
+    older_incomplete_crossed_by_new_complete: one_shot_signal_missing_then_evict
+    same_stamp_duplicate: idempotent_if_content_equal
+    same_stamp_conflict: timestamp_invalid
+    conservative_feature_hard_minima:
+      corner_at_or_below: 10
+      surface_at_or_below: 100
+    incremental_covariance_zero_semantics: binary_degeneracy_not_covariance
+
+hysteresis:
+  degrade_below: 0.45
+  degrade_dwell_s: 0.10
+  invalidate_below: 0.25
+  invalidate_dwell_s: 0.20
+  recover_at_or_above: 0.55
+  recover_dwell_s: 0.50
+
+offline_target:
+  # slam_confidence(t) estimates P(usable(t, t + horizon) | runtime signals at
+  # t). It is not an instantaneous pose covariance or probability of exact pose.
+  prediction_horizon_s: 0.50
+  forecast_anchor: evaluation_stamp
+  pose_alignment_stamp: source_stamp
+  alignment: initial_se2
+  translation_error_m: 0.10
+  yaw_error_deg: 1.0
+  translation_jump_residual_m: 0.20
+  yaw_jump_residual_deg: 2.0
+  odometry_outage_s: 0.30
+  odometry_outage_semantics: source_advance_gap_not_pipeline_age
+  pose_error_sustain_s: 0.20
+  event_rearm_healthy_s: 1.00
+
+dataset_split:
+  unit: capture_group
+  group_keys: [bag, seed, motion_profile]
+  train_fraction: 0.40
+  probability_calibration_fraction: 0.20
+  threshold_validation_fraction: 0.20
+  final_holdout_fraction: 0.20
+
+validation:
+  source_signal_coverage_min: 0.99
+  label_negative_tracking_valid_fraction_min: 0.99
+  explicit_fault_detection_fraction_min: 1.00
+  gradual_event_degrade_recall_min: 0.80
+  gradual_event_median_lead_time_s_min: 0.20
+  frame_auroc_min: 0.80
+  healthy_false_low_time_fraction_max: 0.05
+  minimum_independent_gradual_events: 20
+  minimum_capture_groups: 5
+  logical_publish_rate_relative_tolerance: 0.05
+  physical_publish_latency_p99_s_max: 0.05
+  bootstrap_unit: bag_or_episode
+  bootstrap_confidence_level: 0.95
+
+stale_high_confidence_example:
+  source_stamp_valid: true
+  slam_confidence: 0.95
+  slam_tracking_valid: false
+  tracking_state: STATE_LOST
+  required_reasons: [REASON_SOURCE_STALE]

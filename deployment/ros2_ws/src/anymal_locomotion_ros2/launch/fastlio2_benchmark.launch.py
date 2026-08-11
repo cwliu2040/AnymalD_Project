@@ -7,6 +7,7 @@ from pathlib import Path
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -22,6 +23,12 @@ def generate_launch_description() -> LaunchDescription:
     fastlio_cloud_topic = LaunchConfiguration("fastlio_cloud_topic")
     candidate_odom_topic = LaunchConfiguration("candidate_odom_topic")
     slam_odom_topic = LaunchConfiguration("slam_odom_topic")
+    effective_points_topic = LaunchConfiguration("effective_points_topic")
+    enable_confidence = LaunchConfiguration("enable_confidence")
+    confidence_config_path = LaunchConfiguration("confidence_config_path")
+    confidence_artifact_path = LaunchConfiguration(
+        "confidence_artifact_path"
+    )
     blind = LaunchConfiguration("blind")
     point_filter_num = LaunchConfiguration("point_filter_num")
     max_iteration = LaunchConfiguration("max_iteration")
@@ -29,6 +36,8 @@ def generate_launch_description() -> LaunchDescription:
     filter_size_map = LaunchConfiguration("filter_size_map")
     cube_side_length = LaunchConfiguration("cube_side_length")
     point_density = LaunchConfiguration("point_density")
+    point_density_profile = LaunchConfiguration("point_density_profile")
+    point_density_min = LaunchConfiguration("point_density_min")
     time_source = LaunchConfiguration("time_source")
     point_order = LaunchConfiguration("point_order")
     time_sync_en = LaunchConfiguration("time_sync_en")
@@ -55,6 +64,11 @@ def generate_launch_description() -> LaunchDescription:
                 "point_order": point_order,
                 "point_density": ParameterValue(
                     point_density,
+                    value_type=float,
+                ),
+                "point_density_profile": point_density_profile,
+                "point_density_min": ParameterValue(
+                    point_density_min,
                     value_type=float,
                 ),
             }
@@ -106,14 +120,41 @@ def generate_launch_description() -> LaunchDescription:
                     value_type=float,
                 ),
                 "runtime_pos_log_enable": False,
+                "publish.effect_en": ParameterValue(
+                    enable_confidence,
+                    value_type=bool,
+                ),
             },
         ],
         # Keep the candidate's camera_init/body TF out of the project's
         # canonical map/base_link TF tree until the backend passes its gate.
         remappings=[
+            ("/Odometry", candidate_odom_topic),
+            ("/cloud_effected", effective_points_topic),
             ("/tf", "/fastlio/tf"),
             ("/tf_static", "/fastlio/tf_static"),
         ],
+        output="screen",
+    )
+    confidence = Node(
+        package="anymal_locomotion_ros2",
+        executable="fastlio_confidence_extractor",
+        name="anymal_fastlio_confidence_extractor",
+        parameters=[
+            confidence_config_path,
+            {
+                "use_sim_time": ParameterValue(
+                    use_sim_time,
+                    value_type=bool,
+                ),
+                "native_odometry_topic": candidate_odom_topic,
+                "canonical_odometry_topic": slam_odom_topic,
+                "effective_points_topic": effective_points_topic,
+                "lidar_input_topic": fastlio_cloud_topic,
+                "calibration_artifact_path": confidence_artifact_path,
+            },
+        ],
+        condition=IfCondition(enable_confidence),
         output="screen",
     )
     odom_adapter = Node(
@@ -169,6 +210,33 @@ def generate_launch_description() -> LaunchDescription:
                 ),
             ),
             DeclareLaunchArgument(
+                "effective_points_topic",
+                default_value="/cloud_effected",
+            ),
+            DeclareLaunchArgument(
+                "enable_confidence",
+                default_value="false",
+                description=(
+                    "Enable fail-closed FAST-LIO2 confidence instrumentation "
+                    "and its required effective-point publisher"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "confidence_config_path",
+                default_value=str(
+                    package_share / "config" / "slam_confidence_fastlio2.yaml"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "confidence_artifact_path",
+                default_value=str(
+                    package_share
+                    / "config"
+                    / "slam_confidence_fastlio2_native_v2.json"
+                ),
+                description="Validated native FAST-LIO2 confidence artifact",
+            ),
+            DeclareLaunchArgument(
                 "blind",
                 default_value="0.5",
                 description="FAST-LIO2 near-range exclusion in metres",
@@ -202,6 +270,11 @@ def generate_launch_description() -> LaunchDescription:
                 description="Deterministic fraction of raw scan points retained",
             ),
             DeclareLaunchArgument(
+                "point_density_profile",
+                default_value="constant",
+            ),
+            DeclareLaunchArgument("point_density_min", default_value="0.01"),
+            DeclareLaunchArgument(
                 "time_source",
                 default_value="sensor_order",
                 description="Official reconstructed Ouster column time",
@@ -229,5 +302,6 @@ def generate_launch_description() -> LaunchDescription:
             point_adapter,
             fastlio,
             odom_adapter,
+            confidence,
         ]
     )

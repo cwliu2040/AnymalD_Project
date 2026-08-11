@@ -73,6 +73,7 @@ def generate_launch_description() -> LaunchDescription:
     enable_locomotion_diagnostics = LaunchConfiguration(
         "enable_locomotion_diagnostics"
     )
+    enable_slam_confidence = LaunchConfiguration("enable_slam_confidence")
     controlled_episode_reset_step = LaunchConfiguration(
         "controlled_episode_reset_step"
     )
@@ -124,10 +125,9 @@ def generate_launch_description() -> LaunchDescription:
         ),
         launch_arguments={
             "use_rviz": use_rviz,
-            "use_motion_deskew": "true",
-            "feature_cloud_info_topic": (
-                "/lio_sam/deskew/cloud_info_motion_corrected"
-            ),
+            "enable_confidence": enable_slam_confidence,
+            "use_motion_deskew": "false",
+            "feature_cloud_info_topic": "/lio_sam/deskew/cloud_info",
             "motion_deskew_apply_translation": "true",
             "motion_deskew_replace_upstream_rotation": "true",
             "static_transform_cyclonedds_uri": (
@@ -302,6 +302,14 @@ def generate_launch_description() -> LaunchDescription:
                 description=(
                     "Record project-local locomotion and policy traces; disabled "
                     "by default"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "enable_slam_confidence",
+                default_value="false",
+                description=(
+                    "Enable fail-closed LIO-SAM confidence instrumentation; "
+                    "policy does not consume it"
                 ),
             ),
             DeclareLaunchArgument(

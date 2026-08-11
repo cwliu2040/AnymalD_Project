@@ -1,0 +1,47 @@
+schema_version: 1
+retired_holdout_reports:
+  - logs/slam_confidence/gradual_v2/liosam_fresh_final_holdout_report.json
+  - logs/slam_confidence/gradual_v2/liosam_fresh2_final_holdout_report.json
+  - logs/slam_confidence/gradual_v2/liosam_fresh3_final_holdout_report.json
+  - logs/slam_confidence/gradual_v2/liosam_fresh4_final_holdout_report.json
+captures:
+  - {group: motion_forward_3_0, role: calibration}
+  - {group: motion_forward_0_5, role: train}
+  - {group: motion_backward_2_0, role: train}
+  - {group: motion_lateral_1_5, role: train}
+  - {group: motion_combined, role: train}
+  - {group: motion_curve_left, role: train}
+  - {group: motion_warehouse_turn, role: calibration}
+  - {group: yaw_left_2_0_seed42, role: train}
+  - {group: loop_back_and_forth_run01, role: calibration}
+  - {group: loop_back_and_forth_run02, role: calibration}
+  - {group: loop_back_and_forth_run03, role: train}
+  - {group: loop_open_backward_run01, role: threshold_validation}
+  - {group: loop_open_backward_run02, role: train}
+  - {group: loop_open_backward_run03, role: train}
+  - {group: loop_open_forward_run01, role: threshold_validation}
+  - {group: loop_open_forward_run02, role: calibration}
+  - {group: loop_open_forward_run03, role: threshold_validation}
+  - {group: loop_out_and_back_run01, role: threshold_validation}
+  - {group: loop_out_and_back_run02, role: threshold_validation}
+  - {group: loop_out_and_back_run03, role: train}
+  - {group: fresh_model1450_back_and_forth_run01, role: train}
+  - {group: fresh_model1450_open_backward_run01, role: train}
+  - {group: fresh_model1450_open_forward_run01, role: calibration}
+  - {group: fresh_model1450_out_and_back_run01, role: threshold_validation}
+  - {group: fresh2_model1450_back_and_forth_run02, role: train}
+  - {group: fresh2_model1450_open_backward_run02, role: calibration}
+  - {group: fresh2_model1450_open_forward_run02, role: threshold_validation}
+  - {group: fresh2_model1450_out_and_back_run02, role: train}
+  - {group: fresh3_model1450_back_and_forth_run03, role: train}
+  - {group: fresh3_model1450_open_backward_run03, role: calibration}
+  - {group: fresh3_model1450_open_forward_run03, role: threshold_validation}
+  - {group: fresh3_model1450_out_and_back_run03, role: train}
+  - {group: fresh4_groundplane_forward_0_5, role: threshold_validation}
+  - {group: fresh4_yaw_right_0_5, role: train}
+  - {group: fresh4_yaw_left_1_0, role: calibration}
+  - {group: fresh4_yaw_right_1_5, role: threshold_validation}
+  - {group: fresh5_yaw_left_0_25, role: final_holdout}
+  - {group: fresh5_yaw_right_0_25, role: final_holdout}
+  - {group: fresh5_yaw_left_0_5, role: final_holdout}
+  - {group: fresh5_yaw_right_1_0, role: final_holdout}

@@ -72,55 +72,50 @@ LIO-SAM project-deskew 加入該 240-run 主矩陣。詳細 contract 見
 
 ## 共用 SLAM confidence contract
 
-confidence 的固定語意是：
+共同 confidence 的 normative schema／state machine／backend signal inventory 與
+validation gates 由 `docs/slam_confidence_contract.md` 定義。固定語意是：
 
-> 在目前時間戳與可觀測 backend diagnostics 下，接下來短時間內的
-> odometry 是否仍適合 locomotion policy 使用的機率，範圍為 `[0, 1]`。
+```text
+C(t) = P(U(t, t + 0.50 s) = true |
+         t 當下與過去可部署取得的 backend diagnostics)
+```
 
-它不是 ATE，也不是某個 backend 的 raw ICP fitness、feature count 或
-residual。ATE 只能在 offline calibration 使用，不能直接當成 online
-confidence。
+`t` 固定是20 Hz `evaluation_stamp`；`source_stamp`只指向該tick可用的latest
+canonical pose。Offline horizon也從evaluation time起算，避免較慢backend的
+pipeline age造成label leakage。
 
-每個 backend adapter 都必須提供相同語意的四個欄位：
+`U` 表示該視窗內 pose 持續符合共同的 freshness、finite、translation、yaw、
+jump 與 tracking-failure label。它不是當下 pose 完全正確的機率、ATE、
+covariance，也不是某個 backend 的 raw ICP fitness、feature count 或 residual。
+GT `/odom` 只能在 offline label/evaluator 使用，不能進 online extractor、
+deployment confidence 或 PPO observation。
 
-| 欄位 | 語意 |
+共同輸出不是四個彼此獨立、可能錯配的 topic，而是單一 atomic message：
+
+| 介面 | 語意 |
 | --- | --- |
-| `odom` | `nav_msgs/Odometry`；`child_frame_id=base_link`，twist 為 body frame |
-| `slam_confidence` | `float32`，已校正且限制在 `[0, 1]`，越大越可靠 |
-| `slam_tracking_valid` | 硬性 tracking 狀態；失效時不可只用 confidence 偽裝成正常 |
-| `confidence_age_s` | 從 confidence source timestamp 到目前時間的秒數；stale 時必須增大 |
+| `/slam/odom` | canonical `nav_msgs/Odometry`；不可覆蓋 GT `/odom` |
+| `/slam_confidence` | `SlamConfidence` atomic snapshot：score、hard validity、state、source/evaluation stamp、age 與 reason mask |
+| `/slam_tracking_valid` | 只便利 mirror message 內的 bool；consumer 仍須有 receipt watchdog／DDS deadline |
 
-confidence 的 timestamp 必須與 adapter 的 odometry source timestamp 可對齊；
-不能只用 ROS callback 到達時間掩蓋 backend latency。初期可以用既有 ROS
-standard messages 分開發布，但 adapter 必須在 diagnostics 中記錄同一個
-source timestamp、publish timestamp 與 age。
+`source_stamp` 必須精確等於被評估的 `/slam/odom.header.stamp`；新的 IMU 或
+LiDAR callback 不得單獨推進它。`slam_tracking_valid` 是 pose 現在能否使用的
+hard gate，優先於連續 score；即使上一筆 score 是 `0.95`，source stale 時也
+必須 `LOST/invalid`。ROS logical age、consumer steady-clock liveness 與 physical
+callback latency分開量測，不能用 callback arrival time 掩蓋 backend latency。
 
 ## Calibration 方法
 
-LIO-SAM 與 FAST-LIO2 各自使用自己的 raw diagnostics，但最後都校正到同一個
-offline label：
+LIO-SAM 與 FAST-LIO2 各自使用目前真正可觀測的 diagnostics，再校正到上述
+同一個 `U`。逐 timestamp label只做 initial-SE(2) alignment；ATE與yaw RMSE
+仍是整包 aggregate，不能拿aggregate pass替整包每個 frame貼 healthy。
 
-```text
-usable(t) =
-  tracking_valid(t .. t+H)
-  AND translation_error(t .. t+H) <= E_trans
-  AND yaw_error(t .. t+H) <= E_yaw
-  AND no odometry jump in (t .. t+H)
-```
-
-`H`、`E_trans`、`E_yaw` 先由 replay sampling rate 與 locomotion reaction
-time 決定，不直接沿用某個 SLAM 的原始閾值。用 ground truth 只產生 offline
-label，再對每個 backend 的 diagnostics 訓練或擬合 calibration map；online
-不能讀 ground truth。
-
-第一版至少要記錄：有效特徵／點的支持度、backend residual 或 innovation、
-退化／失敗旗標、估計 covariance（若 backend 提供）、output age、丟訊息率與
-局部 odometry jump。各 backend 的 raw 欄位可以不同，但 calibration 後的
-輸出必須遵守同一個 `[0,1]` 語意。
-
-Calibration gate 應檢查 reliability diagram、Brier score、ECE、低 confidence
-對實際 unusable odometry 的召回率，以及正常場景的 false-low-confidence
-比例；不能只看 ATE 平均值。
+資料以 capture group切分，final holdout前凍結 signal transform、threshold、
+hysteresis 與 calibration ID。Gate同時檢查 gradual degradation的event recall、
+lead time、frame AUROC、healthy false-low time，以及 probability calibration的
+Brier score、ECE與reliability diagram；bootstrap以bag/episode為單位，不能把
+20 Hz frames當成獨立樣本。Outage、NaN、reset、stale-high等 abrupt failure由
+hard-validity fault-injection gate檢查，不要求保留的 score也必須先下降。
 
 ## 目前 branch 狀態
 
@@ -134,6 +129,15 @@ Calibration gate 應檢查 reliability diagram、Brier score、ECE、低 confide
 - FAST-LIO2 locomotion launch：`fastlio2_locomotion_benchmark.launch.py`；policy
   讀取 `/slam/odom`，simulation 的 ground-truth `/odom` 只供 stability
   diagnostics 與 readiness 使用。
+- FAST-LIO2 confidence第一階段：`fastlio_confidence_extractor`已實作exact-stamp
+  source assembly與共同state/reason，但尚無calibration artifact，固定
+  `UNCALIBRATED/invalid`。三個FAST project wrappers皆以
+  `enable_confidence:=false`預設關閉；true只開instrumentation，policy仍不consume。
+- LIO-SAM confidence第一階段：`liosam_odom_adapter`與
+  `liosam_confidence_extractor`已實作mapping/canonical/incremental/CloudInfo的
+  exact-stamp assembly；project deskew arm另要求motion status，native arm不要求。
+  同樣固定`UNCALIBRATED/invalid`並由`enable_confidence:=false` opt-in控制；
+  `smoke_out_and_back`兩arm已收到source-valid snapshot且trajectory gate通過。
 - FAST-LIO2 project cloud topic：`/fastlio/points`，使用與 LIO-SAM 相同的
   raw `/lidar/points_raw`，但輸出欄位名稱為 `ambient` 並使用 reliable QoS。
 - FAST-LIO2 project odometry topic：`/slam/odom`，由

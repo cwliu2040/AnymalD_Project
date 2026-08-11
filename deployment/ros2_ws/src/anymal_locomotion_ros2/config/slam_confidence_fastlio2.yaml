@@ -1,0 +1,32 @@
+anymal_fastlio_confidence_extractor:
+  ros__parameters:
+    # Launch resolves the installed fingerprinted native-v2 artifact.  An
+    # empty override remains fail-closed for calibration capture tooling.
+    calibration_artifact_path: ""
+    native_odometry_topic: /Odometry
+    canonical_odometry_topic: /slam/odom
+    effective_points_topic: /cloud_effected
+    lidar_input_topic: /fastlio/points
+    imu_topic: /imu/data
+    confidence_topic: /slam_confidence
+    tracking_valid_topic: /slam_tracking_valid
+
+    publish_rate_hz: 20.0
+    source_timeout_s: 0.30
+    odometry_timeout_s: 0.30
+    lidar_timeout_s: 0.30
+    imu_timeout_s: 0.05
+    future_stamp_tolerance_s: 0.005
+
+    # FAST-LIO2 publishes odometry before the same-stamp effective cloud and
+    # DDS does not guarantee ordering across topics. This grace absorbs callback
+    # reordering; only exact timestamp matches form a source bundle.
+    diagnostic_match_timeout_s: 0.05
+    max_pending_bundles: 64
+
+    degrade_below: 0.45
+    degrade_dwell_s: 0.10
+    invalidate_below: 0.25
+    invalidate_dwell_s: 0.20
+    recover_at_or_above: 0.55
+    recover_dwell_s: 0.50

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from anymal_locomotion_ros2.lidar_adapter_core import (
     FASTLIO_POINT_DTYPE,
@@ -11,10 +12,27 @@ from anymal_locomotion_ros2.lidar_adapter_core import (
     OUSTER_POINT_DTYPE,
     convert_rtx_points_to_ouster,
     deterministic_point_indices,
+    gradual_density_ratio,
     scan_start_nanoseconds,
     sensor_order_fire_time_nanoseconds,
     sensor_order_time_nanoseconds,
 )
+
+
+def test_gradual_density_profile_has_healthy_ramp_hold_and_recovery() -> None:
+    values = [
+        gradual_density_ratio(elapsed)
+        for elapsed in (0.0, 3.0, 4.5, 6.0, 7.0, 8.0, 9.5, 11.0, 20.0)
+    ]
+    assert values[0] == 1.0
+    assert values[1] == 1.0
+    assert values[2] == pytest.approx(0.505)
+    assert values[3] == pytest.approx(0.01)
+    assert values[4] == pytest.approx(0.01)
+    assert values[5] == pytest.approx(0.01)
+    assert values[6] == pytest.approx(0.505)
+    assert values[7] == 1.0
+    assert values[8] == 1.0
 
 
 def _point(elevation_deg: float, azimuth_deg: float, distance: float = 10.0) -> list[float]:
