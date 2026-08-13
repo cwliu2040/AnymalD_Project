@@ -10,30 +10,33 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
 ## Repository state
 
 - 專案根目錄：`/home/ros/anymal_locomotion`
-- 目前 branch：`feature/ppo-slam-confidence`。
+- 目前 branch：`exp/slam-fastlio2`。
 - `main` 與 `origin/main` 仍停在 `98b43dd`（`驗證：完成 reset、地圖品質與
   閉環驗證`）；benchmark base branch
   `benchmark/slam-liosam-fastlio2` 與目前實驗 branch 都以
   `fee8c9f 建立 SLAM backend 比較基線` 為共同基礎。
-- `exp/slam-fastlio2` 的遠端目前在
-  `b8b8c89 完成雙後端 SLAM confidence 校準與執行期契約`；本機後續 gate commit
-  `0e9a571 完成 SLAM confidence DDS 與 FAST live gate` 尚未 push。現在的
-  `feature/ppo-slam-confidence` 由 `0e9a571` 建立，51-D observation、training、
-  deployment consumer、第二輪 bounded safe-command 實作與 PPO 產物仍未 commit。其先前
+- `exp/slam-fastlio2` 的本機與遠端目前都在
+  `4c063a4 完成 SLAM 信心策略、狀態估計與步態驗證`；其parent為
+  `0e9a571 完成 SLAM confidence DDS 與 FAST live gate`，兩者均已push。使用者確認
+  `exp/slam-fastlio2`作為完整SLAM confidence開發線，因此51-D observation/training、
+  deployment consumer、第二輪bounded safe-command、proprioceptive estimator與gait-value
+  實驗均保存在此branch。本機`feature/ppo-slam-confidence`目前亦指向`4c063a4`，但未建立
+  同名遠端branch。其先前
   baseline `cb9e3e2 校準 FAST-LIO2 並建立 confidence 前置基線`與parent
   `7b9994d 修正虛擬雷射輸入與 FAST-LIO2 校準流程` 固定虛擬 Ouster input
   contract。更早的
   `649fcda 實作：加入原地旋轉 SLAM 壓力測試` 包含 yaw-stress、renderer、
   effective-support diagnostics 與 pilot tooling。兩backend真實DDS fault qualification、
   FAST live confidence monitor、IMU parity gate分離、四個cube=1000 live profiles及文件，
-  均已提交在`0e9a571`。目前未commit的project-owned內容是51-D observation/training/
-  deployment consumer、bootstrap/export/evaluator tooling、測試與本文件。Confidence
+  均已提交在`0e9a571`。51-D observation/training/deployment consumer、bootstrap/export/
+  evaluator tooling、proprioceptive estimator、gait-value gate、測試與驗證報告均已提交在
+  `4c063a4`。Confidence
   milestone已在`b8b8c89`提交並push；第一次confidence-conditioned PPO已失敗並retire。
   第二輪 bounded safe-command `model_19` 已通過五個模擬confidence-state profiles與
   export parity，但兩backend live screening在LIO-SAM `forward_1_5`失敗，因此不可promotion，
   尚未接入或取代正式policy。
   root `build/`、`install/`、`log/`
-  是未追蹤／ignored runtime 產物，不納入提交，其他 `logs/`／`outputs/` 實驗
+  是未追蹤runtime產物，不納入提交，其他 `logs/`／`outputs/` 實驗
   產物也不提交。
 - 更早的核心修正仍位於歷史 commit，包括：
   `e34f023 修正：改用增量診斷並穩定視窗效能`、
@@ -80,8 +83,8 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   `/slam_confidence`、`/slam_tracking_valid` 與 confidence age／timestamp
   狀態，讓 PPO branch 不依賴 LIO-SAM 或其他特定方法。預期以 launch/config
   selector 在同一個 repository 內切換 backend，而不是靠切 branch 才能比較。
-- PPO confidence training 應是獨立的
-  `feature/ppo-slam-confidence` 實驗，先用可重播／可控制的 simulated
+- PPO confidence training保存在使用者指定的完整confidence開發線
+  `exp/slam-fastlio2`，先用可重播／可控制的 simulated
   confidence 驗證 observation 與行為，再與各 SLAM backend 做相同資料集的
   matrix comparison。不同 SLAM 的 raw ICP fitness／residual 不可直接當成
   可比較的 confidence；需要先定義 `[0, 1]` semantics、validity、age 與
