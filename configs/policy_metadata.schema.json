@@ -32,8 +32,8 @@
       "type": "object",
       "required": ["dimension", "terms"],
       "properties": {
-        "dimension": {"const": 48},
-        "terms": {"type": "array", "minItems": 7, "maxItems": 7}
+        "dimension": {"enum": [48, 51]},
+        "terms": {"type": "array", "minItems": 7, "maxItems": 8}
       }
     },
     "action": {

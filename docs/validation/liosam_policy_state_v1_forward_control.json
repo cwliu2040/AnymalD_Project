@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "kind": "liosam_policy_state_forward_control",
+  "contract_id": "liosam-policy-state-v1",
+  "config_sha256": "5c47ba201793250b07ddb0f3fa549ba751a3ca9c2e65f676822beadf89fe3688",
+  "formal_policy": {
+    "name": "Recovery v0.4.0 model1450",
+    "sha256": "721a918533cd00e605cf6edfcd8bf8bba9cbd56f26e22c2eda26604f03ee54c0"
+  },
+  "architecture": {
+    "mapping_confidence_authority_topic": "/slam/odom",
+    "policy_state_candidate_topic": "/slam/policy_odom",
+    "policy_state_source_topic": "/lio_sam/odometry/imu",
+    "runtime_ground_truth_used": false,
+    "native_deskew_used": true,
+    "upstream_liosam_modified": false
+  },
+  "registered_forward_repetitions": {
+    "count": 3,
+    "policy_state_quality_passed": 3,
+    "action_sensitivity_passed": 0,
+    "locomotion_stability_passed": 0,
+    "termination_counts": [0, 0, 0],
+    "event_order": [
+      "foot_slip_first",
+      "foot_slip_first",
+      "foot_slip_first"
+    ],
+    "first_body_instability_s": [14.72, 14.84, 14.92],
+    "state_age_p95_s_range": [0.00999992145, 0.009999944],
+    "body_velocity_mae_mps_ranges": {
+      "x": [0.05578839896, 0.05890654655],
+      "y": [0.06738038443, 0.07290448015],
+      "z": [0.0207924311, 0.02483544914]
+    },
+    "stopped_action_counterfactual_mean_absolute_range": [
+      0.1442944691,
+      0.1775859818
+    ],
+    "stopped_action_counterfactual_absolute_max_range": [
+      0.4939614534,
+      0.8227260113
+    ]
+  },
+  "retired_pose_regression_control": {
+    "window_s": 0.1,
+    "passed": false,
+    "termination_count": 1,
+    "velocity_error_mae_mps": [
+      1.184566362,
+      0.5699802293,
+      1.334373595
+    ],
+    "retained_in_source": false
+  },
+  "conclusion": {
+    "mapping_pose_delta_problem_resolved": true,
+    "liosam_policy_state_qualified": false,
+    "model19_matrix_unblocked": false,
+    "blocking_gate": "stopped-state action sensitivity and locomotion stability",
+    "next_architecture": "proprioceptive locomotion state estimator independent of SLAM"
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "checks": {
+    "axis_mae": true,
+    "axis_rmse": true,
+    "maximum_error": false,
+    "non_finite": true,
+    "stopped_planar_bias": true,
+    "stopped_samples_present": true,
+    "stopped_vertical_bias": true,
+    "vector_p95": true
+  },
+  "gate_id": "anymal-d-proprioceptive-velocity-v1",
+  "metadata": "exported/proprioceptive_velocity_estimator/v1/candidate_05/velocity_estimator_metadata.json",
+  "metrics": {
+    "axis_mae_mps": [
+      0.05021738260984421,
+      0.05588272958993912,
+      0.02808794192969799
+    ],
+    "axis_rmse_mps": [
+      0.07588817924261093,
+      0.07800386101007462,
+      0.03839903324842453
+    ],
+    "maximum_vector_error_mps": 2.380122661590576,
+    "non_finite_predictions": 0,
+    "samples": 44680,
+    "stopped_planar_bias_mps": 0.07719937711954117,
+    "stopped_samples": 14779,
+    "stopped_vertical_bias_mps": 0.027972077950835228,
+    "vector_p95_error_mps": 0.17995500564575195
+  },
+  "passed": false,
+  "schema_version": 1,
+  "thresholds": {
+    "axis_mae_max_mps": [
+      0.1,
+      0.1,
+      0.08
+    ],
+    "axis_rmse_max_mps": [
+      0.16,
+      0.16,
+      0.12
+    ],
+    "maximum_single_sample_vector_error_mps": 1.5,
+    "non_finite_predictions_max": 0,
+    "stopped_planar_bias_max_mps": 0.08,
+    "stopped_vertical_bias_max_mps": 0.06,
+    "vector_p95_error_max_mps": 0.3
+  }
+}

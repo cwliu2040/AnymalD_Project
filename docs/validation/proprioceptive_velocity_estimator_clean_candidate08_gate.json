@@ -1,0 +1,58 @@
+{
+  "checks": {
+    "axis_mae": true,
+    "axis_rmse": true,
+    "maximum_error": true,
+    "non_finite": true,
+    "stopped_planar_bias": true,
+    "stopped_samples_present": true,
+    "stopped_vertical_bias": true,
+    "torchscript_onnx_parity": true,
+    "vector_p95": true
+  },
+  "export_parity": {
+    "samples": 256,
+    "torchscript_onnx_max_abs_error": 2.682209014892578e-07
+  },
+  "gate_id": "anymal-d-proprioceptive-velocity-v1",
+  "metadata": "exported/proprioceptive_velocity_estimator/v1/clean_candidate_08/velocity_estimator_metadata.json",
+  "metrics": {
+    "axis_mae_mps": [
+      0.03356142342090607,
+      0.03432135656476021,
+      0.02230984903872013
+    ],
+    "axis_rmse_mps": [
+      0.05440496280789375,
+      0.05092405155301094,
+      0.031232479959726334
+    ],
+    "maximum_vector_error_mps": 0.9161909222602844,
+    "non_finite_predictions": 0,
+    "samples": 44737,
+    "stopped_planar_bias_mps": 0.03262295946478844,
+    "stopped_samples": 16543,
+    "stopped_vertical_bias_mps": 0.022008566185832024,
+    "vector_p95_error_mps": 0.13508150875568384
+  },
+  "passed": true,
+  "schema_version": 1,
+  "thresholds": {
+    "axis_mae_max_mps": [
+      0.1,
+      0.1,
+      0.08
+    ],
+    "axis_rmse_max_mps": [
+      0.16,
+      0.16,
+      0.12
+    ],
+    "maximum_single_sample_vector_error_mps": 1.5,
+    "non_finite_predictions_max": 0,
+    "stopped_planar_bias_max_mps": 0.08,
+    "stopped_vertical_bias_max_mps": 0.06,
+    "torchscript_onnx_max_abs_error": 1e-05,
+    "vector_p95_error_max_mps": 0.3
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "artifacts": {
+    "agent_config": {
+      "path": "/home/ros/anymal_locomotion/logs/rsl_rl/anymal_d_locomotion_slam_confidence_bounded_safe_command_v1/2026-08-12_14-16-51_bounded_safe_command_bootstrap/params/agent.yaml",
+      "sha256": "6aaec394d2ec7912bef4de4dd80bf288e9c55bdf6602a3e47d84a9c80ff50d3f"
+    },
+    "checkpoint": {
+      "path": "/home/ros/anymal_locomotion/logs/rsl_rl/anymal_d_locomotion_slam_confidence_bounded_safe_command_v1/2026-08-12_14-16-51_bounded_safe_command_bootstrap/bootstrap_model_0.pt",
+      "sha256": "7d827f76573ce2fa48f79d8a44add24bd33645601b5956c6898ce405a4d8deea"
+    },
+    "onnx": {
+      "path": "/home/ros/anymal_locomotion/exported/anymal_d_locomotion_slam_confidence_bounded_safe_command_v1/2026-08-12_14-16-51_bounded_safe_command_bootstrap/policy.onnx",
+      "sha256": "7db56490a1c5e4909526c1602fb7ed196c35541090eb799c56cce69ec6f30c66"
+    },
+    "torchscript": {
+      "path": "/home/ros/anymal_locomotion/exported/anymal_d_locomotion_slam_confidence_bounded_safe_command_v1/2026-08-12_14-16-51_bounded_safe_command_bootstrap/policy.pt",
+      "sha256": "5fd53409a5f915363523fb36f3af9200dcf6602edbed3a33b11d3752ef5df826"
+    }
+  },
+  "checkpoint_reconstruction": {
+    "activation": "elu",
+    "actor_observation_normalization": false,
+    "architecture": "frozen_backbone_exact_safe_command",
+    "backbone_layer_dimensions": [
+      [
+        48,
+        128
+      ],
+      [
+        128,
+        128
+      ],
+      [
+        128,
+        128
+      ],
+      [
+        128,
+        12
+      ]
+    ],
+    "checkpoint_iteration": 0,
+    "command_dimension": 3,
+    "command_offset": 9,
+    "confidence_offset": 48,
+    "input_dimension": 51,
+    "output_dimension": 12,
+    "safe_command_gain": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "safe_command_gain_limit": 0.8
+  },
+  "comparisons": {
+    "checkpoint_vs_onnx": {
+      "allclose": true,
+      "max_absolute_error": 3.5762786865234375e-06,
+      "max_relative_error": 0.00024333526380360126,
+      "mean_absolute_error": 4.633220669347793e-07
+    },
+    "checkpoint_vs_torchscript": {
+      "allclose": true,
+      "max_absolute_error": 0.0,
+      "max_relative_error": 0.0,
+      "mean_absolute_error": 0.0
+    },
+    "torchscript_vs_onnx": {
+      "allclose": true,
+      "max_absolute_error": 3.5762786865234375e-06,
+      "max_relative_error": 0.00024333526380360126,
+      "mean_absolute_error": 4.633220669347793e-07
+    }
+  },
+  "input": {
+    "dimension": 51,
+    "dtype": "float32"
+  },
+  "onnx_backend": "onnx.reference.ReferenceEvaluator",
+  "output": {
+    "dimension": 12,
+    "dtype": "float32"
+  },
+  "passed": true,
+  "samples": 256,
+  "seed": 42,
+  "tolerances": {
+    "absolute": 1e-05,
+    "relative": 1e-05
+  },
+  "versions": {
+    "numpy": "1.26.0",
+    "onnx": "1.20.1",
+    "torch": "2.7.0+cu128"
+  }
+}

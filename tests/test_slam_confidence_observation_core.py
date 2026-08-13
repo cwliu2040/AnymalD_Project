@@ -6,6 +6,7 @@ from anymal_locomotion_ros2.slam_confidence_estimator import (
     CalibratedConfidenceEstimator,
 )
 from anymal_locomotion_ros2.slam_confidence_observation_core import (
+    confidence_identity_valid,
     ppo_confidence_observation,
 )
 
@@ -34,7 +35,43 @@ def test_receipt_watchdog_fail_closes_stale_high_confidence() -> None:
     )
     assert observation.slam_confidence == 0.0
     assert observation.slam_tracking_valid == 0.0
+    assert observation.confidence_age_normalized == 1.0
     assert not observation.receipt_watchdog_valid
+
+
+def test_invalid_source_stamp_fail_closes_the_complete_vector() -> None:
+    observation = ppo_confidence_observation(
+        confidence=0.99,
+        tracking_valid=True,
+        source_stamp_valid=False,
+        confidence_age_s=0.01,
+        receipt_age_s=0.01,
+    )
+    assert observation.slam_confidence == 0.0
+    assert observation.slam_tracking_valid == 0.0
+    assert observation.confidence_age_normalized == 1.0
+    assert observation.receipt_watchdog_valid
+
+
+def test_confidence_identity_requires_exact_selected_calibration() -> None:
+    values = {
+        "schema_version": 1,
+        "expected_schema_version": 1,
+        "backend_id": "fastlio2",
+        "calibration_id": "native-v1-1e6cf8347be1",
+        "expected_backend_id": "fastlio2",
+        "expected_calibration_id": "native-v1-1e6cf8347be1",
+    }
+    assert confidence_identity_valid(**values)
+    assert not confidence_identity_valid(
+        **{**values, "calibration_id": "native-v1-wrong"}
+    )
+    assert not confidence_identity_valid(
+        **{**values, "backend_id": "liosam"}
+    )
+    assert not confidence_identity_valid(
+        **{**values, "schema_version": 2}
+    )
 
 
 def test_both_backend_artifacts_feed_the_same_ppo_ready_adapter() -> None:

@@ -130,6 +130,13 @@ low-level command message type 仍須等 controller/SDK 與 safety requirements
 body-frame `/odom.twist.twist.linear`，並使用 IMU angular velocity 與
 orientation。
 
+LIO-SAM live screening 已確認 mapping pose 與 native prediction twist 不足以直接
+作為 policy-grade velocity authority。後續架構改用獨立 proprioceptive estimator：
+它只讀 IMU、joint state 與 foot contact history，SLAM 仍負責 global pose 與
+confidence。Simulator GT velocity 僅作 supervised label／offline evaluator，永不進
+runtime estimator input。契約與 gate 見
+[Proprioceptive body-velocity estimator v1](proprioceptive_velocity_estimator.md)。
+
 ROS 2 deployment host 會在 physics 啟動前於 ANYmal-D base 下建立真正的
 Isaac Sim IMU prim，以 200 Hz 發布 `/imu/data`。Policy 維持 50 Hz 並使用
 最新 sample；目前 filter width 為 1，尚未加入 sensor noise 或 bias。

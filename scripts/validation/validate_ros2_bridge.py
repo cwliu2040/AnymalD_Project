@@ -837,6 +837,9 @@ def _diagnostic_sample(
             robot.data.root_ang_vel_b[0, 2],
         )
     ).detach().cpu().numpy()
+    actual_linear_velocity_body = (
+        robot.data.root_lin_vel_b[0].detach().cpu().numpy()
+    )
     foot_velocities = (
         robot.data.body_lin_vel_w[0, robot_foot_ids]
         .detach()
@@ -874,6 +877,9 @@ def _diagnostic_sample(
         "time_s": float(time_s),
         "command": command.astype(float).tolist(),
         "actual_velocity": actual_velocity.astype(float).tolist(),
+        "actual_linear_velocity_body_mps": (
+            actual_linear_velocity_body.astype(float).tolist()
+        ),
         "base_position_w_m": (
             robot.data.root_pos_w[0]
             .detach()

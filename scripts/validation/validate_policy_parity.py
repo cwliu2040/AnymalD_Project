@@ -69,10 +69,120 @@ def _activation(name: str) -> type[torch.nn.Module]:
         raise ValueError(f"Unsupported actor activation for parity validation: {name}") from error
 
 
+def _linear_indices(state: dict[str, torch.Tensor], prefix: str) -> list[int]:
+    return sorted(
+        int(key.removeprefix(prefix).split(".", 1)[0])
+        for key in state
+        if key.startswith(prefix) and key.endswith(".weight")
+    )
+
+
+def _checkpoint_mlp(
+    state: dict[str, torch.Tensor],
+    prefix: str,
+    activation_type: type[torch.nn.Module],
+) -> tuple[torch.nn.Sequential, list[list[int]]]:
+    layer_indices = _linear_indices(state, prefix)
+    if not layer_indices:
+        raise ValueError(f"Checkpoint has no linear-layer weights under {prefix}")
+    modules: list[torch.nn.Module] = []
+    dimensions: list[list[int]] = []
+    for position, layer_index in enumerate(layer_indices):
+        weight = state[f"{prefix}{layer_index}.weight"]
+        bias = state[f"{prefix}{layer_index}.bias"]
+        layer = torch.nn.Linear(weight.shape[1], weight.shape[0])
+        layer.weight.data.copy_(weight)
+        layer.bias.data.copy_(bias)
+        modules.append(layer)
+        dimensions.append([int(weight.shape[1]), int(weight.shape[0])])
+        if position < len(layer_indices) - 1:
+            modules.append(activation_type())
+    return torch.nn.Sequential(*modules), dimensions
+
+
+class _ResidualCheckpointActor(torch.nn.Module):
+    """Local reconstruction of the exported confidence residual actor."""
+
+    def __init__(
+        self,
+        backbone: torch.nn.Module,
+        residual: torch.nn.Module,
+        action_skip: torch.nn.Module,
+        residual_action_limit: float,
+        confidence_offset: int,
+    ) -> None:
+        super().__init__()
+        self.backbone = backbone
+        self.residual = residual
+        self.action_skip = action_skip
+        self.residual_action_limit = residual_action_limit
+        self.confidence_offset = confidence_offset
+
+    def forward(self, observation: torch.Tensor) -> torch.Tensor:
+        legacy_action = self.backbone(observation[..., : self.confidence_offset])
+        residual = self.residual_action_limit * torch.tanh(
+            self.residual(torch.cat((observation, legacy_action), dim=-1))
+            + self.action_skip(legacy_action)
+        )
+        confidence = observation[..., self.confidence_offset]
+        valid = observation[..., self.confidence_offset + 1]
+        safe_scale = torch.clamp(valid, 0.0, 1.0) * torch.clamp(
+            (confidence - 0.2) / 0.8,
+            0.0,
+            1.0,
+        )
+        return legacy_action + (1.0 - safe_scale).unsqueeze(-1) * residual
+
+
+class _SafeCommandCheckpointActor(torch.nn.Module):
+    """Local reconstruction of the exact safe-command actor."""
+
+    def __init__(
+        self,
+        backbone: torch.nn.Module,
+        safe_command_gain: torch.Tensor,
+        confidence_offset: int,
+        command_offset: int,
+        command_dimension: int,
+        safe_command_gain_limit: float,
+    ) -> None:
+        super().__init__()
+        self.backbone = backbone
+        self.safe_command_gain = torch.nn.Parameter(safe_command_gain.clone())
+        self.confidence_offset = confidence_offset
+        self.command_offset = command_offset
+        self.command_dimension = command_dimension
+        self.safe_command_gain_limit = safe_command_gain_limit
+
+    def forward(self, observation: torch.Tensor) -> torch.Tensor:
+        legacy_observation = observation[..., : self.confidence_offset]
+        legacy_action = self.backbone(legacy_observation)
+        confidence = observation[..., self.confidence_offset]
+        valid = observation[..., self.confidence_offset + 1]
+        safe_scale = torch.clamp(valid, 0.0, 1.0) * torch.clamp(
+            (confidence - 0.2) / 0.8,
+            0.0,
+            1.0,
+        )
+        safe_observation = legacy_observation.clone()
+        command_slice = slice(
+            self.command_offset,
+            self.command_offset + self.command_dimension,
+        )
+        safe_observation[..., command_slice] *= safe_scale.unsqueeze(-1)
+        safe_action = self.backbone(safe_observation)
+        gain = torch.clamp(
+            self.safe_command_gain,
+            0.0,
+            self.safe_command_gain_limit,
+        )
+        return legacy_action + gain * (safe_action - legacy_action)
+
+
 def _checkpoint_actor(
     checkpoint_path: Path,
     agent_config_path: Path,
-) -> tuple[torch.nn.Sequential, dict[str, Any]]:
+) -> tuple[torch.nn.Module, dict[str, Any]]:
     agent_config = yaml.safe_load(agent_config_path.read_text(encoding="utf-8"))
     policy_config = agent_config["policy"]
     if policy_config.get("actor_obs_normalization", False):
@@ -80,36 +190,85 @@ def _checkpoint_actor(
 
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     state = checkpoint["model_state_dict"]
-    layer_indices = sorted(
-        int(key.split(".")[1])
-        for key in state
-        if key.startswith("actor.") and key.endswith(".weight")
-    )
-    if not layer_indices:
-        raise ValueError("Checkpoint has no actor linear-layer weights")
-
     activation_type = _activation(policy_config["activation"])
-    modules: list[torch.nn.Module] = []
-    for position, layer_index in enumerate(layer_indices):
-        weight = state[f"actor.{layer_index}.weight"]
-        bias = state[f"actor.{layer_index}.bias"]
-        layer = torch.nn.Linear(weight.shape[1], weight.shape[0])
-        layer.weight.data.copy_(weight)
-        layer.bias.data.copy_(bias)
-        modules.append(layer)
-        if position < len(layer_indices) - 1:
-            modules.append(activation_type())
-
-    actor = torch.nn.Sequential(*modules).eval()
-    details = {
-        "checkpoint_iteration": checkpoint.get("iter"),
-        "activation": policy_config["activation"],
-        "layer_dimensions": [
-            [int(state[f"actor.{index}.weight"].shape[1]), int(state[f"actor.{index}.weight"].shape[0])]
-            for index in layer_indices
-        ],
-        "actor_observation_normalization": False,
-    }
+    if "actor.backbone.0.weight" in state:
+        backbone, backbone_dimensions = _checkpoint_mlp(
+            state, "actor.backbone.", activation_type
+        )
+        output_dimension = backbone_dimensions[-1][1]
+        confidence_offset = int(policy_config["confidence_offset"])
+        if "actor.safe_command_gain" in state:
+            input_dimension = 51
+            actor = _SafeCommandCheckpointActor(
+                backbone,
+                state["actor.safe_command_gain"],
+                confidence_offset,
+                int(policy_config["command_offset"]),
+                int(policy_config["command_dimension"]),
+                float(policy_config.get("safe_command_gain_limit", 1.0)),
+            ).eval()
+            details = {
+                "architecture": "frozen_backbone_exact_safe_command",
+                "checkpoint_iteration": checkpoint.get("iter"),
+                "activation": policy_config["activation"],
+                "input_dimension": input_dimension,
+                "output_dimension": output_dimension,
+                "backbone_layer_dimensions": backbone_dimensions,
+                "confidence_offset": confidence_offset,
+                "command_offset": int(policy_config["command_offset"]),
+                "command_dimension": int(policy_config["command_dimension"]),
+                "safe_command_gain": state["actor.safe_command_gain"].tolist(),
+                "safe_command_gain_limit": float(
+                    policy_config.get("safe_command_gain_limit", 1.0)
+                ),
+                "actor_observation_normalization": False,
+            }
+        else:
+            residual, residual_dimensions = _checkpoint_mlp(
+                state, "actor.residual.", activation_type
+            )
+            if "actor.action_skip.weight" in state:
+                action_skip = torch.nn.Linear(output_dimension, output_dimension)
+                action_skip.weight.data.copy_(state["actor.action_skip.weight"])
+                action_skip.bias.data.copy_(state["actor.action_skip.bias"])
+                action_skip_kind = "learned_linear"
+            else:
+                action_skip = torch.nn.Identity()
+                action_skip_kind = "identity"
+            input_dimension = residual_dimensions[0][0] - output_dimension
+            actor = _ResidualCheckpointActor(
+                backbone,
+                residual,
+                action_skip,
+                float(policy_config["residual_action_limit"]),
+                confidence_offset,
+            ).eval()
+            details = {
+                "architecture": "frozen_backbone_confidence_residual",
+                "checkpoint_iteration": checkpoint.get("iter"),
+                "activation": policy_config["activation"],
+                "input_dimension": input_dimension,
+                "output_dimension": output_dimension,
+                "backbone_layer_dimensions": backbone_dimensions,
+                "residual_layer_dimensions": residual_dimensions,
+                "residual_action_limit": float(policy_config["residual_action_limit"]),
+                "confidence_offset": confidence_offset,
+                "action_skip": action_skip_kind,
+                "actor_observation_normalization": False,
+            }
+    else:
+        actor, layer_dimensions = _checkpoint_mlp(
+            state, "actor.", activation_type
+        )
+        details = {
+            "architecture": "dense_mlp",
+            "checkpoint_iteration": checkpoint.get("iter"),
+            "activation": policy_config["activation"],
+            "input_dimension": layer_dimensions[0][0],
+            "output_dimension": layer_dimensions[-1][1],
+            "layer_dimensions": layer_dimensions,
+            "actor_observation_normalization": False,
+        }
     return actor, details
 
 
@@ -145,17 +304,22 @@ def main() -> int:
 
     input_name = onnx_model.graph.input[0].name
     output_name = onnx_model.graph.output[0].name
-    input_dimension = checkpoint_details["layer_dimensions"][0][0]
-    output_dimension = checkpoint_details["layer_dimensions"][-1][1]
-    if (input_dimension, output_dimension) != (48, 12):
+    input_dimension = checkpoint_details["input_dimension"]
+    output_dimension = checkpoint_details["output_dimension"]
+    if input_dimension not in (48, 51) or output_dimension != 12:
         raise ValueError(
-            f"Checkpoint actor dimensions must be 48 -> 12, received {input_dimension} -> {output_dimension}"
+            "Checkpoint actor dimensions must follow the 48-D base or 51-D "
+            f"confidence contract, received {input_dimension} -> {output_dimension}"
         )
 
     generator = np.random.default_rng(args.seed)
     observations = generator.standard_normal((args.samples, input_dimension), dtype=np.float32)
     observations[0] = 0.0
     observations[1] = np.linspace(-3.0, 3.0, input_dimension, dtype=np.float32)
+    if input_dimension == 51:
+        observations[:, 48:51] = generator.random((args.samples, 3), dtype=np.float32)
+        observations[0, 48:51] = (1.0, 1.0, 0.0)
+        observations[1, 48:51] = (1.0, 0.0, 1.0)
 
     with torch.inference_mode():
         checkpoint_outputs = actor(torch.from_numpy(observations)).numpy()

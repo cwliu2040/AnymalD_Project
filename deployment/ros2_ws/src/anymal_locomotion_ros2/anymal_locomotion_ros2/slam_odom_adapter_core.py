@@ -142,3 +142,17 @@ def body_velocity_from_pose_delta(
         rotation_vector = relative[:3] * (angle / vector_norm)
     angular_body = rotation_vector / dt_s
     return linear_body, angular_body
+
+
+def body_linear_velocity_from_world(
+    linear_velocity_world_xyz: tuple[float, float, float] | np.ndarray,
+    body_quaternion_xyzw: tuple[float, float, float, float] | np.ndarray,
+) -> np.ndarray:
+    """Express a world-frame linear velocity in the current body frame."""
+    velocity_world = np.asarray(linear_velocity_world_xyz, dtype=np.float64)
+    if velocity_world.shape != (3,) or not np.isfinite(velocity_world).all():
+        raise ValueError("world linear velocity must contain three finite values")
+    rotation_world_from_body = rotation_matrix_from_quaternion_xyzw(
+        body_quaternion_xyzw
+    )
+    return rotation_world_from_body.T @ velocity_world

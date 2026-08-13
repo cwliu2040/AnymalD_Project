@@ -29,6 +29,7 @@ class PolicyContract:
     action_scale: float
     control_period_s: float
     command_limits: tuple[tuple[float, float], ...]
+    observation_terms: tuple[str, ...]
 
     @classmethod
     def from_metadata(cls, path: str | Path) -> PolicyContract:
@@ -50,6 +51,9 @@ class PolicyContract:
                 tuple(float(value) for value in limits["vy"]),
                 tuple(float(value) for value in limits["wz"]),
             ),
+            observation_terms=tuple(
+                str(term["name"]) for term in metadata["observation"]["terms"]
+            ),
         )
         contract.validate()
         return contract
@@ -59,10 +63,27 @@ class PolicyContract:
             raise ValueError("Policy metadata must contain 12 unique canonical joint names")
         if len(self.default_joint_positions) != 12:
             raise ValueError("Policy metadata must contain 12 default joint positions")
-        if self.observation_dimension != 48 or self.action_dimension != 12:
+        expected_base_terms = (
+            "base_linear_velocity",
+            "base_angular_velocity",
+            "projected_gravity",
+            "velocity_command",
+            "relative_joint_position",
+            "relative_joint_velocity",
+            "previous_action",
+        )
+        expected_terms = expected_base_terms + (
+            ("slam_confidence",) if self.observation_dimension == 51 else ()
+        )
+        if (
+            self.observation_dimension not in (48, 51)
+            or self.action_dimension != 12
+            or self.observation_terms != expected_terms
+        ):
             raise ValueError(
-                f"Expected policy dimensions 48 -> 12, received "
-                f"{self.observation_dimension} -> {self.action_dimension}"
+                "Expected the ordered 48-D base contract or 51-D SLAM "
+                f"confidence contract, received {self.observation_dimension} -> "
+                f"{self.action_dimension} terms={self.observation_terms}"
             )
         if self.action_scale <= 0.0 or self.control_period_s <= 0.0:
             raise ValueError("Action scale and control period must be positive")
@@ -188,11 +209,11 @@ def build_observation(
     command: Sequence[float] | np.ndarray,
     previous_action: Sequence[float] | np.ndarray,
     contract: PolicyContract,
+    slam_confidence: Sequence[float] | np.ndarray | None = None,
 ) -> np.ndarray:
-    """Build the exact 48-D observation used during training."""
+    """Build the exact 48-D or 51-D observation used during training."""
     default_positions = _vector(contract.default_joint_positions, 12, "default_joint_positions")
-    observation = np.concatenate(
-        (
+    terms: list[np.ndarray] = [
             _vector(state.base_linear_velocity, 3, "base_linear_velocity"),
             _vector(state.base_angular_velocity, 3, "base_angular_velocity"),
             _vector(state.projected_gravity, 3, "projected_gravity"),
@@ -200,8 +221,17 @@ def build_observation(
             _vector(state.joint_positions, 12, "joint_positions") - default_positions,
             _vector(state.joint_velocities, 12, "joint_velocities"),
             _vector(previous_action, 12, "previous_action"),
-        )
-    ).astype(np.float32, copy=False)
+    ]
+    if contract.observation_dimension == 51:
+        if slam_confidence is None:
+            raise ValueError("51-D policy requires slam_confidence observation")
+        confidence = _vector(slam_confidence, 3, "slam_confidence")
+        if np.any(confidence < 0.0) or np.any(confidence > 1.0):
+            raise ValueError("slam_confidence values must be in [0, 1]")
+        terms.append(confidence)
+    elif slam_confidence is not None:
+        raise ValueError("48-D policy must not receive slam_confidence observation")
+    observation = np.concatenate(terms).astype(np.float32, copy=False)
     if observation.shape != (contract.observation_dimension,):
         raise RuntimeError(f"Observation contract produced unexpected shape {observation.shape}")
     return observation
@@ -239,8 +269,19 @@ class PolicyRuntime:
         )
         self.previous_action = restored.copy()
 
-    def step(self, state: RobotState, command: Sequence[float] | np.ndarray) -> InferenceResult:
-        observation = build_observation(state, command, self.previous_action, self.contract)
+    def step(
+        self,
+        state: RobotState,
+        command: Sequence[float] | np.ndarray,
+        slam_confidence: Sequence[float] | np.ndarray | None = None,
+    ) -> InferenceResult:
+        observation = build_observation(
+            state,
+            command,
+            self.previous_action,
+            self.contract,
+            slam_confidence,
+        )
         backend_output = np.asarray(self.backend(observation[None, :]), dtype=np.float32)
         if backend_output.size != self.contract.action_dimension:
             raise ValueError(

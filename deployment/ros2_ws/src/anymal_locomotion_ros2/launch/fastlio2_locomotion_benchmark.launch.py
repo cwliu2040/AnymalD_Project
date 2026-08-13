@@ -1,4 +1,4 @@
-"""Run v0.4.0 locomotion with FAST-LIO2 odometry, without confidence/PPO changes."""
+"""Run candidate locomotion from selected native SLAM odometry/confidence."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from launch.actions import (
     SetEnvironmentVariable,
     TimerAction,
 )
+from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -24,6 +25,7 @@ from launch.substitutions import (
     FindExecutable,
     LaunchConfiguration,
     PathJoinSubstitution,
+    PythonExpression,
 )
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -36,7 +38,7 @@ def _shutdown_if_benchmark_failed(event, _context):
         EmitEvent(
             event=Shutdown(
                 reason=(
-                    "FAST-LIO2 locomotion benchmark driver failed with "
+                    "SLAM-confidence locomotion benchmark driver failed with "
                     f"exit code {event.returncode}"
                 )
             )
@@ -114,6 +116,7 @@ def generate_launch_description() -> LaunchDescription:
     )
     enable_confidence = LaunchConfiguration("enable_confidence")
     slam_odom_topic = LaunchConfiguration("slam_odom_topic")
+    policy_odometry_topic = LaunchConfiguration("policy_odometry_topic")
     imu_observation_parity_atol = LaunchConfiguration(
         "imu_observation_parity_atol"
     )
@@ -124,6 +127,13 @@ def generate_launch_description() -> LaunchDescription:
         "policy_inference_trigger"
     )
     policy_state_timeout_s = LaunchConfiguration("policy_state_timeout_s")
+    slam_backend = LaunchConfiguration("slam_backend")
+    expected_confidence_backend = LaunchConfiguration(
+        "expected_confidence_backend"
+    )
+    expected_calibration_id = LaunchConfiguration(
+        "expected_calibration_id"
+    )
 
     project_python_path = [
         PathJoinSubstitution([project_root, "deployment", "python_vendor"]),
@@ -143,12 +153,18 @@ def generate_launch_description() -> LaunchDescription:
                 "backend": "onnx",
                 "policy_path": policy_path,
                 "metadata_path": metadata_path,
-                "odometry_topic": slam_odom_topic,
+                "odometry_topic": policy_odometry_topic,
                 "expected_odometry_child_frame": "base_link",
                 "inference_trigger": policy_inference_trigger,
                 "state_timeout_s": ParameterValue(
                     policy_state_timeout_s,
                     value_type=float,
+                ),
+                "expected_slam_confidence_backend": (
+                    expected_confidence_backend
+                ),
+                "expected_slam_confidence_calibration_id": (
+                    expected_calibration_id
                 ),
                 "diagnostics_path": PathJoinSubstitution(
                     [output_dir, "policy_diagnostics.json"]
@@ -170,8 +186,8 @@ def generate_launch_description() -> LaunchDescription:
                     enable_confidence,
                     value_type=bool,
                 ),
-                "expected_confidence_backend": "fastlio2",
-                "expected_calibration_id": "native-v1-1e6cf8347be1",
+                "expected_confidence_backend": expected_confidence_backend,
+                "expected_calibration_id": expected_calibration_id,
                 "output_path": PathJoinSubstitution(
                     [output_dir, "driver.json"]
                 ),
@@ -202,6 +218,28 @@ def generate_launch_description() -> LaunchDescription:
             "time_offset_lidar_to_imu": fastlio_time_offset_lidar_to_imu,
             "enable_confidence": enable_confidence,
         }.items(),
+        condition=IfCondition(
+            PythonExpression(["'", slam_backend, "' == 'fastlio2'"])
+        ),
+    )
+    liosam = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            str(package_share / "launch" / "lio_sam.launch.py")
+        ),
+        launch_arguments={
+            "use_rviz": "false",
+            "enable_confidence": enable_confidence,
+            "use_motion_deskew": "false",
+            "feature_cloud_info_topic": "/lio_sam/deskew/cloud_info",
+            "static_transform_cyclonedds_uri": (
+                "file://"
+                + str(package_share / "config" / "cyclonedds_static_tf.xml")
+            ),
+            "loop_closure_enable": "false",
+        }.items(),
+        condition=IfCondition(
+            PythonExpression(["'", slam_backend, "' == 'liosam'"])
+        ),
     )
     simulation = ExecuteProcess(
         cmd=[
@@ -282,6 +320,31 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "rmw_implementation",
                 default_value="rmw_cyclonedds_cpp",
+            ),
+            DeclareLaunchArgument(
+                "slam_backend",
+                default_value="fastlio2",
+                choices=["fastlio2", "liosam"],
+                description="Native SLAM backend that owns /slam/odom",
+            ),
+            DeclareLaunchArgument(
+                "policy_odometry_topic",
+                default_value="/slam/odom",
+                description=(
+                    "Validated body-state odometry consumed by the policy; "
+                    "LIO-SAM uses /slam/policy_odom while /slam/odom remains "
+                    "the confidence exact-stamp authority"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "expected_confidence_backend",
+                default_value="fastlio2",
+                description="Exact confidence backend identity required",
+            ),
+            DeclareLaunchArgument(
+                "expected_calibration_id",
+                default_value="native-v1-1e6cf8347be1",
+                description="Exact confidence calibration identity required",
             ),
             DeclareLaunchArgument("profile", default_value="stationary"),
             DeclareLaunchArgument(
@@ -395,8 +458,8 @@ def generate_launch_description() -> LaunchDescription:
                 "enable_confidence",
                 default_value="false",
                 description=(
-                    "Enable calibrated FAST-LIO2 confidence instrumentation; "
-                    "the locomotion policy does not consume it"
+                    "Enable selected native calibrated confidence authority; "
+                    "a 51-D policy consumes the atomic topic"
                 ),
             ),
             DeclareLaunchArgument(
@@ -448,6 +511,7 @@ def generate_launch_description() -> LaunchDescription:
                 period=1.0,
                 actions=[
                     fastlio,
+                    liosam,
                     policy,
                     stability_driver,
                     TimerAction(period=2.0, actions=[simulation]),
@@ -466,7 +530,7 @@ def generate_launch_description() -> LaunchDescription:
                         EmitEvent(
                             event=Shutdown(
                                 reason=(
-                                    "FAST-LIO2 locomotion simulation completed"
+                                    "SLAM-confidence locomotion simulation completed"
                                 )
                             )
                         )

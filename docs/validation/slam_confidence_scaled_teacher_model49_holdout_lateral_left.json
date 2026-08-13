@@ -1,0 +1,113 @@
+{
+  "behavior_gate": {
+    "checks": {
+      "degraded_deceleration": true,
+      "degraded_target_tracking": true,
+      "degraded_yaw_tracking": true,
+      "hard_termination_rate": true,
+      "healthy_linear_tracking": true,
+      "healthy_speed_retained": true,
+      "healthy_yaw_tracking": true,
+      "invalid_mean_stop": true,
+      "invalid_tail_stop": false,
+      "invalid_yaw_stop": true,
+      "recovery_linear_tracking": true,
+      "recovery_speed_reacquired": true,
+      "recovery_yaw_tracking": true
+    },
+    "derived": {
+      "degraded_speed_ratio_to_healthy": 0.22287375816849925,
+      "hard_termination_count": 506,
+      "hard_termination_fraction": 0.00098828125,
+      "timeout_count": 186
+    },
+    "passed": false,
+    "thresholds": {
+      "degraded_linear_rmse_max_mps": 0.5,
+      "degraded_speed_ratio_to_healthy_max": 0.65,
+      "degraded_yaw_mae_max_radps": 0.2,
+      "hard_termination_fraction_max": 0.01,
+      "healthy_linear_rmse_max_mps": 0.45,
+      "healthy_mean_planar_speed_min_mps": 1.1,
+      "healthy_yaw_mae_max_radps": 0.2,
+      "invalid_mean_abs_yaw_rate_max_radps": 0.2,
+      "invalid_mean_planar_speed_max_mps": 0.25,
+      "invalid_speed_above_0_50_fraction_max": 0.05,
+      "recovery_linear_rmse_max_mps": 0.45,
+      "recovery_mean_planar_speed_min_mps": 1.0,
+      "recovery_yaw_mae_max_radps": 0.2
+    }
+  },
+  "behavior_gate_profile": {
+    "command": {
+      "vx": 0.0,
+      "vy": 1.5,
+      "wz": 0.0
+    },
+    "cycle_s": 10.0,
+    "path": "/home/ros/anymal_locomotion/configs/slam_confidence_behavior_holdout_lateral_left.yaml",
+    "profile_id": "slam-confidence-v2-holdout-lateral-left",
+    "seed": 44,
+    "sha256": "580fcc0ed9869e0a73e738d062d16fbdc6f18e4a619d265e7915883ce0cbf511"
+  },
+  "checkpoint": "/home/ros/anymal_locomotion/logs/rsl_rl/anymal_d_locomotion_slam_confidence_teacher_v1/2026-08-12_13-47-04_scaled_formal_command_teacher_qualification_50iter/model_49.pt",
+  "num_envs": 512,
+  "states": {
+    "degraded": {
+      "linear_rmse": 0.34139278156008473,
+      "mean_absolute_yaw_rate": 0.09199511714018663,
+      "mean_planar_speed": 0.7512978197409547,
+      "samples": 121664,
+      "yaw_mae": 0.09199511714018663
+    },
+    "healthy": {
+      "linear_rmse": 0.30639069576736033,
+      "mean_absolute_yaw_rate": 0.06418599802205424,
+      "mean_planar_speed": 1.4103852466784261,
+      "samples": 247793,
+      "yaw_mae": 0.06418599802205424
+    },
+    "invalid": {
+      "linear_rmse": 0.3662587620305058,
+      "mean_absolute_yaw_rate": 0.13020846597896268,
+      "mean_planar_speed": 0.22753640447086798,
+      "samples": 142543,
+      "yaw_mae": 0.13020846597896268
+    }
+  },
+  "steps": 1000,
+  "windows": {
+    "degraded_late": {
+      "linear_rmse": 0.21611396013082387,
+      "mean_absolute_yaw_rate": 0.0976265738278577,
+      "mean_planar_speed": 0.3378945753174602,
+      "samples": 28090,
+      "speed_above_0_50_fraction": 0.21876112495550018,
+      "yaw_mae": 0.0976265738278577
+    },
+    "healthy": {
+      "linear_rmse": 0.09221597070694264,
+      "mean_absolute_yaw_rate": 0.056290981543521204,
+      "mean_planar_speed": 1.5160805744658452,
+      "samples": 129586,
+      "speed_above_0_50_fraction": 0.9999228311700338,
+      "yaw_mae": 0.056290981543521204
+    },
+    "invalid_settled": {
+      "linear_rmse": 0.3670904406299819,
+      "mean_absolute_yaw_rate": 0.11865173380754107,
+      "mean_planar_speed": 0.21388579279560108,
+      "samples": 49589,
+      "speed_above_0_50_fraction": 0.1102663897235274,
+      "yaw_mae": 0.11865173380754107
+    },
+    "recovery_settled": {
+      "linear_rmse": 0.23871064149291013,
+      "mean_absolute_yaw_rate": 0.05853613015012194,
+      "mean_planar_speed": 1.1986679415828294,
+      "samples": 26298,
+      "speed_above_0_50_fraction": 0.9865769260019773,
+      "yaw_mae": 0.05853613015012194
+    }
+  }
+}

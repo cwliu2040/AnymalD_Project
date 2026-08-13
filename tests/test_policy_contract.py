@@ -11,6 +11,7 @@ import yaml
 from anymal_locomotion.policy_contract import (
     CANONICAL_JOINT_ORDER,
     POLICY_CONTRACT,
+    SLAM_CONFIDENCE_POLICY_CONTRACT,
     validate_contract_definition,
     validate_runtime_joint_names,
 )
@@ -68,6 +69,23 @@ def test_policy_io_dimensions_and_offsets() -> None:
         "vy": [-1.5, 1.5],
         "wz": [-2.0, 2.0],
     }
+
+
+def test_slam_confidence_policy_contract_appends_exact_three_values() -> None:
+    observation = SLAM_CONFIDENCE_POLICY_CONTRACT["observation"]
+    assert observation["dimension"] == 51
+    assert [term["offset"] for term in observation["terms"]] == [
+        0, 3, 6, 9, 12, 24, 36, 48
+    ]
+    assert observation["terms"][-1] == {
+        "name": "slam_confidence",
+        "offset": 48,
+        "dimension": 3,
+        "components": ["confidence", "tracking_valid", "normalized_age"],
+    }
+    assert SLAM_CONFIDENCE_POLICY_CONTRACT["slam_confidence"][
+        "ground_truth_runtime_input"
+    ] is False
 
 
 def test_metadata_schema_and_example_have_required_fields() -> None:

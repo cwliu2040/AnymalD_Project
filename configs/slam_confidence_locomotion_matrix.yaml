@@ -1,0 +1,33 @@
+schema_version: 1
+matrix_id: bounded-safe-command-model19-screening-v1
+launch_file: fastlio2_locomotion_benchmark.launch.py
+repetitions: 1
+simulation_steps: 4000
+
+candidate:
+  policy_path: exported/anymal_d_locomotion_slam_confidence_bounded_safe_command_v1/2026-08-12_14-20-44_bounded_safe_command_qualification_20iter/policy.onnx
+  metadata_path: exported/anymal_d_locomotion_slam_confidence_bounded_safe_command_v1/2026-08-12_14-20-44_bounded_safe_command_qualification_20iter/policy_metadata.yaml
+  parity_report_path: docs/validation/slam_confidence_bounded_safe_command_model19_export_parity.json
+  checkpoint_sha256: 73d5870de4acc5c79b0d0fa30f15cd70ed5c9539f9b7ec9a4d35d30d6377fb16
+  policy_sha256: 511383d9a6b0d4d6c26588667e195f9d66b7e703db991af59fcc8aad4aeb84df
+
+backends:
+  fastlio2:
+    expected_calibration_id: native-v1-1e6cf8347be1
+    deskew_mode: native
+  liosam:
+    expected_calibration_id: native-v1-edc098b0bd98
+    deskew_mode: native
+
+profiles:
+  - forward_1_5
+  - lateral_1_5
+  - lateral_right_1_5
+  - backward_1_0
+  - curve_1_5_left_1_0
+
+policy_diagnostics_gate:
+  observation_dimension: 51
+  minimum_records: 25
+  require_tracking_valid_observation: true
+  require_non_fail_closed_observation: true

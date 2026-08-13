@@ -7,6 +7,8 @@ from isaaclab.envs import mdp as isaac_mdp
 from isaaclab.managers import SceneEntityCfg
 from isaaclab_tasks.manager_based.locomotion.velocity.mdp import feet_slide
 
+from .slam_confidence import confidence_safe_scale, simulated_slam_confidence
+
 
 def _high_combined_command_mask(
     env,
@@ -217,3 +219,118 @@ def high_curve_track_lin_vel_xy_exp(
         asset_cfg=asset_cfg,
     )
     return tracking * high_curve
+
+
+def confidence_track_lin_vel_xy_exp(
+    env,
+    command_name: str,
+    std: float,
+    cycle_s: float = 10.0,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Track a confidence-scaled planar target during simulated SLAM loss."""
+    asset = env.scene[asset_cfg.name]
+    command = env.command_manager.get_command(command_name)[:, :2]
+    target = command * confidence_safe_scale(env, cycle_s=cycle_s).unsqueeze(-1)
+    error = torch.sum(torch.square(target - asset.data.root_lin_vel_b[:, :2]), dim=1)
+    return torch.exp(-error / (std * std))
+
+
+def confidence_track_ang_vel_z_exp(
+    env,
+    command_name: str,
+    std: float,
+    cycle_s: float = 10.0,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Track a confidence-scaled yaw target during simulated SLAM loss."""
+    asset = env.scene[asset_cfg.name]
+    command = env.command_manager.get_command(command_name)[:, 2]
+    target = command * confidence_safe_scale(env, cycle_s=cycle_s)
+    error = torch.square(target - asset.data.root_ang_vel_b[:, 2])
+    return torch.exp(-error / (std * std))
+
+
+def confidence_invalid_planar_speed_l2(
+    env,
+    cycle_s: float = 10.0,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize residual planar motion only while tracking is invalid."""
+    asset = env.scene[asset_cfg.name]
+    valid = simulated_slam_confidence(env, cycle_s=cycle_s)[:, 1]
+    speed_squared = torch.sum(torch.square(asset.data.root_lin_vel_b[:, :2]), dim=1)
+    return speed_squared * (valid < 0.5)
+
+
+def confidence_invalid_yaw_rate_l2(
+    env,
+    cycle_s: float = 10.0,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize residual yaw motion only while tracking is invalid."""
+    asset = env.scene[asset_cfg.name]
+    valid = simulated_slam_confidence(env, cycle_s=cycle_s)[:, 1]
+    return torch.square(asset.data.root_ang_vel_b[:, 2]) * (valid < 0.5)
+
+
+def confidence_invalid_action_l2(
+    env,
+    cycle_s: float = 10.0,
+) -> torch.Tensor:
+    """Penalize non-neutral joint offsets only while tracking is invalid."""
+    valid = simulated_slam_confidence(env, cycle_s=cycle_s)[:, 1]
+    action_cost = torch.sum(torch.square(env.action_manager.action), dim=1)
+    return action_cost * (valid < 0.5)
+
+
+def _confidence_severity(env, cycle_s: float) -> torch.Tensor:
+    return 1.0 - confidence_safe_scale(env, cycle_s=cycle_s)
+
+
+def confidence_gait_action_rate_l2(env, cycle_s: float = 10.0) -> torch.Tensor:
+    """Penalize abrupt joint-target changes as confidence deteriorates."""
+    delta = env.action_manager.action - env.action_manager.prev_action
+    return torch.sum(torch.square(delta), dim=1) * _confidence_severity(env, cycle_s)
+
+
+def confidence_gait_lin_vel_z_l2(
+    env,
+    cycle_s: float = 10.0,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize vertical bouncing outside the healthy confidence state."""
+    asset = env.scene[asset_cfg.name]
+    return torch.square(asset.data.root_lin_vel_b[:, 2]) * _confidence_severity(env, cycle_s)
+
+
+def confidence_gait_ang_vel_xy_l2(
+    env,
+    cycle_s: float = 10.0,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize roll/pitch motion outside the healthy confidence state."""
+    asset = env.scene[asset_cfg.name]
+    rate = torch.sum(torch.square(asset.data.root_ang_vel_b[:, :2]), dim=1)
+    return rate * _confidence_severity(env, cycle_s)
+
+
+def confidence_gait_flat_orientation_l2(
+    env,
+    cycle_s: float = 10.0,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize body tilt outside the healthy confidence state."""
+    penalty = isaac_mdp.flat_orientation_l2(env, asset_cfg=asset_cfg)
+    return penalty * _confidence_severity(env, cycle_s)
+
+
+def confidence_gait_feet_slide(
+    env,
+    sensor_cfg: SceneEntityCfg,
+    cycle_s: float = 10.0,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize stance-foot slip outside the healthy confidence state."""
+    penalty = feet_slide(env, sensor_cfg=sensor_cfg, asset_cfg=asset_cfg)
+    return penalty * _confidence_severity(env, cycle_s)

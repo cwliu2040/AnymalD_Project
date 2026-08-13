@@ -80,6 +80,13 @@ robot driver / state estimator
         -> safety-reviewed command adapter / controller
 ```
 
+Project side 現已提供 `hardware_state_estimator_adapter` 的 frame-safe骨架；它只接受
+明確設定的 `nav_msgs/Odometry` vendor topic，且必須宣告 input twist 是 body 或 odom
+frame。這不代表 ANYbotics topic/schema 已確認，也不得在未取得 SDK 文件時把骨架視為
+實機整合完成。若原廠沒有可用 body velocity，才使用另行 qualification 的
+proprioceptive estimator；兩者輸出共同的 `/locomotion/estimated_odom` policy-side
+contract。
+
 policy node 的 simulation guards（stale data、command timeout、NaN、action
 limit）不能取代實體 safety controller。未完成 hardware contract 前，不能
 把 `joint_target = default_position + 0.5 * raw_action` 直接送到馬達，也不能

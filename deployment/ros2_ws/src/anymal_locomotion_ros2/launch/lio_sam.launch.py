@@ -128,6 +128,10 @@ def generate_launch_description() -> LaunchDescription:
                 "output_child_frame_id": "base_link",
                 "sensor_translation_in_body_xyz": [0.20, 0.0, 0.35],
                 "derive_twist_from_pose": True,
+                "policy_source_topic": "/lio_sam/odometry/imu",
+                "policy_output_topic": "/slam/policy_odom",
+                "policy_source_frame_id": "odom",
+                "policy_source_child_frame_id": "odom_imu",
             }
         ],
         condition=IfCondition(enable_confidence),

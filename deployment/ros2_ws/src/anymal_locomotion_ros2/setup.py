@@ -43,6 +43,8 @@ setup(
             "liosam_odom_adapter = anymal_locomotion_ros2.liosam_odom_adapter:main",
             "liosam_confidence_extractor = anymal_locomotion_ros2.liosam_confidence_node:main",
             "policy_node = anymal_locomotion_ros2.policy_node:main",
+            "proprioceptive_velocity_estimator = anymal_locomotion_ros2.proprioceptive_velocity_estimator_node:main",
+            "hardware_state_estimator_adapter = anymal_locomotion_ros2.hardware_state_estimator_adapter:main",
             "motion_deskew = anymal_locomotion_ros2.motion_deskew_node:main",
             "yaw_visualizer = anymal_locomotion_ros2.yaw_visualizer_node:main",
         ],

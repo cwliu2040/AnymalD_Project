@@ -12,17 +12,25 @@ import yaml
 from anymal_locomotion.artifacts import PROJECT_ROOT, assert_project_local_path, git_revision
 
 POLICY_CONTRACT_PATH = PROJECT_ROOT / "configs" / "policy_contract.yaml"
+SLAM_CONFIDENCE_POLICY_CONTRACT_PATH = (
+    PROJECT_ROOT / "configs" / "policy_contract_slam_confidence.yaml"
+)
 
 
-def _load_contract() -> dict[str, Any]:
-    with POLICY_CONTRACT_PATH.open(encoding="utf-8") as stream:
+def load_policy_contract(path: str | Path) -> dict[str, Any]:
+    """Load one project-owned policy contract."""
+    contract_path = Path(path).expanduser().resolve()
+    with contract_path.open(encoding="utf-8") as stream:
         contract = yaml.safe_load(stream)
     if not isinstance(contract, dict):
-        raise ValueError(f"Policy contract must be a mapping: {POLICY_CONTRACT_PATH}")
+        raise ValueError(f"Policy contract must be a mapping: {contract_path}")
     return contract
 
 
-POLICY_CONTRACT = _load_contract()
+POLICY_CONTRACT = load_policy_contract(POLICY_CONTRACT_PATH)
+SLAM_CONFIDENCE_POLICY_CONTRACT = load_policy_contract(
+    SLAM_CONFIDENCE_POLICY_CONTRACT_PATH
+)
 CANONICAL_JOINT_ORDER = tuple(item["name"] for item in POLICY_CONTRACT["joints"])
 JOINT_TO_POLICY_INDEX = {name: index for index, name in enumerate(CANONICAL_JOINT_ORDER)}
 
@@ -71,10 +79,17 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def write_export_metadata(export_dir: str | Path, checkpoint_path: str | Path) -> Path:
+def write_export_metadata(
+    export_dir: str | Path,
+    checkpoint_path: str | Path,
+    *,
+    contract_path: str | Path = POLICY_CONTRACT_PATH,
+) -> Path:
     """Write versioned deployment metadata beside a policy export."""
     export_path = assert_project_local_path(export_dir)
     checkpoint = assert_project_local_path(checkpoint_path)
+    selected_contract_path = assert_project_local_path(contract_path)
+    selected_contract = load_policy_contract(selected_contract_path)
     project_revision = git_revision(PROJECT_ROOT)
     if project_revision is None:
         raise RuntimeError("Policy export requires a committed project Git revision")
@@ -87,19 +102,21 @@ def write_export_metadata(export_dir: str | Path, checkpoint_path: str | Path) -
     if missing:
         raise FileNotFoundError(f"Policy export artifacts are missing: {missing}")
     action_metadata = {
-        **POLICY_CONTRACT["action"],
-        "default_joint_positions": [item["default_position"] for item in POLICY_CONTRACT["joints"]],
+        **selected_contract["action"],
+        "default_joint_positions": [
+            item["default_position"] for item in selected_contract["joints"]
+        ],
     }
     metadata = {
-        "schema_version": POLICY_CONTRACT["schema_version"],
-        "robot": POLICY_CONTRACT["robot"],
-        "joint_order": list(CANONICAL_JOINT_ORDER),
-        "observation": POLICY_CONTRACT["observation"],
+        "schema_version": selected_contract["schema_version"],
+        "robot": selected_contract["robot"],
+        "joint_order": [item["name"] for item in selected_contract["joints"]],
+        "observation": selected_contract["observation"],
         "action": action_metadata,
-        "command": POLICY_CONTRACT["command"],
-        "frames": POLICY_CONTRACT["frames"],
-        "normalization": POLICY_CONTRACT["normalization"],
-        "versions": POLICY_CONTRACT["versions"],
+        "command": selected_contract["command"],
+        "frames": selected_contract["frames"],
+        "normalization": selected_contract["normalization"],
+        "versions": selected_contract["versions"],
         "checkpoint": {
             "path": str(checkpoint.relative_to(PROJECT_ROOT)),
             "sha256": _sha256(checkpoint),
@@ -112,7 +129,7 @@ def write_export_metadata(export_dir: str | Path, checkpoint_path: str | Path) -
             }
             for name, path in artifact_paths.items()
         },
-        "config_sha256": _sha256(POLICY_CONTRACT_PATH),
+        "config_sha256": _sha256(selected_contract_path),
         "project_git_commit": project_revision,
     }
     metadata_path = export_path / "policy_metadata.yaml"

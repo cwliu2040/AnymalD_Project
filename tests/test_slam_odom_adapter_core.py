@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from anymal_locomotion_ros2.slam_odom_adapter_core import (
+    body_linear_velocity_from_world,
     body_pose_from_sensor_pose,
     body_velocity_from_pose_delta,
     normalized_quaternion_xyzw,
@@ -70,3 +71,20 @@ def test_rotation_matrix_is_orthonormal() -> None:
         (0.1, -0.2, 0.3, 0.9)
     )
     np.testing.assert_allclose(matrix @ matrix.T, np.eye(3), atol=1.0e-12)
+
+
+def test_world_linear_velocity_is_rotated_into_current_body() -> None:
+    half_yaw = math.sin(math.pi / 4.0)
+    velocity = body_linear_velocity_from_world(
+        (0.0, 2.0, -0.5),
+        (0.0, 0.0, half_yaw, half_yaw),
+    )
+    np.testing.assert_allclose(velocity, (2.0, 0.0, -0.5), atol=1.0e-9)
+
+
+def test_world_linear_velocity_rejects_nonfinite_input() -> None:
+    with pytest.raises(ValueError, match="finite"):
+        body_linear_velocity_from_world(
+            (math.nan, 0.0, 0.0),
+            (0.0, 0.0, 0.0, 1.0),
+        )

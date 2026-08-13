@@ -1,0 +1,38 @@
+schema_version: 1
+profile_id: slam-confidence-v2-holdout-lateral-left
+
+# Frozen before candidate evaluation. This profile was not used for training
+# or for the primary forward behavior gate.
+seed: 44
+num_envs: 512
+steps: 1000
+cycle_s: 10.0
+command:
+  vx: 0.0
+  vy: 1.5
+  wz: 0.0
+
+windows:
+  healthy:
+    phase: [0.10, 0.30]
+  degraded_late:
+    phase: [0.45, 0.50]
+  invalid_settled:
+    phase: [0.60, 0.70]
+  recovery_settled:
+    phase: [0.90, 1.00]
+
+gates:
+  healthy_linear_rmse_max_mps: 0.45
+  healthy_mean_planar_speed_min_mps: 1.10
+  degraded_speed_ratio_to_healthy_max: 0.65
+  degraded_linear_rmse_max_mps: 0.50
+  invalid_mean_planar_speed_max_mps: 0.25
+  invalid_speed_above_0_50_fraction_max: 0.05
+  invalid_mean_abs_yaw_rate_max_radps: 0.20
+  recovery_linear_rmse_max_mps: 0.45
+  recovery_mean_planar_speed_min_mps: 1.00
+  hard_termination_fraction_max: 0.01
+  healthy_yaw_mae_max_radps: 0.20
+  degraded_yaw_mae_max_radps: 0.20
+  recovery_yaw_mae_max_radps: 0.20

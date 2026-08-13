@@ -1,12 +1,16 @@
 """Project-owned ANYmal-D Flat v1 environment configuration."""
 
+from isaaclab.envs import mdp as isaac_mdp
+from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import EventTermCfg as EventTerm
+from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils import configclass
 
 from isaaclab_tasks.manager_based.locomotion.velocity.config.anymal_d.flat_env_cfg import AnymalDFlatEnvCfg
 from isaaclab_tasks.manager_based.locomotion.velocity.velocity_env_cfg import (
+    CurriculumCfg,
     EventCfg,
     RewardsCfg,
 )
@@ -279,3 +283,174 @@ class AnymalDLocomotionRecoveryV05EnvCfg(
                 heading=None,
             ),
         )
+
+
+@configclass
+class AnymalDLocomotionSlamConfidenceRewardsCfg(RewardsCfg):
+    """Baseline rewards with confidence-scaled velocity targets."""
+
+    track_lin_vel_xy_exp = RewTerm(
+        func=mdp.confidence_track_lin_vel_xy_exp,
+        weight=1.0,
+        params={"command_name": "base_velocity", "std": 0.5, "cycle_s": 10.0},
+    )
+    track_ang_vel_z_exp = RewTerm(
+        func=mdp.confidence_track_ang_vel_z_exp,
+        weight=0.5,
+        params={"command_name": "base_velocity", "std": 0.5, "cycle_s": 10.0},
+    )
+    invalid_planar_speed_l2 = RewTerm(
+        func=mdp.confidence_invalid_planar_speed_l2,
+        weight=-2.0,
+        params={"cycle_s": 10.0, "asset_cfg": SceneEntityCfg("robot")},
+    )
+    invalid_yaw_rate_l2 = RewTerm(
+        func=mdp.confidence_invalid_yaw_rate_l2,
+        weight=-0.5,
+        params={"cycle_s": 10.0, "asset_cfg": SceneEntityCfg("robot")},
+    )
+    invalid_action_l2 = RewTerm(
+        func=mdp.confidence_invalid_action_l2,
+        weight=-0.1,
+        params={"cycle_s": 10.0},
+    )
+
+
+@configclass
+class AnymalDLocomotionSlamConfidenceCurriculumCfg(CurriculumCfg):
+    """Stage in stronger invalid-state stopping costs after 25 PPO iterations."""
+
+    terrain_levels = None
+    invalid_planar_stop = CurrTerm(
+        func=isaac_mdp.modify_reward_weight,
+        params={
+            "term_name": "invalid_planar_speed_l2",
+            "weight": -4.0,
+            "num_steps": 600,
+        },
+    )
+    invalid_yaw_stop = CurrTerm(
+        func=isaac_mdp.modify_reward_weight,
+        params={
+            "term_name": "invalid_yaw_rate_l2",
+            "weight": -1.0,
+            "num_steps": 600,
+        },
+    )
+    invalid_action = CurrTerm(
+        func=isaac_mdp.modify_reward_weight,
+        params={
+            "term_name": "invalid_action_l2",
+            "weight": -0.5,
+            "num_steps": 600,
+        },
+    )
+
+
+@configclass
+class AnymalDLocomotionSlamConfidenceEnvCfg(AnymalDLocomotionFlatEnvCfg):
+    """51-D PPO task with a deployable three-value confidence contract."""
+
+    rewards: AnymalDLocomotionSlamConfidenceRewardsCfg = (
+        AnymalDLocomotionSlamConfidenceRewardsCfg()
+    )
+    curriculum: AnymalDLocomotionSlamConfidenceCurriculumCfg = (
+        AnymalDLocomotionSlamConfidenceCurriculumCfg()
+    )
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        # Configclass preserves inherited observation order; assigning the new
+        # term here appends it after previous_action at offsets 48..50.
+        self.observations.policy.slam_confidence = ObsTerm(
+            func=mdp.simulated_slam_confidence,
+            params={"cycle_s": 10.0, "phase_offset_mode": "distributed"},
+            clip=(0.0, 1.0),
+        )
+        # The upstream term uses the unscaled command magnitude and conflicts
+        # with a deliberate stop during low confidence.
+        self.rewards.feet_air_time.weight = 0.0
+
+
+@configclass
+class AnymalDLocomotionSlamConfidenceGaitRewardsCfg(
+    AnymalDLocomotionSlamConfidenceRewardsCfg
+):
+    """Explicit low-confidence gait-quality objectives beyond command scaling."""
+
+    confidence_gait_action_rate_l2 = RewTerm(
+        func=mdp.confidence_gait_action_rate_l2,
+        weight=-0.02,
+        params={"cycle_s": 10.0},
+    )
+    confidence_gait_lin_vel_z_l2 = RewTerm(
+        func=mdp.confidence_gait_lin_vel_z_l2,
+        weight=-2.0,
+        params={"cycle_s": 10.0, "asset_cfg": SceneEntityCfg("robot")},
+    )
+    confidence_gait_ang_vel_xy_l2 = RewTerm(
+        func=mdp.confidence_gait_ang_vel_xy_l2,
+        weight=-0.2,
+        params={"cycle_s": 10.0, "asset_cfg": SceneEntityCfg("robot")},
+    )
+    confidence_gait_flat_orientation_l2 = RewTerm(
+        func=mdp.confidence_gait_flat_orientation_l2,
+        weight=-2.0,
+        params={"cycle_s": 10.0, "asset_cfg": SceneEntityCfg("robot")},
+    )
+    confidence_gait_feet_slide = RewTerm(
+        func=mdp.confidence_gait_feet_slide,
+        weight=-0.05,
+        params={
+            "cycle_s": 10.0,
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*FOOT"),
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*FOOT"),
+        },
+    )
+
+
+@configclass
+class AnymalDLocomotionSlamConfidenceGaitCurriculumCfg(
+    AnymalDLocomotionSlamConfidenceCurriculumCfg
+):
+    """Ramp the five gait objectives after the safe stop path is established."""
+
+    gait_action_smoothness = CurrTerm(
+        func=isaac_mdp.modify_reward_weight,
+        params={"term_name": "confidence_gait_action_rate_l2", "weight": -0.05, "num_steps": 600},
+    )
+    gait_vertical_stability = CurrTerm(
+        func=isaac_mdp.modify_reward_weight,
+        params={"term_name": "confidence_gait_lin_vel_z_l2", "weight": -4.0, "num_steps": 600},
+    )
+    gait_roll_pitch_stability = CurrTerm(
+        func=isaac_mdp.modify_reward_weight,
+        params={"term_name": "confidence_gait_ang_vel_xy_l2", "weight": -0.5, "num_steps": 600},
+    )
+    gait_posture = CurrTerm(
+        func=isaac_mdp.modify_reward_weight,
+        params={"term_name": "confidence_gait_flat_orientation_l2", "weight": -5.0, "num_steps": 600},
+    )
+    gait_stance_slip = CurrTerm(
+        func=isaac_mdp.modify_reward_weight,
+        params={"term_name": "confidence_gait_feet_slide", "weight": -0.2, "num_steps": 600},
+    )
+
+
+@configclass
+class AnymalDLocomotionSlamConfidenceGaitEnvCfg(
+    AnymalDLocomotionSlamConfidenceEnvCfg
+):
+    """Safe-command plus learned gait adaptation, without synthetic pushes."""
+
+    rewards: AnymalDLocomotionSlamConfidenceGaitRewardsCfg = (
+        AnymalDLocomotionSlamConfidenceGaitRewardsCfg()
+    )
+    curriculum: AnymalDLocomotionSlamConfidenceGaitCurriculumCfg = (
+        AnymalDLocomotionSlamConfidenceGaitCurriculumCfg()
+    )
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.events.push_robot = None
+        self.events.base_external_force_torque = None

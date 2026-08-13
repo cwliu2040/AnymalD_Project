@@ -1,0 +1,159 @@
+{
+  "behavior_gate": {
+    "checks": {
+      "degraded_deceleration": true,
+      "degraded_target_tracking": true,
+      "hard_termination_rate": true,
+      "healthy_linear_tracking": true,
+      "healthy_speed_retained": true,
+      "invalid_mean_stop": true,
+      "invalid_tail_stop": true,
+      "invalid_yaw_stop": true,
+      "recovery_linear_tracking": true,
+      "recovery_speed_reacquired": true
+    },
+    "derived": {
+      "degraded_speed_ratio_to_healthy": 0.3009835233889136,
+      "hard_terminated_env_count": 2,
+      "hard_terminated_env_fraction": 0.00390625,
+      "hard_termination_count": 2,
+      "hard_termination_fraction": 3.90625e-06,
+      "timeout_count": 510
+    },
+    "passed": true,
+    "thresholds": {
+      "degraded_linear_rmse_max_mps": 0.5,
+      "degraded_speed_ratio_to_healthy_max": 0.65,
+      "hard_termination_fraction_max": 0.01,
+      "healthy_linear_rmse_max_mps": 0.45,
+      "healthy_mean_planar_speed_min_mps": 1.1,
+      "invalid_mean_abs_yaw_rate_max_radps": 0.2,
+      "invalid_mean_planar_speed_max_mps": 0.25,
+      "invalid_speed_above_0_50_fraction_max": 0.05,
+      "recovery_linear_rmse_max_mps": 0.45,
+      "recovery_mean_planar_speed_min_mps": 1.0
+    }
+  },
+  "behavior_gate_profile": {
+    "command": {
+      "vx": 1.5,
+      "vy": 0.0,
+      "wz": 0.0
+    },
+    "cycle_s": 10.0,
+    "path": "/home/ros/anymal_locomotion/configs/slam_confidence_behavior_gate.yaml",
+    "profile_id": "slam-confidence-v2-forward-stop-recover",
+    "seed": 43,
+    "sha256": "298df1eb772b2f2a077af6a0eacd0e746fd4e8a0a446b740882e60a81cf8eaef"
+  },
+  "checkpoint": "/home/ros/anymal_locomotion/logs/rsl_rl/anymal_d_locomotion_slam_confidence_gait_v1/2026-08-13_12-25-30_transition_gait_candidate_100iter_seed42_4096env/model_40.pt",
+  "num_envs": 512,
+  "states": {
+    "degraded": {
+      "linear_rmse": 0.20975719185790867,
+      "mean_absolute_yaw_rate": 0.040090777603617005,
+      "mean_planar_speed": 0.7978634421289912,
+      "samples": 140701,
+      "yaw_mae": 0.040090777603617005
+    },
+    "healthy": {
+      "linear_rmse": 0.39021498637443625,
+      "mean_absolute_yaw_rate": 0.05562772448007897,
+      "mean_planar_speed": 1.3393857160746931,
+      "samples": 217726,
+      "yaw_mae": 0.05562772448007897
+    },
+    "invalid": {
+      "linear_rmse": 0.15337892980767437,
+      "mean_absolute_yaw_rate": 0.02006382735141534,
+      "mean_planar_speed": 0.1434650598432562,
+      "samples": 153573,
+      "yaw_mae": 0.02006382735141534
+    }
+  },
+  "steps": 1000,
+  "termination_summary": {
+    "hard_terminated_env_count": 2,
+    "hard_terminated_env_fraction": 0.00390625,
+    "hard_termination_count": 2,
+    "timeout_count": 510
+  },
+  "velocity_estimator": {
+    "axis_mae_mps": [
+      0.03494702581759265,
+      0.04156574740229559,
+      0.022999560582593066
+    ],
+    "axis_rmse_mps": [
+      0.05036485810795845,
+      0.05464011377714557,
+      0.029521528951101016
+    ],
+    "ground_truth_role": "offline_evaluator_only",
+    "metadata": "exported/proprioceptive_velocity_estimator/v1/clean_candidate_08/velocity_estimator_metadata.json",
+    "samples": 502196,
+    "warmup_policy_steps": 57
+  },
+  "windows": {
+    "degraded_late": {
+      "action_rate_rms": 0.08816791549449568,
+      "action_rms": 0.41320144395296365,
+      "body_roll_pitch_rate_rms_radps": 0.3039081482059873,
+      "body_tilt_rms": 0.03877629302029943,
+      "linear_rmse": 0.26014507372263146,
+      "mean_absolute_vertical_speed_mps": 0.04174629686924163,
+      "mean_absolute_yaw_rate": 0.031437056764716545,
+      "mean_planar_speed": 0.44297599006909877,
+      "mean_stance_foot_slip_speed_mps": 0.181362068718821,
+      "samples": 25600,
+      "speed_above_0_50_fraction": 0.345078125,
+      "stance_foot_samples": 75510,
+      "yaw_mae": 0.031437056764716545
+    },
+    "healthy": {
+      "action_rate_rms": 0.20639249465305104,
+      "action_rms": 0.6377427528156402,
+      "body_roll_pitch_rate_rms_radps": 0.36812034750852113,
+      "body_tilt_rms": 0.036955958138990136,
+      "linear_rmse": 0.08738257566597567,
+      "mean_absolute_vertical_speed_mps": 0.05826526134582003,
+      "mean_absolute_yaw_rate": 0.04801873565672883,
+      "mean_planar_speed": 1.4717615937292043,
+      "mean_stance_foot_slip_speed_mps": 0.6096065582725171,
+      "samples": 102499,
+      "speed_above_0_50_fraction": 1.0,
+      "stance_foot_samples": 224719,
+      "yaw_mae": 0.04801873565672883
+    },
+    "invalid_settled": {
+      "action_rate_rms": 0.05328389744780509,
+      "action_rms": 0.4133339618379103,
+      "body_roll_pitch_rate_rms_radps": 0.14987580517753185,
+      "body_tilt_rms": 0.03857254503176821,
+      "linear_rmse": 0.14563258596696996,
+      "mean_absolute_vertical_speed_mps": 0.043555680208355624,
+      "mean_absolute_yaw_rate": 0.020338086502342777,
+      "mean_planar_speed": 0.13481773250794504,
+      "mean_stance_foot_slip_speed_mps": 0.06799442695048413,
+      "samples": 51200,
+      "speed_above_0_50_fraction": 0.00068359375,
+      "stance_foot_samples": 179197,
+      "yaw_mae": 0.020338086502342777
+    },
+    "recovery_settled": {
+      "action_rate_rms": 0.191624715331717,
+      "action_rms": 0.5976134221907041,
+      "body_roll_pitch_rate_rms_radps": 0.37521000244898634,
+      "body_tilt_rms": 0.03729717574744684,
+      "linear_rmse": 0.20655684661891902,
+      "mean_absolute_vertical_speed_mps": 0.06009414458623677,
+      "mean_absolute_yaw_rate": 0.04742446073046621,
+      "mean_planar_speed": 1.2367040655197696,
+      "mean_stance_foot_slip_speed_mps": 0.4355770284985187,
+      "samples": 51100,
+      "speed_above_0_50_fraction": 0.9922700587084149,
+      "stance_foot_samples": 111187,
+      "yaw_mae": 0.04742446073046621
+    }
+  }
+}

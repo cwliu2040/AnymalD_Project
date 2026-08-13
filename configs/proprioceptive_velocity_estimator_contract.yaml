@@ -1,0 +1,41 @@
+schema_version: 1
+contract_id: anymal-d-proprioceptive-velocity-v1
+
+sample_rate_hz: 50.0
+history_length: 20
+history_duration_s: 0.40
+maximum_inter_sample_gap_s: 0.04
+
+input:
+  step_dimension: 37
+  frame: base_link
+  foot_order: [LF_FOOT, LH_FOOT, RF_FOOT, RH_FOOT]
+  terms:
+    - {name: imu_angular_velocity, offset: 0, dimension: 3, unit: rad_s}
+    - {name: imu_linear_acceleration, offset: 3, dimension: 3, unit: m_s2}
+    - {name: projected_gravity, offset: 6, dimension: 3, unit: normalized}
+    - {name: relative_joint_position, offset: 9, dimension: 12, order: canonical_joint_order, unit: rad}
+    - {name: joint_velocity, offset: 21, dimension: 12, order: canonical_joint_order, unit: rad_s}
+    - {name: foot_contact_probability, offset: 33, dimension: 4, order: foot_order, range: [0.0, 1.0]}
+
+output:
+  dimension: 3
+  name: base_linear_velocity
+  components: [vx, vy, vz]
+  frame: base_link
+  unit: m_s
+
+runtime:
+  authoritative_topic: /locomotion/estimated_odom
+  child_frame_id: base_link
+  input_timeout_s: 0.10
+  receipt_watchdog_timeout_s: 0.10
+  maximum_absolute_velocity_mps: 8.0
+  fail_closed: publish_nothing_until_history_ready_or_after_fault
+
+training:
+  simulator_ground_truth_role: supervised_label_and_offline_evaluator_only
+  simulator_ground_truth_runtime_input: false
+  slam_pose_runtime_input: false
+  slam_velocity_runtime_input: false
+  split_unit: simulator_environment

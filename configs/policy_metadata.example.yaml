@@ -7,8 +7,13 @@ joint_order:
 observation:
   dimension: 48
   terms:
-    [base_linear_velocity, base_angular_velocity, projected_gravity, velocity_command,
-     relative_joint_position, relative_joint_velocity, previous_action]
+    - {name: base_linear_velocity, offset: 0, dimension: 3}
+    - {name: base_angular_velocity, offset: 3, dimension: 3}
+    - {name: projected_gravity, offset: 6, dimension: 3}
+    - {name: velocity_command, offset: 9, dimension: 3}
+    - {name: relative_joint_position, offset: 12, dimension: 12}
+    - {name: relative_joint_velocity, offset: 24, dimension: 12}
+    - {name: previous_action, offset: 36, dimension: 12}
 action:
   dimension: 12
   scale: 0.5

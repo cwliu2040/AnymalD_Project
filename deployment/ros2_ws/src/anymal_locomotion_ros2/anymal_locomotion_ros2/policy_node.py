@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -12,9 +13,11 @@ import rclpy
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import Imu, JointState
 from std_msgs.msg import UInt64
+
+from anymal_locomotion_interfaces.msg import SlamConfidence
 
 from anymal_locomotion_ros2.policy_core import (
     PolicyContract,
@@ -25,6 +28,10 @@ from anymal_locomotion_ros2.policy_core import (
     projected_gravity_from_quaternion,
 )
 from anymal_locomotion_ros2.onnx_backend import OnnxBackend
+from anymal_locomotion_ros2.slam_confidence_observation_core import (
+    confidence_identity_valid,
+    ppo_confidence_observation,
+)
 from anymal_locomotion_ros2.torchscript_backend import TorchScriptBackend
 
 
@@ -56,6 +63,10 @@ class AnymalPolicyNode(Node):
         self.declare_parameter("imu_topic", "/imu/data")
         self.declare_parameter("odometry_topic", "/odom")
         self.declare_parameter("command_topic", "/cmd_vel")
+        self.declare_parameter("slam_confidence_topic", "/slam_confidence")
+        self.declare_parameter("slam_confidence_receipt_timeout_s", 0.15)
+        self.declare_parameter("expected_slam_confidence_backend", "")
+        self.declare_parameter("expected_slam_confidence_calibration_id", "")
         self.declare_parameter("joint_command_topic", "/joint_command")
         self.declare_parameter(
             "episode_reset_topic", "/simulation/episode_reset"
@@ -96,6 +107,30 @@ class AnymalPolicyNode(Node):
             backend,
             max_abs_policy_action=float(self.get_parameter("max_abs_policy_action").value),
         )
+        self._uses_slam_confidence = self._contract.observation_dimension == 51
+        self._expected_slam_confidence_backend = str(
+            self.get_parameter("expected_slam_confidence_backend").value
+        ).strip()
+        self._expected_slam_confidence_calibration_id = str(
+            self.get_parameter(
+                "expected_slam_confidence_calibration_id"
+            ).value
+        ).strip()
+        if self._uses_slam_confidence and not (
+            self._expected_slam_confidence_backend
+            and self._expected_slam_confidence_calibration_id
+        ):
+            raise ValueError(
+                "51-D policy requires expected_slam_confidence_backend and "
+                "expected_slam_confidence_calibration_id"
+            )
+        self._slam_confidence_receipt_timeout = float(
+            self.get_parameter("slam_confidence_receipt_timeout_s").value
+        )
+        if self._slam_confidence_receipt_timeout <= 0.0:
+            raise ValueError("slam_confidence_receipt_timeout_s must be positive")
+        self._latest_slam_confidence: SlamConfidence | None = None
+        self._slam_confidence_receipt_steady_ns: int | None = None
         transplant_manifest_path = str(
             self.get_parameter("state_transplant_manifest_path").value
         ).strip()
@@ -262,6 +297,18 @@ class AnymalPolicyNode(Node):
             self._on_command,
             10,
         )
+        if self._uses_slam_confidence:
+            confidence_qos = QoSProfile(
+                depth=1,
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.VOLATILE,
+            )
+            self.create_subscription(
+                SlamConfidence,
+                str(self.get_parameter("slam_confidence_topic").value),
+                self._on_slam_confidence,
+                confidence_qos,
+            )
         self.create_subscription(
             UInt64,
             str(self.get_parameter("episode_reset_topic").value),
@@ -284,7 +331,8 @@ class AnymalPolicyNode(Node):
                 self._on_policy_tick,
             )
         self.get_logger().info(
-            f"Loaded {backend_name} 48-D -> 12-D policy; "
+            f"Loaded {backend_name} "
+            f"{self._contract.observation_dimension}-D -> 12-D policy; "
             f"control period={self._contract.control_period_s:.3f} s; "
             f"trigger={self._inference_trigger}"
         )
@@ -394,6 +442,60 @@ class AnymalPolicyNode(Node):
         self._command = command
         self._receipt_times["command"] = self._now_seconds()
 
+    def _on_slam_confidence(self, message: SlamConfidence) -> None:
+        self._latest_slam_confidence = message
+        self._slam_confidence_receipt_steady_ns = time.monotonic_ns()
+
+    def _slam_confidence_observation(self) -> np.ndarray | None:
+        if not self._uses_slam_confidence:
+            return None
+        message = self._latest_slam_confidence
+        receipt_ns = self._slam_confidence_receipt_steady_ns
+        if message is None or receipt_ns is None:
+            return np.asarray([0.0, 0.0, 1.0], dtype=np.float32)
+        receipt_age_s = max(0.0, (time.monotonic_ns() - receipt_ns) * 1.0e-9)
+        confidence_age_s = (
+            float(message.confidence_age.sec)
+            + float(message.confidence_age.nanosec) * 1.0e-9
+        )
+        identity_valid = confidence_identity_valid(
+            schema_version=int(message.schema_version),
+            expected_schema_version=SlamConfidence.SCHEMA_VERSION,
+            backend_id=message.backend_id,
+            calibration_id=message.calibration_id,
+            expected_backend_id=self._expected_slam_confidence_backend,
+            expected_calibration_id=(
+                self._expected_slam_confidence_calibration_id
+            ),
+        )
+        try:
+            observation = ppo_confidence_observation(
+                confidence=(
+                    float(message.slam_confidence) if identity_valid else 0.0
+                ),
+                tracking_valid=(
+                    bool(message.slam_tracking_valid) and identity_valid
+                ),
+                source_stamp_valid=(
+                    bool(message.source_stamp_valid) and identity_valid
+                ),
+                confidence_age_s=(
+                    confidence_age_s if identity_valid else 0.5
+                ),
+                receipt_age_s=receipt_age_s,
+                receipt_timeout_s=self._slam_confidence_receipt_timeout,
+            )
+        except ValueError:
+            return np.asarray([0.0, 0.0, 1.0], dtype=np.float32)
+        return np.asarray(
+            [
+                observation.slam_confidence,
+                observation.slam_tracking_valid,
+                observation.confidence_age_normalized,
+            ],
+            dtype=np.float32,
+        )
+
     def _on_episode_reset(self, message: UInt64) -> None:
         sequence = int(message.data)
         if sequence <= 0:
@@ -496,7 +598,11 @@ class AnymalPolicyNode(Node):
             joint_velocities=self._joint_velocities,
         )
         try:
-            result = self._runtime.step(state, effective_command)
+            result = self._runtime.step(
+                state,
+                effective_command,
+                self._slam_confidence_observation(),
+            )
         except (RuntimeError, ValueError) as error:
             self._warn_throttled("inference_error", f"No policy output: {error}")
             return
@@ -516,6 +622,8 @@ class AnymalPolicyNode(Node):
                 "joint_velocity": slice(24, 36),
                 "previous_action": slice(36, 48),
             }
+            if self._uses_slam_confidence:
+                term_slices["slam_confidence"] = slice(48, 51)
             term_errors = {
                 name: float(np.max(errors[term_slice]))
                 for name, term_slice in term_slices.items()

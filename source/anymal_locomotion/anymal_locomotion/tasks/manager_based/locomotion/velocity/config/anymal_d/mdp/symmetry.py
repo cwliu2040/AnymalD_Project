@@ -48,6 +48,10 @@ def _transform_observation(
     left_right: bool,
     front_back: bool,
 ) -> torch.Tensor:
+    if observation.shape[1] not in (48, 51):
+        raise ValueError(
+            f"symmetry expects a 48-D or 51-D policy observation, received {observation.shape}"
+        )
     transformed = observation.clone()
     if left_right:
         transformed[:, :3] *= transformed.new_tensor([1.0, -1.0, 1.0])
@@ -70,6 +74,8 @@ def _transform_observation(
             transformed[:, start : start + 12] = _front_back(
                 transformed[:, start : start + 12]
             )
+    # Offsets 48..50 are backend-neutral scalars and remain invariant under
+    # left/right and front/back robot symmetries.
     return transformed
 
 
@@ -120,4 +126,3 @@ def compute_symmetric_states(env, obs=None, actions=None):
     else:
         actions_augmented = None
     return obs_augmented, actions_augmented
-

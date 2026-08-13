@@ -122,6 +122,17 @@ def test_odometry_adapter_applies_lidar_to_body_translation() -> None:
     assert "sensor_translation_in_body_xyz" in source
 
 
+def test_liosam_policy_state_uses_separate_high_rate_predictor_topic() -> None:
+    source = ADAPTER_PATH.read_text(encoding="utf-8")
+    launch = LIO_LAUNCH.read_text(encoding="utf-8")
+    assert '"policy_source_topic", "/lio_sam/odometry/imu"' in source
+    assert '"policy_output_topic", "/slam/policy_odom"' in source
+    assert '"policy_source_child_frame_id", "odom_imu"' in source
+    assert "body_linear_velocity_from_world" in source
+    assert '"policy_output_topic": "/slam/policy_odom"' in launch
+    assert '"source_topic": "/lio_sam/mapping/odometry"' in launch
+
+
 def test_package_installs_liosam_entry_points_and_config() -> None:
     setup_source = (ROS_PACKAGE / "setup.py").read_text(encoding="utf-8")
     assert (
@@ -162,7 +173,8 @@ def test_formal_wrappers_pass_through_opt_in_without_policy_consumption() -> Non
     policy_source = (
         ROS_PACKAGE / "anymal_locomotion_ros2" / "policy_node.py"
     ).read_text(encoding="utf-8")
-    assert "/slam_confidence" not in policy_source
+    assert 'self._contract.observation_dimension == 51' in policy_source
+    assert "if self._uses_slam_confidence:" in policy_source
 
 
 def test_motion_deskew_status_does_not_mutate_cloud_info_header() -> None:

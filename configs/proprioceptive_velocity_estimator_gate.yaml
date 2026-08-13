@@ -1,0 +1,15 @@
+schema_version: 1
+gate_id: anymal-d-proprioceptive-velocity-v1
+holdout:
+  split_unit: simulator_environment
+  fraction: 0.20
+  seed: 42
+thresholds:
+  axis_mae_max_mps: [0.10, 0.10, 0.08]
+  axis_rmse_max_mps: [0.16, 0.16, 0.12]
+  vector_p95_error_max_mps: 0.30
+  stopped_planar_bias_max_mps: 0.08
+  stopped_vertical_bias_max_mps: 0.06
+  maximum_single_sample_vector_error_mps: 1.50
+  non_finite_predictions_max: 0
+  torchscript_onnx_max_abs_error: 1.0e-5

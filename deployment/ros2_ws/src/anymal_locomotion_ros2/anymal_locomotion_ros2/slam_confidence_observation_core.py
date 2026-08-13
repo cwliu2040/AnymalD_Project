@@ -14,6 +14,26 @@ class PpoConfidenceObservation:
     receipt_watchdog_valid: bool
 
 
+def confidence_identity_valid(
+    *,
+    schema_version: int,
+    expected_schema_version: int,
+    backend_id: str,
+    calibration_id: str,
+    expected_backend_id: str,
+    expected_calibration_id: str,
+) -> bool:
+    """Require the exact launch-selected confidence authority identity."""
+
+    return bool(
+        int(schema_version) == int(expected_schema_version)
+        and expected_backend_id
+        and expected_calibration_id
+        and backend_id == expected_backend_id
+        and calibration_id == expected_calibration_id
+    )
+
+
 def ppo_confidence_observation(
     *,
     confidence: float,
@@ -36,10 +56,16 @@ def ppo_confidence_observation(
     if age_normalization_s <= 0.0 or receipt_timeout_s <= 0.0:
         raise ValueError("watchdog scales must be positive")
     receipt_valid = receipt_age_s <= receipt_timeout_s
-    hard_valid = bool(tracking_valid and source_stamp_valid and receipt_valid)
+    source_valid = bool(source_stamp_valid)
+    hard_valid = bool(tracking_valid and source_valid and receipt_valid)
+    input_valid = bool(source_valid and receipt_valid)
     return PpoConfidenceObservation(
-        slam_confidence=float(confidence if receipt_valid else 0.0),
+        slam_confidence=float(confidence if input_valid else 0.0),
         slam_tracking_valid=float(hard_valid),
-        confidence_age_normalized=min(confidence_age_s / age_normalization_s, 1.0),
+        confidence_age_normalized=(
+            min(confidence_age_s / age_normalization_s, 1.0)
+            if input_valid
+            else 1.0
+        ),
         receipt_watchdog_valid=receipt_valid,
     )

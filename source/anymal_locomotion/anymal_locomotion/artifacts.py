@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.metadata
 import os
 import subprocess
@@ -39,6 +40,43 @@ def git_revision(repository: Path) -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
+def _git_output(repository: Path, *args: str) -> bytes:
+    result = subprocess.run(
+        ["git", "-C", str(repository), *args],
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.decode(errors="replace").strip())
+    return result.stdout
+
+
+def _project_worktree_fingerprint(repository: Path) -> dict[str, Any]:
+    """Fingerprint tracked edits and project-owned untracked source files."""
+    status = _git_output(repository, "status", "--porcelain=v1", "--untracked-files=all")
+    tracked_diff = _git_output(repository, "diff", "--binary", "HEAD", "--")
+    relevant_status: list[str] = []
+    untracked: dict[str, str] = {}
+    ignored_runtime_roots = {"build", "install", "log", "logs", "outputs"}
+    for line in status.decode(errors="surrogateescape").splitlines():
+        if not line.startswith("?? "):
+            relevant_status.append(line)
+            continue
+        relative = line[3:]
+        if Path(relative).parts[0] in ignored_runtime_roots:
+            continue
+        relevant_status.append(line)
+        path = repository / relative
+        if path.is_file():
+            untracked[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return {
+        "dirty": bool(relevant_status),
+        "status_sha256": hashlib.sha256("\n".join(relevant_status).encode()).hexdigest(),
+        "tracked_diff_sha256": hashlib.sha256(tracked_diff).hexdigest(),
+        "untracked_file_sha256": untracked,
+    }
+
+
 def _package_version(distribution: str) -> str | None:
     try:
         return importlib.metadata.version(distribution)
@@ -58,6 +96,7 @@ def build_run_manifest(*, task_id: str, seed: int, log_dir: str | Path) -> dict[
         "project_root": str(PROJECT_ROOT),
         "log_dir": str(local_log_dir),
         "project_git_commit": project_revision,
+        "project_worktree": _project_worktree_fingerprint(PROJECT_ROOT),
         "isaac_lab_target": TARGET_ISAAC_LAB_VERSION,
         "isaac_lab_git_commit": git_revision(ISAAC_LAB_ROOT),
         "isaac_sim_target": TARGET_ISAAC_SIM_VERSION,

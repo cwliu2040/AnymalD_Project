@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import yaml
 
 from anymal_locomotion_ros2.policy_core import (
     PolicyContract,
@@ -24,6 +25,22 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture
 def contract() -> PolicyContract:
     return PolicyContract.from_metadata(PROJECT_ROOT / "configs" / "policy_metadata.example.yaml")
+
+
+@pytest.fixture
+def confidence_contract(tmp_path: Path) -> PolicyContract:
+    document = yaml.safe_load(
+        (PROJECT_ROOT / "configs/policy_contract_slam_confidence.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    document["joint_order"] = [joint["name"] for joint in document.pop("joints")]
+    document["action"]["default_joint_positions"] = [
+        0.0, 0.0, 0.0, 0.0, 0.4, -0.8, -0.4, 0.8, 0.4, -0.8, -0.4, 0.8
+    ]
+    path = tmp_path / "policy_metadata.yaml"
+    path.write_text(yaml.safe_dump(document), encoding="utf-8")
+    return PolicyContract.from_metadata(path)
 
 
 def test_joint_state_is_remapped_by_name(contract: PolicyContract) -> None:
@@ -96,6 +113,39 @@ def test_observation_layout_and_command_clamp(contract: PolicyContract) -> None:
     np.testing.assert_array_equal(observation[12:24], np.zeros(12))
     np.testing.assert_array_equal(observation[24:36], np.arange(12))
     np.testing.assert_array_equal(observation[36:48], np.full(12, 0.25))
+
+
+def test_confidence_observation_is_appended_without_moving_legacy_terms(
+    contract: PolicyContract,
+    confidence_contract: PolicyContract,
+) -> None:
+    defaults = np.asarray(contract.default_joint_positions, dtype=np.float32)
+    state = RobotState(
+        base_linear_velocity=np.asarray([1.0, 2.0, 3.0]),
+        base_angular_velocity=np.asarray([4.0, 5.0, 6.0]),
+        projected_gravity=np.asarray([0.0, 0.0, -1.0]),
+        joint_positions=defaults,
+        joint_velocities=np.arange(12, dtype=np.float32),
+    )
+    legacy = build_observation(state, [1.0, 0.0, 0.5], np.zeros(12), contract)
+    confidence = build_observation(
+        state,
+        [1.0, 0.0, 0.5],
+        np.zeros(12),
+        confidence_contract,
+        [0.8, 1.0, 0.25],
+    )
+    assert confidence.shape == (51,)
+    np.testing.assert_array_equal(confidence[:48], legacy)
+    np.testing.assert_allclose(confidence[48:51], [0.8, 1.0, 0.25])
+
+    with pytest.raises(ValueError, match="requires slam_confidence"):
+        build_observation(
+            state,
+            [0.0, 0.0, 0.0],
+            np.zeros(12),
+            confidence_contract,
+        )
 
 
 def test_watchdog_deceleration_slews_each_command_axis_toward_zero() -> None:

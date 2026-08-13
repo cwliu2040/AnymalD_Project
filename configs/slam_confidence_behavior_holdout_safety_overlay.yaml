@@ -1,0 +1,14 @@
+schema_version: 1
+overlay_id: slam-confidence-v2-holdout-hard-termination-env-fraction
+
+# Added after the model19 lateral-right audit exposed that a per-policy-step
+# event fraction can hide many distinct environments terminating once.  This
+# overlay does not alter the frozen reports or their source profile hashes.
+hard_termination_env_fraction_max: 0.01
+application: each_profile
+required_profiles:
+  - slam-confidence-v2-forward-stop-recover
+  - slam-confidence-v2-holdout-lateral-left
+  - slam-confidence-v2-holdout-lateral-right
+  - slam-confidence-v2-holdout-reverse
+  - slam-confidence-v2-holdout-combined
