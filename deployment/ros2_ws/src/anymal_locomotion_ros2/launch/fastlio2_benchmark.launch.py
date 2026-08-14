@@ -25,6 +25,7 @@ def generate_launch_description() -> LaunchDescription:
     slam_odom_topic = LaunchConfiguration("slam_odom_topic")
     effective_points_topic = LaunchConfiguration("effective_points_topic")
     enable_confidence = LaunchConfiguration("enable_confidence")
+    enable_visual_outputs = LaunchConfiguration("enable_visual_outputs")
     confidence_config_path = LaunchConfiguration("confidence_config_path")
     confidence_artifact_path = LaunchConfiguration(
         "confidence_artifact_path"
@@ -124,6 +125,18 @@ def generate_launch_description() -> LaunchDescription:
                     enable_confidence,
                     value_type=bool,
                 ),
+                "publish.path_en": ParameterValue(
+                    enable_visual_outputs,
+                    value_type=bool,
+                ),
+                "publish.scan_publish_en": ParameterValue(
+                    enable_visual_outputs,
+                    value_type=bool,
+                ),
+                "publish.scan_bodyframe_pub_en": ParameterValue(
+                    enable_visual_outputs,
+                    value_type=bool,
+                ),
             },
         ],
         # Keep the candidate's camera_init/body TF out of the project's
@@ -219,6 +232,14 @@ def generate_launch_description() -> LaunchDescription:
                 description=(
                     "Enable fail-closed FAST-LIO2 confidence instrumentation "
                     "and its required effective-point publisher"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "enable_visual_outputs",
+                default_value="false",
+                description=(
+                    "Enable FAST-LIO2 registered-cloud and path publishers "
+                    "for interactive RViz inspection"
                 ),
             ),
             DeclareLaunchArgument(

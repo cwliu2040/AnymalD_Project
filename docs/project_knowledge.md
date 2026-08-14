@@ -1,6 +1,6 @@
 # Current project knowledge
 
-更新日期：2026-08-13
+更新日期：2026-08-14
 
 這份文件保存跨對話補充知識，讓 Work locally 模式的新對話在直接閱讀
 repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產物、近期
@@ -15,8 +15,9 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   閉環驗證`）；benchmark base branch
   `benchmark/slam-liosam-fastlio2` 與目前實驗 branch 都以
   `fee8c9f 建立 SLAM backend 比較基線` 為共同基礎。
-- `exp/slam-fastlio2` 的本機與遠端目前都在
-  `4c063a4 完成 SLAM 信心策略、狀態估計與步態驗證`；其parent為
+- `exp/slam-fastlio2` 的本機與遠端baseline目前都在
+  `fbee219 更新 SLAM confidence 對話交接狀態`；其parent為
+  `4c063a4 完成 SLAM 信心策略、狀態估計與步態驗證`，再前一個commit為
   `0e9a571 完成 SLAM confidence DDS 與 FAST live gate`，兩者均已push。使用者確認
   `exp/slam-fastlio2`作為完整SLAM confidence開發線，因此51-D observation/training、
   deployment consumer、第二輪bounded safe-command、proprioceptive estimator與gait-value
@@ -35,6 +36,10 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   第二輪 bounded safe-command `model_19` 已通過五個模擬confidence-state profiles與
   export parity，但兩backend live screening在LIO-SAM `forward_1_5`失敗，因此不可promotion，
   尚未接入或取代正式policy。
+  目前working tree另含尚未commit的C-v4至C-v10 confidence-conditioned PPO實作、
+  estimator-closed-loop訓練接線、測試與驗證文件；C-v10模擬候選已通過固定behavior及
+  gait-value gate、export parity與FAST/LIO各一個最難右移live cell，但尚未完成兩backend
+  全矩陣或取代正式policy。
   root `build/`、`install/`、`log/`
   是未追蹤runtime產物，不納入提交，其他 `logs/`／`outputs/` 實驗
   產物也不提交。
@@ -65,14 +70,17 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
 
 ## Future SLAM comparison and confidence-conditioned PPO plan
 
-- 使用者目前先比較 LIO-SAM 與 FAST-LIO2，並計畫把標準化的 SLAM
+- 使用者目前先比較 LIO-SAM 與 FAST-LIO2，並把標準化的 SLAM
   tracking confidence 輸入 locomotion PPO，使 policy 在特徵不足或 tracking
   退化時學會降低速度、減少機身晃動。FAST-LIO2 的第一階段 adapter／replay
   baseline 已在 `exp/slam-fastlio2` 建立；confidence contract、兩backend
   extractor、strict group-split calibration與fresh holdout gate均已完成並安裝
   artifacts；51-D PPO observation與ROS deployment consumer已接通。第一次training已失敗；
   第二輪bounded safe-command候選已通過模擬confidence-state gate；兩backend live screening
-  的FAST arm通過、LIO arm失敗，下一步已轉為LIO canonical odometry policy-state contract設計。
+  的FAST arm通過、LIO arm失敗。後續以獨立proprioceptive velocity estimator關閉LIO
+  policy-state問題，並完成C-v10 structured-gait PPO候選、export parity及兩backend最難
+  右移live cell；下一步是人工LIO操作、兩backend完整replay/live qualification與
+  safety-efficiency trade-off量化，而不是繼續外部限速器或盲目reward sweep。
 - 不為每個「SLAM 方法 × PPO 版本」建立永久 branch。先在共用介面 branch
   定義 backend selector、共同輸出與 benchmark，再合併穩定的中性基礎回
   `main`。每個侵入性較大的 SLAM 實作可暫時使用獨立實驗 branch，例如
@@ -1229,14 +1237,18 @@ Checkpoint：
    qualification已全數通過。
 4. `feature/ppo-slam-confidence`已完成51-D observation、metadata、symmetry、export與ROS
    runtime parity，也完成actor-only/fresh-critic/fresh-optimizer起點與固定分段behavior gate。
-   reward-only與不安全的short-credit-path候選均已retire；bounded safe-command `model_19`
-   已通過五profile模擬behavior qualification與export parity，但仍非正式policy。
-5. `model_19`兩backend minimum screening為FAST通過、LIO失敗，完整matrix未繼續。LIO
+   reward-only、不安全short-credit-path與外部gait-mode候選均已retire；bounded safe-command
+   `model_19`已通過五profile模擬behavior qualification與export parity但不具gait value。
+   C-v10 phase-separated structured-gait model48現已通過固定512-env behavior、
+   gait-value A/B、export parity及兩backend各一個live右移cell；仍是實驗deployment
+   candidate，不是正式policy。
+5. `model_19`兩backend minimum screening為FAST通過、LIO失敗。LIO
    policy-state quality contract、evaluator與high-rate native predictor candidate已實作；
    direct age/accuracy/outlier為3/3 pass，但正式model1450 locomotion與stopped-tail action
    sensitivity均為0/3，故整體contract仍fail。下一個架構gate是獨立於SLAM的policy-grade
-   proprioceptive body-velocity estimator（IMU加leg/contact state，或實體ANYmal state
-   estimator）；未具備該authority前不得重跑完整matrix或取代model1450。
+   proprioceptive body-velocity estimator已由candidate08在模擬中關閉，並已放進PPO rollout
+   observation loop。下一個gate是人工LIO操作與用相同estimator/confidence artifacts跑完
+   FAST/LIO replay及live matrix，並新增任務效率／false-stop量化；通過前不得取代model1450。
    實體 ANYmal-D
    sensor extrinsic、
    low-level interface；IMU frame contract
@@ -1250,6 +1262,57 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
 後續結論仍必須保留 Factory/contact history dependency。
 
 ## Next diagnostic gate
+
+### Model48 deployment candidate v2 qualification (2026-08-13)
+
+- 新增 `slam_confidence_interactive.launch.py` 作為人工操作入口：以
+  `slam_backend:=fastlio2|liosam` 選 backend，自動選正式 calibration ID，固定載入
+  model48 confidence-aware PPO 與 estimator15，預設開 Isaac Sim GUI、backend RViz
+  及官方 keyboard teleop。此模式不啟動 scripted stability driver，避免兩個
+  `/cmd_vel` publisher 互搶；原 benchmark defaults 維持 headless scripted behavior。
+
+- C-v10 model48 原始 export 在 FAST-LIO2 `lateral_right_1_5` live cell 可重現
+  foot-slip-first fall；512-env fixed holdout 為 316/512 distinct hard terminations。問題不是
+  DDS 或 LIO latency，而是 1.0 intent transition、PPO gait delta 與缺 lateral-transition
+  estimator data 疊加。
+- 保持 confidence 在 51-D PPO observation 內，將 PPO intent coordinate 的結構上限設為
+  0.79、gait delta 依 safe scale power 10 淡出，invalid 時完全關閉 gait delta。這是 policy
+  action-space bound，不是 ROS node 外部限速器；PPO gait coordinates 在 healthy/degraded/
+  recovery 仍參與動作。
+- 新 estimator15 位於
+  `exported/proprioceptive_velocity_estimator/v1/clean_lateral_transition_candidate_15/`，以
+  candidate08 初始化，加入固定左右側移與左右 confidence stop/recover captures；GT 只作
+  supervised label/offline evaluator。environment-disjoint holdout 243,932 windows，XYZ MAE
+  0.0147/0.0152/0.0109 m/s、p95 0.0762 m/s、max 1.0211 m/s，通過 frozen accuracy gate。
+- model48 + estimator15 五方向 simulation behavior matrix全通過：forward 0/512、left
+  0/512、right 5/512、reverse 1/512、combined 0/512 hard-terminated env；各 profile 的
+  invalid stop與recovery checks亦全過。
+- 新 export ONNX SHA-256
+  `c8225b05a2b8fd1a35fb919593a68326b0ddac3d955b69191708def5d071f4a5`；checkpoint/
+  TorchScript/ONNX固定輸入與200-step previous-action recurrence parity全過。
+- ROS live最難右移 cell已在 FAST-LIO2與LIO-SAM各通過一次，policy diagnostics分別
+  686/685筆全finite、watchdog timeout 0，兩者 confidence calibration/identity/timestamp
+  checks全過。LIO-SAM不再提供 locomotion velocity；兩backend只提供 pose/confidence，
+  速度由同一 proprioceptive estimator提供。
+- 此結果仍是experimental deployment candidate；正式 recovery v0.4.0 model1450未被
+  取代，實體ANYmal-D qualification與包含新 `/foot_contacts` 的bag replay仍未完成。
+
+### 2026-08-14 interactive manual observation and publication gate
+
+- 使用者以新interactive入口人工操作FAST-LIO2，最高yaw command約`2.5 rad/s`。RViz觀察到
+  旋轉後極小、短暫的點雲錯位，繼續行走後視覺上重新重合。這是人工觀察，尚未由bag或
+  map-consistency metric量化；目前FAST-LIO2設定沒有loop closure，因此不可歸因為閉環修正，
+  較可能是後續scan-to-map registration與registered-cloud更新造成局部重新對齊。
+- 同一次人工操作主觀感受為：feature不足或confidence下降時policy容易停下，整體控制速度
+  偏慢。這證明fail-closed鏈路有介入，但是否過度保守尚未量化；不可只憑主觀操作promote或
+  否定研究方向。LIO-SAM interactive manual arm尚未執行。
+- 論文必要的新gate是安全性與效率的Pareto比較，而非只報告跌倒率。至少比較
+  confidence-unaware model1450、model1450＋相同deterministic confidence supervisor、
+  confidence-aware model48三組；固定相同backend／route／command／seed，記錄fall/base
+  contact、foot slip、tilt/action-rate、command tracking、distance/progress、平均速度、
+  confidence-triggered stop比例、false-stop時間、recovery latency與SLAM ATE/RPE。裂圖另需
+  定義map-level consistency metric；現有confidence只預測短期tracking usability，不能當
+  explicit split-map detector。
 
 ### Proprioceptive estimator and gait-value A/B (2026-08-13)
 
@@ -1315,6 +1378,74 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
   dwell的policy-side gait-mode state，或使用能直接控制步幅／抬腳高度／stance posture的
   結構化gait parameter head；仍須exact model1450 healthy path、fresh critic/optimizer、
   iteration-0 baseline與同一凍結gait-value gate。正式model1450維持不變。
+- 已開始實作下一版policy-side gait-mode governor，但尚未執行Isaac Sim gate或訓練。
+  v1使用`TRACK/DECELERATE/HOLD/RECOVER`四狀態、confidence hysteresis、hold/recovery
+  dwell，並從confidence開始下降就追蹤continuous safe scale；command-scale降速上限為
+  `0.8/s`、恢復上限為`2.0/s`。狀態保存在各simulation environment與ROS
+  `PolicyRuntime`，不放入stateful ONNX actor。候選actor只在governor改寫command後執行
+  frozen model1450 backbone，沒有12-D residual。Torch與deployment NumPy core的逐tick
+  parity、stale-high、chatter、reset及runtime observation接點單元測試已通過；設計與待跑
+  gate見`docs/validation/slam_confidence_gait_mode_v1.md`。這仍不是候選promotion證據，
+  下一步必須先保存iteration-0 bootstrap並跑相同behavior/gait-value A/B，不得直接長訓練。
+- 2026-08-13 gait-mode B architecture gate已完成且失敗。晚門檻、`2.0/s`版本雖然
+  invalid settled gait穩定，但degraded tracking未過且9/512 distinct env hard terminate；
+  改成從confidence開始下降即追蹤continuous safe scale、降速上限`0.8/s`後，velocity
+  checks全過但hard termination惡化到89/512，recovery roll/pitch rate RMS為
+  `0.925 rad/s`。因此停止rate sweep；B證明外部限速有作用，但不是可promotion解法。
+  evaluator已修正為用distinct terminated env fraction執行1%安全門檻，並新增phase counts。
+- 2026-08-13 已實作C structured-gait PPO head。raw command不由confidence governor限速；
+  frozen model1450之外只學4-D gait coordinates：stride modulation、crouch、stance width、
+  action smoothing，再透過固定canonical 12-joint basis形成動作。healthy severity為零，
+  因此即使head訓練後仍精確走model1450。64-env seed43 iteration-0 bootstrap SHA為
+  `5f1c0b48...b0df`；單一PPO iteration產物SHA為`d3f1d599...e3e3`，6/6 head tensors
+  有更新、8/8 backbone tensors bit-identical。這只證明訓練接線，尚未通過behavior、
+  safety或gait-value，不能export或取代正式policy。詳細見
+  `docs/validation/slam_confidence_structured_gait_v1.md`。
+- 2026-08-13 C-v1固定pilot已完成並失敗：512 env、seed43、25 iterations，final
+  `model_24.pt` SHA為`10fa91ba...b1d`。固定behavior gate為0/512 hard termination，
+  但invalid-settled仍以`1.500 m/s`前進、100% samples高於`0.5 m/s`，degraded speed
+  ratio為`1.013`，表示4-D posture/stride/width/smoothing head維持了平衡卻沒有學會
+  confidence-conditioned stop。停止gait-value、export、續訓及事後挑中間checkpoint。
+  下一版不可只調reward；應新增一個由PPO共同決定的low-dimensional locomotion-intent
+  coordinate，在frozen raw-command與safe-command model1450 action間blend，同時保留
+  balance gait coordinates。這不是B的外部固定限速器。
+- 2026-08-13 C-v2/C-v3 intent-gait固定pilots亦未過behavior gate。兩者皆為512 env、
+  seed43、25 iterations且只評估預先指定final model24；C-v2 gain1為0/512 terminate、
+  degraded ratio `0.982`、invalid speed `1.453 m/s`；C-v3 gain20為0/512、`0.962`、
+  `1.390 m/s`。相較C-v1方向正確但幅度遠不足，證明intent coordinate可達、PPO也有
+  使用，然而現有間接reward在固定budget內推力不足；禁止再做gain/checkpoint sweep或
+  單純續訓。下一個合理實驗需要明確的intent auxiliary learning signal，而PPO仍負責
+  四個balance coordinates；必須另立設計gate。詳細見
+  `docs/validation/slam_confidence_intent_gait_v1.md`。
+- 2026-08-13 C-v4將intent auxiliary與四個PPO gait coordinates分離後，使用GT velocity
+  評估為0/512 hard termination，但接candidate08 estimator為78/512，確認主要缺口是
+  training/evaluation state-estimator closure。現已實作`VelocityEstimatorTrainingWrapper`，
+  在rollout內執行完全相同的20-step TorchScript estimator、warmup時action fail-closed為0，
+  reset清history，並把artifact SHA/contract寫入run manifest；不在Isaac環境import ROS。
+- C-v5 estimator-closed-loop直接訓練反而107/512跌倒；C-v6加入termination與recovery
+  action-rate/roll-pitch/orientation costs後降為61/512；C-v7再限制stride與smoothing只能為正，
+  model24降至17/512。C-v8 smoothing gain10惡化至63/512，停止gain sweep。C-v7固定續訓25
+  iterations的model48（SHA
+  `888bc682eda65e2c427eccd445d8b9cb1e787635b5da86e6fa8a85b83fda4fa0`）達0/512並通過
+  behavior gate，但degraded stance slip `0.14052 m/s`超過相對model1450的1.10門檻。
+  C-v9加degradation slip reward後model62仍0/512但slip惡化至`0.14985 m/s`，已retire。
+- model48因果ablation證明crouch不是主因；全域zero stride可把degraded slip降至
+  `0.11692 m/s`，卻造成78/512 recovery跌倒；stride 0.5仍為9/512且slip `0.13069 m/s`。
+  因此不能用單一全域scale，必須分開degradation與recovery。C-v10在policy內用deployable
+  `[confidence, valid, normalized_age]`辨識live degradation與post-outage recovery，僅對前者
+  以cubic envelope連續衰減PPO stride coordinate，intent與其他三個gait coordinates仍照PPO
+  輸出；不是policy外部限速器，也不使用sim phase或GT。
+- C-v10固定seed43、512-env、1000-step behavior gate已全部通過：2/512 distinct hard
+  termination（`0.390625%`）、degraded stance slip `0.117835 m/s`；degraded/recovery gait
+  coordinates約為`[0.0006,-0.0542,0.0155,0.1805]`與
+  `[0.1451,-0.0602,0.0185,0.1999]`。相對model1450＋相同confidence supervisor的
+  gait-value gate九項checks全過，degraded＋invalid composite ratio `0.770354`（門檻
+  `<=0.95`），最差單項ratio `1.05730`（門檻`<=1.10`）。完整suite為336 passed、3個既有
+  Isaac-runtime skips；`git diff --check`通過。機讀報告在
+  `docs/validation/slam_confidence_phase_separated_model48_{behavior,gait_value}.json`，詳細因果
+  與失敗候選見`docs/validation/slam_confidence_intent_gait_v1.md`。Export parity與
+  FAST/LIO各一個最難右移live cell已通過；尚未完成完整backend matrix、正式promotion、
+  commit或push，正式policy仍是recovery v0.4.0 model1450。
 
 2026-08-13 已完成第一版 proprioceptive velocity gate。Project-owned v1 契約固定
 50 Hz、20-step／0.4 s history、每步 37-D：IMU angular velocity／linear

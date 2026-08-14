@@ -45,6 +45,26 @@ ikd-Tree submodule、建立 Livox ROS 2 `package.xml`、套用 project-owned
 
 ## 親自看 live 差異
 
+### Confidence-aware PPO 互動入口
+
+若要讓選中的 backend 實際提供 `/slam_confidence` 給 51-D PPO，並由相同的
+proprioceptive estimator 15 提供 locomotion body velocity，使用：
+
+```bash
+ros2 launch anymal_locomotion_ros2 slam_confidence_interactive.launch.py \
+  slam_backend:=fastlio2
+```
+
+把 `fastlio2` 改成 `liosam` 即可切換 backend。此入口預設開啟 Isaac Sim GUI、
+對應 backend 的官方 RViz 與 `teleop_twist_keyboard` terminal；不啟動 scripted
+stability driver，因此 `/cmd_vel` 只由人工鍵盤控制。它固定使用
+phase-separated-gait model48 deployment candidate、proprioceptive estimator 15，並依
+backend 自動鎖定正確的 confidence calibration ID。按下主 launch terminal 的
+`Ctrl+C` 結束整組程序。
+
+這和下方純 backend comparison 不同：下方 comparison 仍只用 model1450＋GT
+`/odom` 移動機器人，SLAM 不進 policy。
+
 第一次只想確認 FAST-LIO2 原生畫面時，優先使用直接入口。它 include candidate
 原本的 `mapping_ouster64.launch.py` 與 `fastlio.rviz`；project wrapper 只補
 simulator raw PointCloud2 轉換、正式 model1450 GT motion driver 與 teleop，

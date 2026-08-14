@@ -12,11 +12,12 @@ from launch.actions import (
     EmitEvent,
     ExecuteProcess,
     IncludeLaunchDescription,
+    OpaqueFunction,
     RegisterEventHandler,
     SetEnvironmentVariable,
     TimerAction,
 )
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -65,6 +66,95 @@ def _find_project_root(package_share: Path) -> Path:
         "Cannot locate the anymal_locomotion repository from "
         f"{package_share}"
     )
+
+
+def _simulation_actions(context, *_) -> list[object]:
+    interactive = (
+        LaunchConfiguration("interactive").perform(context).strip().lower()
+        == "true"
+    )
+    headless = (
+        LaunchConfiguration("headless").perform(context).strip().lower()
+        == "true"
+    )
+    project_root = LaunchConfiguration("project_root")
+    output_dir = LaunchConfiguration("output_dir")
+    command = [
+        PathJoinSubstitution(
+            [LaunchConfiguration("isaaclab_root"), "isaaclab.sh"]
+        ),
+        "-p",
+        PathJoinSubstitution(
+            [project_root, "scripts", "validation", "validate_ros2_bridge.py"]
+        ),
+        "--device",
+        LaunchConfiguration("device"),
+    ]
+    if headless:
+        command.append("--headless")
+    command.extend(
+        [
+            "--steps",
+            LaunchConfiguration("simulation_steps"),
+            "--real-time",
+            "--external-control",
+            "--joint-command-wait-timeout-s",
+            LaunchConfiguration("joint_command_wait_timeout_s"),
+            "--disable-episode-timeout",
+            "--enhanced-determinism",
+            "--imu-observation-parity-atol",
+            LaunchConfiguration("imu_observation_parity_atol"),
+            "--imu-angular-velocity-parity-atol",
+            LaunchConfiguration("imu_angular_velocity_parity_atol"),
+            "--factory-usd-path",
+            LaunchConfiguration("factory_usd_path"),
+            "--factory-friction",
+            LaunchConfiguration("factory_friction"),
+            "--spawn-x",
+            LaunchConfiguration("spawn_x"),
+            "--spawn-y",
+            LaunchConfiguration("spawn_y"),
+            "--spawn-yaw",
+            LaunchConfiguration("spawn_yaw"),
+            "--state-transplant-manifest",
+            LaunchConfiguration("state_transplant_manifest"),
+            "--enable-lio-sam",
+            "--locomotion-diagnostics-output",
+            PathJoinSubstitution([output_dir, "locomotion_diagnostics.json"]),
+            "--locomotion-profile",
+            LaunchConfiguration("profile"),
+        ]
+    )
+    if not interactive:
+        command.extend(
+            [
+                "--benchmark-completion-file",
+                PathJoinSubstitution([output_dir, "driver.json"]),
+            ]
+        )
+    simulation = ExecuteProcess(
+        cmd=command,
+        output="screen" if interactive else "log",
+        sigterm_timeout="30",
+        sigkill_timeout="10",
+    )
+    return [
+        simulation,
+        RegisterEventHandler(
+            OnProcessExit(
+                target_action=simulation,
+                on_exit=[
+                    EmitEvent(
+                        event=Shutdown(
+                            reason=(
+                                "SLAM-confidence locomotion simulation completed"
+                            )
+                        )
+                    )
+                ],
+            )
+        ),
+    ]
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -117,6 +207,12 @@ def generate_launch_description() -> LaunchDescription:
     enable_confidence = LaunchConfiguration("enable_confidence")
     slam_odom_topic = LaunchConfiguration("slam_odom_topic")
     policy_odometry_topic = LaunchConfiguration("policy_odometry_topic")
+    enable_velocity_estimator = LaunchConfiguration(
+        "enable_velocity_estimator"
+    )
+    velocity_estimator_metadata_path = LaunchConfiguration(
+        "velocity_estimator_metadata_path"
+    )
     imu_observation_parity_atol = LaunchConfiguration(
         "imu_observation_parity_atol"
     )
@@ -127,6 +223,9 @@ def generate_launch_description() -> LaunchDescription:
         "policy_inference_trigger"
     )
     policy_state_timeout_s = LaunchConfiguration("policy_state_timeout_s")
+    joint_command_wait_timeout_s = LaunchConfiguration(
+        "joint_command_wait_timeout_s"
+    )
     slam_backend = LaunchConfiguration("slam_backend")
     expected_confidence_backend = LaunchConfiguration(
         "expected_confidence_backend"
@@ -134,6 +233,9 @@ def generate_launch_description() -> LaunchDescription:
     expected_calibration_id = LaunchConfiguration(
         "expected_calibration_id"
     )
+    interactive = LaunchConfiguration("interactive")
+    use_rviz = LaunchConfiguration("use_rviz")
+    open_teleop_terminal = LaunchConfiguration("open_teleop_terminal")
 
     project_python_path = [
         PathJoinSubstitution([project_root, "deployment", "python_vendor"]),
@@ -154,6 +256,13 @@ def generate_launch_description() -> LaunchDescription:
                 "policy_path": policy_path,
                 "metadata_path": metadata_path,
                 "odometry_topic": policy_odometry_topic,
+                "enable_velocity_estimator": ParameterValue(
+                    enable_velocity_estimator,
+                    value_type=bool,
+                ),
+                "velocity_estimator_metadata_path": (
+                    velocity_estimator_metadata_path
+                ),
                 "expected_odometry_child_frame": "base_link",
                 "inference_trigger": policy_inference_trigger,
                 "state_timeout_s": ParameterValue(
@@ -193,6 +302,7 @@ def generate_launch_description() -> LaunchDescription:
                 ),
             }
         ],
+        condition=UnlessCondition(interactive),
         output="screen",
     )
     fastlio = IncludeLaunchDescription(
@@ -217,6 +327,7 @@ def generate_launch_description() -> LaunchDescription:
             "time_sync_en": fastlio_time_sync_en,
             "time_offset_lidar_to_imu": fastlio_time_offset_lidar_to_imu,
             "enable_confidence": enable_confidence,
+            "enable_visual_outputs": use_rviz,
         }.items(),
         condition=IfCondition(
             PythonExpression(["'", slam_backend, "' == 'fastlio2'"])
@@ -227,7 +338,7 @@ def generate_launch_description() -> LaunchDescription:
             str(package_share / "launch" / "lio_sam.launch.py")
         ),
         launch_arguments={
-            "use_rviz": "false",
+            "use_rviz": use_rviz,
             "enable_confidence": enable_confidence,
             "use_motion_deskew": "false",
             "feature_cloud_info_topic": "/lio_sam/deskew/cloud_info",
@@ -241,49 +352,62 @@ def generate_launch_description() -> LaunchDescription:
             PythonExpression(["'", slam_backend, "' == 'liosam'"])
         ),
     )
-    simulation = ExecuteProcess(
-        cmd=[
-            PathJoinSubstitution([isaaclab_root, "isaaclab.sh"]),
-            "-p",
-            PathJoinSubstitution(
-                [project_root, "scripts", "validation", "validate_ros2_bridge.py"]
+    fastlio_rviz = Node(
+        package="rviz2",
+        executable="rviz2",
+        name="fastlio2_rviz",
+        arguments=[
+            "-d",
+            str(
+                Path(get_package_share_directory("fast_lio"))
+                / "rviz_cfg"
+                / "fastlio.rviz"
             ),
-            "--device",
-            device,
-            "--headless",
-            "--steps",
-            simulation_steps,
-            "--real-time",
-            "--external-control",
-            "--disable-episode-timeout",
-            "--enhanced-determinism",
-            "--imu-observation-parity-atol",
-            imu_observation_parity_atol,
-            "--imu-angular-velocity-parity-atol",
-            imu_angular_velocity_parity_atol,
-            "--factory-usd-path",
-            factory_usd_path,
-            "--factory-friction",
-            factory_friction,
-            "--spawn-x",
-            spawn_x,
-            "--spawn-y",
-            spawn_y,
-            "--spawn-yaw",
-            spawn_yaw,
-            "--state-transplant-manifest",
-            state_transplant_manifest,
-            "--enable-lio-sam",
-            "--locomotion-diagnostics-output",
-            PathJoinSubstitution([output_dir, "locomotion_diagnostics.json"]),
-            "--locomotion-profile",
-            profile,
-            "--benchmark-completion-file",
-            PathJoinSubstitution([output_dir, "driver.json"]),
         ],
-        output="log",
-        sigterm_timeout="30",
-        sigkill_timeout="10",
+        parameters=[{"use_sim_time": True}],
+        condition=IfCondition(
+            PythonExpression(
+                [
+                    "'",
+                    slam_backend,
+                    "' == 'fastlio2' and '",
+                    use_rviz,
+                    "' == 'true'",
+                ]
+            )
+        ),
+        output="screen",
+    )
+    teleop = ExecuteProcess(
+        cmd=[
+            "gnome-terminal",
+            "--wait",
+            "--title=ANYmal-D confidence-aware PPO teleop",
+            "--",
+            "ros2",
+            "run",
+            "teleop_twist_keyboard",
+            "teleop_twist_keyboard",
+            "--ros-args",
+            "-p",
+            "speed:=0.5",
+            "-p",
+            "turn:=0.5",
+            "-r",
+            "cmd_vel:=/cmd_vel",
+        ],
+        condition=IfCondition(
+            PythonExpression(
+                [
+                    "'",
+                    interactive,
+                    "' == 'true' and '",
+                    open_teleop_terminal,
+                    "' == 'true'",
+                ]
+            )
+        ),
+        output="screen",
     )
     prepare_output = ExecuteProcess(
         cmd=["mkdir", "-p", output_dir],
@@ -311,6 +435,19 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument("device", default_value="cuda:0"),
             DeclareLaunchArgument(
+                "interactive",
+                default_value="false",
+                description=(
+                    "Disable the scripted benchmark driver and accept live "
+                    "/cmd_vel commands"
+                ),
+            ),
+            DeclareLaunchArgument("headless", default_value="true"),
+            DeclareLaunchArgument("use_rviz", default_value="false"),
+            DeclareLaunchArgument(
+                "open_teleop_terminal", default_value="false"
+            ),
+            DeclareLaunchArgument(
                 "ros_domain_id",
                 default_value=EnvironmentVariable(
                     "ROS_DOMAIN_ID",
@@ -334,6 +471,27 @@ def generate_launch_description() -> LaunchDescription:
                     "Validated body-state odometry consumed by the policy; "
                     "LIO-SAM uses /slam/policy_odom while /slam/odom remains "
                     "the confidence exact-stamp authority"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "enable_velocity_estimator",
+                default_value="false",
+                description=(
+                    "Use the project proprioceptive body-velocity estimator "
+                    "as the policy odometry source"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "velocity_estimator_metadata_path",
+                default_value=PathJoinSubstitution(
+                    [
+                        project_root,
+                        "exported",
+                        "proprioceptive_velocity_estimator",
+                        "v1",
+                        "clean_candidate_08",
+                        "velocity_estimator_metadata.json",
+                    ]
                 ),
             ),
             DeclareLaunchArgument(
@@ -499,6 +657,14 @@ def generate_launch_description() -> LaunchDescription:
                     "policy stops publishing"
                 ),
             ),
+            DeclareLaunchArgument(
+                "joint_command_wait_timeout_s",
+                default_value="0.03",
+                description=(
+                    "Maximum asynchronous DDS command wait; validation still "
+                    "requires zero timeouts and records the measured maximum"
+                ),
+            ),
             SetEnvironmentVariable("ROS_DOMAIN_ID", ros_domain_id),
             SetEnvironmentVariable("ROS_LOCALHOST_ONLY", "1"),
             SetEnvironmentVariable("RMW_IMPLEMENTATION", rmw_implementation),
@@ -514,28 +680,20 @@ def generate_launch_description() -> LaunchDescription:
                     liosam,
                     policy,
                     stability_driver,
-                    TimerAction(period=2.0, actions=[simulation]),
+                    fastlio_rviz,
+                    teleop,
+                    TimerAction(
+                        period=2.0,
+                        actions=[OpaqueFunction(function=_simulation_actions)],
+                    ),
                 ],
             ),
             RegisterEventHandler(
                 OnProcessExit(
                     target_action=stability_driver,
                     on_exit=_shutdown_if_benchmark_failed,
-                )
-            ),
-            RegisterEventHandler(
-                OnProcessExit(
-                    target_action=simulation,
-                    on_exit=[
-                        EmitEvent(
-                            event=Shutdown(
-                                reason=(
-                                    "SLAM-confidence locomotion simulation completed"
-                                )
-                            )
-                        )
-                    ],
-                )
+                ),
+                condition=UnlessCondition(interactive),
             ),
         ]
     )
