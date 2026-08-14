@@ -98,7 +98,7 @@ def validate_candidate_artifacts(
         raise ValueError("parity report was generated from another checkpoint")
     if parity_artifacts.get("onnx", {}).get("sha256") != policy_sha256:
         raise ValueError("parity report was generated from another ONNX")
-    return {
+    artifacts = {
         "policy_path": str(policy_path),
         "metadata_path": str(metadata_path),
         "parity_report_path": str(parity_path),
@@ -106,6 +106,35 @@ def validate_candidate_artifacts(
         "policy_sha256": policy_sha256,
         "parity_report_sha256": _sha256(parity_path),
     }
+    estimator_metadata_value = candidate.get("velocity_estimator_metadata_path")
+    if estimator_metadata_value is not None:
+        estimator_metadata_path = _project_path(
+            PROJECT_ROOT / str(estimator_metadata_value), must_exist=True
+        )
+        estimator_metadata_sha256 = _sha256(estimator_metadata_path)
+        if estimator_metadata_sha256 != str(
+            candidate.get("velocity_estimator_metadata_sha256", "")
+        ):
+            raise ValueError("velocity estimator metadata SHA-256 does not match matrix")
+        estimator_metadata = _load_document(estimator_metadata_path)
+        if estimator_metadata.get("contract_id") != "anymal-d-proprioceptive-velocity-v1":
+            raise ValueError("velocity estimator metadata contract is invalid")
+        estimator_onnx = estimator_metadata.get("artifacts", {}).get("onnx", {})
+        estimator_onnx_path = _project_path(
+            estimator_metadata_path.parent / str(estimator_onnx.get("path", "")),
+            must_exist=True,
+        )
+        if _sha256(estimator_onnx_path) != estimator_onnx.get("sha256"):
+            raise ValueError("velocity estimator ONNX digest does not match metadata")
+        artifacts.update(
+            {
+                "velocity_estimator_metadata_path": str(estimator_metadata_path),
+                "velocity_estimator_metadata_sha256": estimator_metadata_sha256,
+                "velocity_estimator_onnx_path": str(estimator_onnx_path),
+                "velocity_estimator_onnx_sha256": _sha256(estimator_onnx_path),
+            }
+        )
+    return artifacts
 
 
 def validate_policy_diagnostics(
@@ -293,6 +322,16 @@ def main() -> None:
                         f"simulation_steps:={int(matrix['simulation_steps'])}",
                         f"policy_path:={artifacts['policy_path']}",
                         f"metadata_path:={artifacts['metadata_path']}",
+                        *(
+                            (
+                                "enable_velocity_estimator:=true",
+                                "policy_inference_trigger:=estimator_joint_state",
+                                "velocity_estimator_metadata_path:="
+                                + artifacts["velocity_estimator_metadata_path"],
+                            )
+                            if "velocity_estimator_metadata_path" in artifacts
+                            else ()
+                        ),
                     ),
                     cwd=ROS2_WORKSPACE,
                     env=environment,

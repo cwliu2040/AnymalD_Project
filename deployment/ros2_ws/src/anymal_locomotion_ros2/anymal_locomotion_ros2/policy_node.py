@@ -17,9 +17,10 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profi
 from sensor_msgs.msg import Imu, JointState
 from std_msgs.msg import UInt64
 
-from anymal_locomotion_interfaces.msg import SlamConfidence
+from anymal_locomotion_interfaces.msg import FootContactState, SlamConfidence
 
 from anymal_locomotion_ros2.policy_core import (
+    GaitModeGovernor,
     PolicyContract,
     PolicyRuntime,
     RobotState,
@@ -28,6 +29,12 @@ from anymal_locomotion_ros2.policy_core import (
     projected_gravity_from_quaternion,
 )
 from anymal_locomotion_ros2.onnx_backend import OnnxBackend
+from anymal_locomotion_ros2.proprioceptive_velocity_estimator_core import (
+    EstimatorRuntime,
+    assemble_step,
+    load_estimator_metadata,
+    reorder_foot_contacts,
+)
 from anymal_locomotion_ros2.slam_confidence_observation_core import (
     confidence_identity_valid,
     ppo_confidence_observation,
@@ -62,11 +69,17 @@ class AnymalPolicyNode(Node):
         self.declare_parameter("joint_state_topic", "/joint_states")
         self.declare_parameter("imu_topic", "/imu/data")
         self.declare_parameter("odometry_topic", "/odom")
+        self.declare_parameter("foot_contact_topic", "/foot_contacts")
+        self.declare_parameter("enable_velocity_estimator", False)
+        self.declare_parameter("velocity_estimator_metadata_path", "")
+        self.declare_parameter("velocity_estimator_sync_tolerance_s", 0.025)
+        self.declare_parameter("velocity_estimator_receipt_timeout_s", 0.10)
         self.declare_parameter("command_topic", "/cmd_vel")
         self.declare_parameter("slam_confidence_topic", "/slam_confidence")
         self.declare_parameter("slam_confidence_receipt_timeout_s", 0.15)
         self.declare_parameter("expected_slam_confidence_backend", "")
         self.declare_parameter("expected_slam_confidence_calibration_id", "")
+        self.declare_parameter("enable_gait_mode_governor", False)
         self.declare_parameter("joint_command_topic", "/joint_command")
         self.declare_parameter(
             "episode_reset_topic", "/simulation/episode_reset"
@@ -102,11 +115,56 @@ class AnymalPolicyNode(Node):
         else:
             backend = backend_factory(policy_path)
         self._contract = PolicyContract.from_metadata(metadata_path)
+        enable_gait_mode_governor = bool(
+            self.get_parameter("enable_gait_mode_governor").value
+        )
+        if enable_gait_mode_governor and self._contract.observation_dimension != 51:
+            raise ValueError("gait-mode governor requires a 51-D policy")
         self._runtime = PolicyRuntime(
             self._contract,
             backend,
             max_abs_policy_action=float(self.get_parameter("max_abs_policy_action").value),
+            gait_mode_governor=(
+                GaitModeGovernor() if enable_gait_mode_governor else None
+            ),
         )
+        self._velocity_estimator_enabled = bool(
+            self.get_parameter("enable_velocity_estimator").value
+        )
+        self._velocity_estimator: EstimatorRuntime | None = None
+        self._velocity_estimator_sync_tolerance_s = float(
+            self.get_parameter("velocity_estimator_sync_tolerance_s").value
+        )
+        self._velocity_estimator_receipt_timeout_s = float(
+            self.get_parameter("velocity_estimator_receipt_timeout_s").value
+        )
+        self._velocity_estimator_uses_sim_time = bool(
+            self.get_parameter("use_sim_time").value
+        )
+        self._estimator_imu: tuple[float, int, np.ndarray] | None = None
+        self._estimator_contacts: tuple[float, int, np.ndarray] | None = None
+        if self._velocity_estimator_enabled:
+            estimator_metadata_path = str(
+                self.get_parameter("velocity_estimator_metadata_path").value
+            ).strip()
+            if not estimator_metadata_path:
+                raise ValueError(
+                    "enabled velocity estimator requires metadata path"
+                )
+            if (
+                self._velocity_estimator_sync_tolerance_s < 0.0
+                or self._velocity_estimator_receipt_timeout_s <= 0.0
+            ):
+                raise ValueError(
+                    "velocity estimator synchronization tolerance must be "
+                    "non-negative and receipt timeout positive"
+                )
+            _, estimator_model_path = load_estimator_metadata(
+                estimator_metadata_path
+            )
+            self._velocity_estimator = EstimatorRuntime(
+                OnnxBackend(str(estimator_model_path))
+            )
         self._uses_slam_confidence = self._contract.observation_dimension == 51
         self._expected_slam_confidence_backend = str(
             self.get_parameter("expected_slam_confidence_backend").value
@@ -237,9 +295,21 @@ class AnymalPolicyNode(Node):
                 "Watchdog linear and angular decelerations must both be zero "
                 "or both be positive"
             )
-        if self._inference_trigger not in ("synchronized_state", "timer"):
+        if self._inference_trigger not in (
+            "synchronized_state",
+            "timer",
+            "estimator_joint_state",
+        ):
             raise ValueError(
-                "inference_trigger must be 'synchronized_state' or 'timer'"
+                "inference_trigger must be 'synchronized_state', 'timer', "
+                "or 'estimator_joint_state'"
+            )
+        if (
+            self._inference_trigger == "estimator_joint_state"
+            and not self._velocity_estimator_enabled
+        ):
+            raise ValueError(
+                "estimator_joint_state trigger requires the velocity estimator"
             )
         if self._state_sync_tolerance < 0.0:
             raise ValueError("state_sync_tolerance_s must be non-negative")
@@ -285,12 +355,20 @@ class AnymalPolicyNode(Node):
             self._on_imu,
             qos_profile_sensor_data,
         )
-        self.create_subscription(
-            Odometry,
-            str(self.get_parameter("odometry_topic").value),
-            self._on_odometry,
-            qos_profile_sensor_data,
-        )
+        if self._velocity_estimator_enabled:
+            self.create_subscription(
+                FootContactState,
+                str(self.get_parameter("foot_contact_topic").value),
+                self._on_foot_contacts,
+                qos_profile_sensor_data,
+            )
+        else:
+            self.create_subscription(
+                Odometry,
+                str(self.get_parameter("odometry_topic").value),
+                self._on_odometry,
+                qos_profile_sensor_data,
+            )
         self.create_subscription(
             Twist,
             str(self.get_parameter("command_topic").value),
@@ -372,7 +450,14 @@ class AnymalPolicyNode(Node):
             return
         self._joint_positions = positions
         self._joint_velocities = velocities
+        if self._velocity_estimator_enabled:
+            self._update_velocity_estimate(message)
         self._state_updated("joint_state", message)
+        if (
+            self._inference_trigger == "estimator_joint_state"
+            and self._base_linear_velocity is not None
+        ):
+            self._run_policy(output_stamp_s=self._stamp_seconds(message))
 
     def _on_imu(self, message: Imu) -> None:
         if message.header.frame_id != self._expected_imu_frame:
@@ -393,6 +478,16 @@ class AnymalPolicyNode(Node):
             )
             if not np.all(np.isfinite(angular_velocity)):
                 raise ValueError("IMU angular velocity contains NaN or Inf")
+            linear_acceleration = np.asarray(
+                [
+                    message.linear_acceleration.x,
+                    message.linear_acceleration.y,
+                    message.linear_acceleration.z,
+                ],
+                dtype=np.float32,
+            )
+            if not np.all(np.isfinite(linear_acceleration)):
+                raise ValueError("IMU linear acceleration contains NaN or Inf")
             gravity = projected_gravity_from_quaternion(
                 message.orientation.x,
                 message.orientation.y,
@@ -404,7 +499,99 @@ class AnymalPolicyNode(Node):
             return
         self._base_angular_velocity = angular_velocity
         self._projected_gravity = gravity
+        if self._velocity_estimator_enabled:
+            self._estimator_imu = (
+                self._stamp_seconds(message),
+                time.monotonic_ns(),
+                linear_acceleration,
+            )
         self._state_updated("imu", message)
+
+    def _on_foot_contacts(self, message: FootContactState) -> None:
+        try:
+            contacts = reorder_foot_contacts(
+                message.foot_names,
+                message.contact_probabilities,
+            )
+        except ValueError as error:
+            self._invalidate_velocity_estimator(str(error))
+            return
+        self._estimator_contacts = (
+            self._stamp_seconds(message),
+            time.monotonic_ns(),
+            contacts,
+        )
+
+    def _invalidate_velocity_estimator(self, reason: str) -> None:
+        if self._velocity_estimator is not None:
+            self._velocity_estimator.reset()
+        self._base_linear_velocity = None
+        self._receipt_times.pop("odometry", None)
+        self._state_stamps.pop("odometry", None)
+        self._warn_throttled("velocity_estimator_invalid", reason)
+
+    def _update_velocity_estimate(self, message: JointState) -> None:
+        if (
+            self._velocity_estimator is None
+            or self._estimator_imu is None
+            or self._estimator_contacts is None
+            or self._joint_positions is None
+            or self._joint_velocities is None
+        ):
+            self._invalidate_velocity_estimator(
+                "Velocity estimator inputs are not ready"
+            )
+            return
+        joint_stamp = self._stamp_seconds(message)
+        now_ns = time.monotonic_ns()
+        imu_stamp, imu_receipt_ns, linear_acceleration = self._estimator_imu
+        contact_stamp, contact_receipt_ns, contacts = self._estimator_contacts
+        if max(
+            abs(joint_stamp - imu_stamp),
+            abs(joint_stamp - contact_stamp),
+        ) > self._velocity_estimator_sync_tolerance_s:
+            self._invalidate_velocity_estimator(
+                "Velocity estimator input timestamps are not synchronized"
+            )
+            return
+        if (
+            not self._velocity_estimator_uses_sim_time
+            and max(
+                now_ns - imu_receipt_ns,
+                now_ns - contact_receipt_ns,
+            )
+            * 1.0e-9
+            > self._velocity_estimator_receipt_timeout_s
+        ):
+            self._invalidate_velocity_estimator(
+                "Velocity estimator input receipt watchdog expired"
+            )
+            return
+        try:
+            sample = assemble_step(
+                self._base_angular_velocity,
+                linear_acceleration,
+                self._projected_gravity,
+                self._joint_positions
+                - np.asarray(
+                    self._contract.default_joint_positions,
+                    dtype=np.float32,
+                ),
+                self._joint_velocities,
+                contacts,
+            )
+            estimate = self._velocity_estimator.step(joint_stamp, sample)
+        except ValueError as error:
+            self._invalidate_velocity_estimator(str(error))
+            return
+        if estimate is None:
+            self._base_linear_velocity = None
+            self._receipt_times.pop("odometry", None)
+            self._state_stamps.pop("odometry", None)
+            return
+        self._base_linear_velocity = estimate
+        self._receipt_times["odometry"] = self._now_seconds()
+        self._state_stamps["odometry"] = joint_stamp
 
     def _on_odometry(self, message: Odometry) -> None:
         if message.child_frame_id != self._expected_odom_child_frame:
@@ -506,6 +693,11 @@ class AnymalPolicyNode(Node):
             return
         if sequence > self._last_reset_sequence:
             self._runtime.reset()
+            if self._velocity_estimator is not None:
+                self._velocity_estimator.reset()
+                self._base_linear_velocity = None
+                self._receipt_times.pop("odometry", None)
+                self._state_stamps.pop("odometry", None)
             self._effective_command.fill(0.0)
             self._last_policy_time = None
             self._last_reset_sequence = sequence
@@ -533,12 +725,12 @@ class AnymalPolicyNode(Node):
         if max(stamps) - min(stamps) > self._state_sync_tolerance:
             return
         self._last_inference_joint_stamp = joint_stamp
-        self._run_policy()
+        self._run_policy(output_stamp_s=joint_stamp)
 
     def _on_policy_tick(self) -> None:
         self._run_policy()
 
-    def _run_policy(self) -> None:
+    def _run_policy(self, *, output_stamp_s: float | None = None) -> None:
         now = self._now_seconds()
         if self._transplant_initial_command_pending:
             self._receipt_times["command"] = now
@@ -663,7 +855,16 @@ class AnymalPolicyNode(Node):
             )
 
         output = JointState()
-        output.header.stamp = self.get_clock().now().to_msg()
+        if output_stamp_s is None:
+            output.header.stamp = self.get_clock().now().to_msg()
+        else:
+            seconds = int(np.floor(output_stamp_s))
+            nanoseconds = int(round((output_stamp_s - seconds) * 1.0e9))
+            if nanoseconds >= 1_000_000_000:
+                seconds += 1
+                nanoseconds -= 1_000_000_000
+            output.header.stamp.sec = seconds
+            output.header.stamp.nanosec = nanoseconds
         output.name = list(self._contract.joint_order)
         output.position = result.joint_targets.astype(float).tolist()
         self._joint_command_publisher.publish(output)

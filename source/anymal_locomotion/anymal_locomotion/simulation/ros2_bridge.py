@@ -22,6 +22,7 @@ class Ros2PolicyBridge:
     imu_mount_orientation_wxyz: tuple[float, float, float, float]
     command_topic: str
     joint_state_topic: str
+    foot_contact_topic: str
     imu_topic: str
     odometry_topic: str
     tf_topic: str
@@ -141,6 +142,7 @@ def create_ros2_policy_bridge(
     graph_path: str = "/ROS2PolicyBridge",
     command_topic: str = "cmd_vel",
     joint_state_topic: str = "joint_states",
+    foot_contact_topic: str = "foot_contacts",
     imu_topic: str = "imu/data",
     odometry_topic: str = "odom",
     tf_topic: str = "tf",
@@ -230,6 +232,7 @@ def create_ros2_policy_bridge(
         ("BodyAngularVelocity", "omni.graph.nodes.TransformVector"),
         ("PublishClock", "isaacsim.ros2.bridge.ROS2PublishClock"),
         ("PublishJointState", "isaacsim.ros2.bridge.ROS2Publisher"),
+        ("PublishFootContacts", "isaacsim.ros2.bridge.ROS2Publisher"),
         ("PublishOdometry", "isaacsim.ros2.bridge.ROS2PublishOdometry"),
         ("PublishImu", "isaacsim.ros2.bridge.ROS2PublishImu"),
         ("SubscribeTwist", "isaacsim.ros2.bridge.ROS2SubscribeTwist"),
@@ -257,6 +260,13 @@ def create_ros2_policy_bridge(
         ("PublishJointState.inputs:messageSubfolder", "msg"),
         ("PublishJointState.inputs:messageName", "JointState"),
         ("PublishJointState.inputs:topicName", joint_state_topic),
+        (
+            "PublishFootContacts.inputs:messagePackage",
+            "anymal_locomotion_interfaces",
+        ),
+        ("PublishFootContacts.inputs:messageSubfolder", "msg"),
+        ("PublishFootContacts.inputs:messageName", "FootContactState"),
+        ("PublishFootContacts.inputs:topicName", foot_contact_topic),
         ("PublishOdometry.inputs:topicName", odometry_topic),
         ("PublishOdometry.inputs:odomFrameId", "odom"),
         ("PublishOdometry.inputs:chassisFrameId", "base_link"),
@@ -387,6 +397,7 @@ def create_ros2_policy_bridge(
         ),
         ("Context.outputs:context", "PublishClock.inputs:context"),
         ("Context.outputs:context", "PublishJointState.inputs:context"),
+        ("Context.outputs:context", "PublishFootContacts.inputs:context"),
         ("Context.outputs:context", "PublishOdometry.inputs:context"),
         ("Context.outputs:context", "PublishImu.inputs:context"),
         ("Context.outputs:context", "SubscribeTwist.inputs:context"),
@@ -494,6 +505,16 @@ def create_ros2_policy_bridge(
         raise RuntimeError(
             "ROS2 generic UInt64 reset handshake did not create its message fields"
         )
+    foot_names = og.Controller.attribute(
+        f"{graph_path}/PublishFootContacts.inputs:foot_names"
+    )
+    contact_probabilities = og.Controller.attribute(
+        f"{graph_path}/PublishFootContacts.inputs:contact_probabilities"
+    )
+    if not foot_names.is_valid() or not contact_probabilities.is_valid():
+        raise RuntimeError(
+            "ROS2 generic FootContactState publisher did not create its fields"
+        )
     if not og.Controller.set(
         og.Controller.attribute(
             f"{graph_path}/PublishJointState.inputs:header:frame_id"
@@ -509,6 +530,14 @@ def create_ros2_policy_bridge(
             f"{graph_path}/PublishJointState.inputs:execIn"
         ),
     )
+    og.Controller.connect(
+        og.Controller.attribute(
+            f"{graph_path}/PolicyImpulse.outputs:execOut"
+        ),
+        og.Controller.attribute(
+            f"{graph_path}/PublishFootContacts.inputs:execIn"
+        ),
+    )
     return Ros2PolicyBridge(
         graph_path=graph_path,
         articulation_root_path=articulation_root_path,
@@ -520,6 +549,7 @@ def create_ros2_policy_bridge(
         imu_mount_orientation_wxyz=(1.0, 0.0, 0.0, 0.0),
         command_topic=f"/{command_topic.lstrip('/')}",
         joint_state_topic=f"/{joint_state_topic.lstrip('/')}",
+        foot_contact_topic=f"/{foot_contact_topic.lstrip('/')}",
         imu_topic=f"/{imu_topic.lstrip('/')}",
         odometry_topic=f"/{odometry_topic.lstrip('/')}",
         tf_topic=f"/{tf_topic.lstrip('/')}",
@@ -777,6 +807,53 @@ def write_joint_state(
     if failed:
         raise RuntimeError(
             f"Failed to update ROS2 generic JointState fields: {failed}"
+        )
+
+
+def write_foot_contacts(
+    bridge: Ros2PolicyBridge,
+    foot_names: Sequence[str],
+    contact_probabilities: Sequence[float],
+    *,
+    timestamp_s: float,
+) -> None:
+    """Copy one named contact sample into the ROS 2 Bridge publisher."""
+    import omni.graph.core as og
+
+    names = tuple(str(name) for name in foot_names)
+    probabilities = tuple(float(value) for value in contact_probabilities)
+    if len(names) != 4 or len(set(names)) != 4:
+        raise ValueError("Foot contacts require four unique names")
+    if len(probabilities) != 4 or not all(
+        math.isfinite(value) and 0.0 <= value <= 1.0
+        for value in probabilities
+    ):
+        raise ValueError("Foot contact probabilities must contain four values in [0, 1]")
+    if not math.isfinite(timestamp_s) or timestamp_s < 0.0:
+        raise ValueError("Foot-contact timestamp must be finite and non-negative")
+    seconds = math.floor(timestamp_s)
+    nanoseconds = round((timestamp_s - seconds) * 1.0e9)
+    if nanoseconds >= 1_000_000_000:
+        seconds += 1
+        nanoseconds -= 1_000_000_000
+    node_path = f"{bridge.graph_path}/PublishFootContacts"
+    values = (
+        ("inputs:header:stamp:sec", int(seconds)),
+        ("inputs:header:stamp:nanosec", int(nanoseconds)),
+        ("inputs:header:frame_id", "base_link"),
+        ("inputs:foot_names", list(names)),
+        ("inputs:contact_probabilities", list(probabilities)),
+    )
+    failed = [
+        attribute_name
+        for attribute_name, value in values
+        if not og.Controller.set(
+            og.Controller.attribute(f"{node_path}.{attribute_name}"), value
+        )
+    ]
+    if failed:
+        raise RuntimeError(
+            f"Failed to update ROS2 FootContactState fields: {failed}"
         )
 
 

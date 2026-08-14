@@ -53,6 +53,24 @@ parser.add_argument(
     help="Save bootstrap_model_0.pt after actor-only warm-start and exit before learning.",
 )
 parser.add_argument(
+    "--velocity-estimator-metadata",
+    type=Path,
+    default=None,
+    help=(
+        "Train policy observations through a qualified repository-local "
+        "proprioceptive velocity estimator artifact."
+    ),
+)
+parser.add_argument(
+    "--resume-checkpoint-path",
+    type=Path,
+    default=None,
+    help=(
+        "Resume from an explicit repository-local checkpoint while writing the "
+        "continuation to the current task's experiment directory."
+    ),
+)
+parser.add_argument(
     "--distributed", action="store_true", default=False, help="Run training with multiple GPUs or nodes."
 )
 parser.add_argument("--export_io_descriptors", action="store_true", default=False, help="Export IO descriptors.")
@@ -68,6 +86,8 @@ if args_cli.bootstrap_only and args_cli.actor_only_warm_start is None:
     parser.error("--bootstrap-only requires --actor-only-warm-start")
 if args_cli.actor_only_warm_start is not None and args_cli.resume:
     parser.error("--actor-only-warm-start and --resume are mutually exclusive")
+if args_cli.resume_checkpoint_path is not None and not args_cli.resume:
+    parser.error("--resume-checkpoint-path requires --resume")
 if args_cli.adapt_confidence_input_only and args_cli.actor_only_warm_start is None:
     parser.error("--adapt-confidence-input-only requires --actor-only-warm-start")
 
@@ -135,7 +155,11 @@ from isaaclab_tasks.utils.hydra import hydra_task_config
 logger = logging.getLogger(__name__)
 
 import anymal_locomotion.tasks  # noqa: F401
-from anymal_locomotion.artifacts import LOG_ROOT, build_run_manifest
+from anymal_locomotion.artifacts import LOG_ROOT, PROJECT_ROOT, build_run_manifest
+from anymal_locomotion.velocity_estimator_training import (
+    VelocityEstimatorTrainingWrapper,
+    validate_velocity_estimator_artifact,
+)
 
 
 def _sha256(path: Path) -> str:
@@ -241,6 +265,8 @@ def _residual_actor_warm_start(
         for name in target
         if name.startswith("actor.residual.")
         or name.startswith("actor.action_skip.")
+        or name.startswith("actor.gait_head.")
+        or name.startswith("actor.intent_head.")
         or name == "actor.safe_command_gain"
     )
     critic_keys = sorted(name for name in target if name.startswith("critic."))
@@ -255,7 +281,16 @@ def _residual_actor_warm_start(
         raise ValueError("source is not the expected 48-D model1450 actor")
     if tuple(target["actor.backbone.0.weight"].shape) != (128, 48):
         raise ValueError("residual target is not the expected frozen 48-D backbone")
-    if not residual_keys:
+    is_gait_mode = bool(
+        getattr(policy.actor, "external_gait_mode_governor", False)
+    )
+    is_structured_gait = any(
+        name.startswith("actor.gait_head.") for name in residual_keys
+    )
+    is_intent_gait = bool(
+        getattr(policy.actor, "policy_intent_blend", False)
+    )
+    if not residual_keys and not is_gait_mode:
         raise ValueError("residual target has no adapter parameters")
 
     critic_before = _state_sha256(target, critic_keys)
@@ -287,21 +322,22 @@ def _residual_actor_warm_start(
     if optimizer.state:
         raise RuntimeError("residual warm-start requires a fresh optimizer")
     is_safe_command = "actor.safe_command_gain" in residual_keys
-    final_weight_keys = [
-        name
-        for name in residual_keys
-        if name.startswith("actor.residual.") and name.endswith(".weight")
-    ]
-    if final_weight_keys:
-        final_weight_key = max(
-            final_weight_keys,
-            key=lambda name: int(name.split(".")[-2]),
-        )
-        final_bias_key = final_weight_key.removesuffix("weight") + "bias"
-        if torch.count_nonzero(final_state[final_weight_key]).item() != 0:
-            raise RuntimeError("residual adapter final weight is not exactly zero")
-        if torch.count_nonzero(final_state[final_bias_key]).item() != 0:
-            raise RuntimeError("residual adapter final bias is not exactly zero")
+    for prefix in ("actor.residual.", "actor.gait_head.", "actor.intent_head."):
+        final_weight_keys = [
+            name
+            for name in residual_keys
+            if name.startswith(prefix) and name.endswith(".weight")
+        ]
+        if final_weight_keys:
+            final_weight_key = max(
+                final_weight_keys,
+                key=lambda name: int(name.split(".")[-2]),
+            )
+            final_bias_key = final_weight_key.removesuffix("weight") + "bias"
+            if torch.count_nonzero(final_state[final_weight_key]).item() != 0:
+                raise RuntimeError(f"{prefix} final weight is not exactly zero")
+            if torch.count_nonzero(final_state[final_bias_key]).item() != 0:
+                raise RuntimeError(f"{prefix} final bias is not exactly zero")
     action_skip_keys = [
         name for name in residual_keys if name.startswith("actor.action_skip.")
     ]
@@ -318,6 +354,8 @@ def _residual_actor_warm_start(
         name.startswith("critic.")
         or name.startswith("actor.residual.")
         or name.startswith("actor.action_skip.")
+        or name.startswith("actor.gait_head.")
+        or name.startswith("actor.intent_head.")
         or name == "actor.safe_command_gain"
         for name in trainable
     ):
@@ -328,9 +366,21 @@ def _residual_actor_warm_start(
     report = {
         "schema_version": 1,
         "kind": (
-            "frozen_backbone_safe_command_warm_start"
-            if is_safe_command
-            else "frozen_backbone_bounded_residual_warm_start"
+            "frozen_backbone_gait_mode_warm_start"
+            if is_gait_mode
+            else (
+                "frozen_backbone_intent_gait_warm_start"
+                if is_intent_gait
+                else (
+                    "frozen_backbone_structured_gait_warm_start"
+                    if is_structured_gait
+                    else (
+                        "frozen_backbone_safe_command_warm_start"
+                        if is_safe_command
+                        else "frozen_backbone_bounded_residual_warm_start"
+                    )
+                )
+            )
         ),
         "source": str(source_path),
         "source_sha256": _sha256(source_path),
@@ -346,7 +396,28 @@ def _residual_actor_warm_start(
         "trainable_parameters": trainable,
         "frozen_parameters": frozen,
     }
-    if is_safe_command:
+    if is_gait_mode:
+        report["command_governor"] = "external_stateful_gait_mode_v1"
+        report["actor_adapter_parameters"] = []
+    elif is_structured_gait:
+        report["gait_head_output_dimension"] = int(
+            policy.actor.gait_parameter_dim
+        )
+        report["gait_head_final_layer_initialization"] = "exact_zero"
+        if is_intent_gait and hasattr(policy.actor, "intent_head"):
+            report["intent_head_output_dimension"] = 1
+            report["intent_head_final_layer_initialization"] = "exact_zero"
+        report["gait_coordinates"] = (
+            ["ppo_locomotion_intent_blend"]
+            if is_intent_gait
+            else []
+        ) + [
+                "stride_modulation_positive_attenuates",
+                "crouch",
+                "stance_width",
+                "action_smoothing",
+            ]
+    elif is_safe_command:
         safe_command_gain_limit = float(policy.actor.safe_command_gain_limit)
         report["safe_command_gain_initialization"] = "exact_zero"
         report["safe_command_gain_limit"] = safe_command_gain_limit
@@ -437,6 +508,12 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         log_dir += f"_{agent_cfg.run_name}"
     log_dir = os.path.join(log_root_path, log_dir)
     run_manifest = build_run_manifest(task_id=args_cli.task, seed=agent_cfg.seed, log_dir=log_dir)
+    estimator_artifact = None
+    if args_cli.velocity_estimator_metadata is not None:
+        estimator_artifact = validate_velocity_estimator_artifact(
+            args_cli.velocity_estimator_metadata
+        )
+        run_manifest["policy_observation_velocity_estimator"] = estimator_artifact
 
     # set the IO descriptors export flag if requested
     if isinstance(env_cfg, ManagerBasedRLEnvCfg):
@@ -458,7 +535,17 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # save resume path before creating a new log_dir
     if agent_cfg.resume or agent_cfg.algorithm.class_name == "Distillation":
-        resume_path = get_checkpoint_path(log_root_path, agent_cfg.load_run, agent_cfg.load_checkpoint)
+        if args_cli.resume_checkpoint_path is None:
+            resume_path = get_checkpoint_path(
+                log_root_path, agent_cfg.load_run, agent_cfg.load_checkpoint
+            )
+        else:
+            resume_path_obj = args_cli.resume_checkpoint_path.expanduser().resolve()
+            if not resume_path_obj.is_relative_to(PROJECT_ROOT):
+                raise ValueError("resume checkpoint must be inside the repository")
+            if not resume_path_obj.is_file():
+                raise FileNotFoundError(resume_path_obj)
+            resume_path = str(resume_path_obj)
 
     # wrap for video recording
     if args_cli.video:
@@ -475,7 +562,14 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     start_time = time.time()
 
     # wrap around environment for rsl-rl
-    env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
+    if args_cli.velocity_estimator_metadata is None:
+        env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
+    else:
+        env = VelocityEstimatorTrainingWrapper(
+            env,
+            metadata_path=args_cli.velocity_estimator_metadata,
+            clip_actions=agent_cfg.clip_actions,
+        )
 
     # create runner from rsl-rl
     if agent_cfg.class_name == "OnPolicyRunner":

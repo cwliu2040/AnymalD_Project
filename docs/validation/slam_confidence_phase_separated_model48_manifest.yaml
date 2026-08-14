@@ -1,0 +1,75 @@
+schema_version: 1
+candidate_id: slam-confidence-phase-separated-model48-v1
+status: experimental_simulation_candidate
+date: 2026-08-13
+
+git:
+  branch: exp/slam-fastlio2
+  baseline: fbee21991e55b08cae49d3c2b5a0e61846c16f46
+  working_tree: dirty_uncommitted_candidate
+
+formal_baseline:
+  checkpoint: checkpoints/anymal_d_locomotion_v1/recovery_v0.4.0/model_1450.pt
+  sha256: 3bbaff6247fdb59808af42a59e2ec9477c047531a3e2aa6cd0df6208a796feee
+  replaced: false
+
+candidate:
+  checkpoint: logs/rsl_rl/anymal_d_locomotion_slam_confidence_constrained_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/model_48.pt
+  sha256: 888bc682eda65e2c427eccd445d8b9cb1e787635b5da86e6fa8a85b83fda4fa0
+  task: Isaac-Velocity-Flat-Anymal-D-Locomotion-SlamConfidence-PhaseSeparatedGait-v0
+  runner: AnymalDLocomotionSlamConfidencePhaseSeparatedGaitPPORunnerCfg
+  checkpoint_training_iterations: 49
+  exported: true
+  promoted: false
+
+policy_contract:
+  observation_dimension: 51
+  frozen_legacy_observation_dimension: 48
+  confidence_fields: [confidence, tracking_valid, normalized_age]
+  ppo_gait_coordinates: [stride_attenuation, crouch, stance_width, action_smoothing]
+  degraded_stride_envelope:
+    minimum_scale: 0.0
+    confidence_low: 0.2
+    confidence_high: 1.0
+    age_to_confidence_loss_ratio_max: 0.45
+    power: 3.0
+    applies_only_while_tracking_valid: true
+  policy_source_sha256: c34705968e615bc028b2d1c0a506bb5899727dd0b083bce84486e623d0483d53
+  runner_config_source_sha256: ff67d811c9e086c0201a554fc90547e11734103b1776663270198ff2a6a06a2f
+
+velocity_estimator:
+  metadata: exported/proprioceptive_velocity_estimator/v1/clean_candidate_08/velocity_estimator_metadata.json
+  metadata_sha256: 913375ea06ab4a5df668ded6e2d814b760d70800ca24ae3eb9c55ba184918722
+  ground_truth_role: offline_evaluator_only
+
+validation:
+  behavior_gate_config: configs/slam_confidence_behavior_gate.yaml
+  behavior_gate_config_sha256: 298df1eb772b2f2a077af6a0eacd0e746fd4e8a0a446b740882e60a81cf8eaef
+  behavior_report: docs/validation/slam_confidence_phase_separated_model48_behavior.json
+  behavior_report_sha256: d5faf72ec5e8ad973df74d146cfd83bcdfbab1e97de9c93e75c9c3c4dc433101
+  behavior_passed: true
+  hard_terminated_environments: 2
+  hard_terminated_environment_fraction: 0.00390625
+  gait_value_gate_config: configs/slam_confidence_gait_value_gate.yaml
+  gait_value_gate_config_sha256: dea8386ad6bb1ea0da9a4be0df4e56a00c66d4c1c8b84a2237708d7ba89682ff
+  gait_value_report: docs/validation/slam_confidence_phase_separated_model48_gait_value.json
+  gait_value_report_sha256: 8738fec307d1f4ad2822382daa4ca2ad41277147e046cd7688d51e158a8405aa
+  gait_value_passed: true
+  degraded_invalid_composite_ratio: 0.7703536019162487
+  tests: 333_passed_3_skipped
+
+remaining_gates:
+  - physical_anymal_d
+
+deployment_candidate_v2:
+  intent_blend_max: 0.79
+  gait_delta_safe_scale_power: 10.0
+  suppress_gait_when_tracking_invalid: true
+  policy_onnx_sha256: c8225b05a2b8fd1a35fb919593a68326b0ddac3d955b69191708def5d071f4a5
+  export_parity_passed: true
+  velocity_estimator: exported/proprioceptive_velocity_estimator/v1/clean_lateral_transition_candidate_15/velocity_estimator_metadata.json
+  behavior_matrix: logs/slam_confidence_phase_separated_model48_intent079_estimator15_behavior_matrix
+  behavior_profiles_passed: 5
+  fastlio2_lateral_right_live_passed: true
+  liosam_lateral_right_live_passed: true
+  formal_policy_replaced: false

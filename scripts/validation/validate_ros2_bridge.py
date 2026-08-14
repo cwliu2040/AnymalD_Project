@@ -415,6 +415,7 @@ from anymal_locomotion.simulation.ros2_bridge import (
     trigger_command_step,
     trigger_policy_step,
     write_base_orientation,
+    write_foot_contacts,
     write_joint_state,
 )
 from anymal_locomotion.stability_diagnostics import (
@@ -652,6 +653,25 @@ def _write_bridge_joint_state(
         CANONICAL_JOINT_ORDER,
         positions,
         velocities,
+        timestamp_s=timestamp_s,
+    )
+
+
+def _write_bridge_foot_contacts(
+    bridge,
+    contact_sensor,
+    contact_foot_ids: list[int],
+    *,
+    timestamp_s: float,
+) -> None:
+    forces = contact_sensor.data.net_forces_w[0, contact_foot_ids]
+    probabilities = (
+        torch.abs(forces[:, 2]) >= 1.0
+    ).to(dtype=torch.float32).detach().cpu().numpy()
+    write_foot_contacts(
+        bridge,
+        _FOOT_NAMES,
+        probabilities,
         timestamp_s=timestamp_s,
     )
 
@@ -1432,6 +1452,12 @@ def main() -> None:
                 canonical_joint_indices,
                 timestamp_s=bridge_time_offset_s,
             )
+            _write_bridge_foot_contacts(
+                bridge,
+                contact_sensor,
+                contact_foot_ids,
+                timestamp_s=bridge_time_offset_s,
+            )
             _tick_action_graph(
                 base_env,
                 bridge,
@@ -1540,6 +1566,15 @@ def main() -> None:
                     bridge,
                     robot,
                     canonical_joint_indices,
+                    timestamp_s=(
+                        bridge_time_offset_s
+                        + (step_index + 1) * base_env.step_dt
+                    ),
+                )
+                _write_bridge_foot_contacts(
+                    bridge,
+                    contact_sensor,
+                    contact_foot_ids,
                     timestamp_s=(
                         bridge_time_offset_s
                         + (step_index + 1) * base_env.step_dt
@@ -1709,6 +1744,15 @@ def main() -> None:
                     bridge,
                     robot,
                     canonical_joint_indices,
+                    timestamp_s=(
+                        bridge_time_offset_s
+                        + (step_index + 1) * base_env.step_dt
+                    ),
+                )
+                _write_bridge_foot_contacts(
+                    bridge,
+                    contact_sensor,
+                    contact_foot_ids,
                     timestamp_s=(
                         bridge_time_offset_s
                         + (step_index + 1) * base_env.step_dt

@@ -32,6 +32,12 @@ def _parse_args() -> argparse.Namespace:
         help="Resolved agent.yaml. Defaults to <checkpoint-dir>/params/agent.yaml.",
     )
     parser.add_argument("--samples", type=int, default=256, help="Number of deterministic observations.")
+    parser.add_argument(
+        "--rollout-steps",
+        type=int,
+        default=200,
+        help="Closed-loop previous-action recurrence steps.",
+    )
     parser.add_argument("--seed", type=int, default=42, help="Observation generator seed.")
     parser.add_argument("--atol", type=float, default=DEFAULT_ATOL, help="Absolute comparison tolerance.")
     parser.add_argument("--rtol", type=float, default=DEFAULT_RTOL, help="Relative comparison tolerance.")
@@ -197,7 +203,113 @@ def _checkpoint_actor(
         )
         output_dimension = backbone_dimensions[-1][1]
         confidence_offset = int(policy_config["confidence_offset"])
-        if "actor.safe_command_gain" in state:
+        if "actor.gait_head.0.weight" in state and "actor.intent_head.0.weight" in state:
+            from anymal_locomotion.policies.slam_confidence_residual import (
+                FrozenBackboneAuxIntentGaitActor,
+            )
+
+            input_dimension = int(policy_config.get("confidence_offset", 48)) + 3
+            actor = FrozenBackboneAuxIntentGaitActor(
+                observation_dim=input_dimension,
+                num_actions=output_dimension,
+                backbone_hidden_dims=policy_config["actor_hidden_dims"],
+                gait_hidden_dims=policy_config["gait_hidden_dims"],
+                activation=policy_config["activation"],
+                legacy_observation_dim=int(
+                    policy_config.get("legacy_observation_dim", 48)
+                ),
+                confidence_offset=confidence_offset,
+                previous_action_offset=int(
+                    policy_config.get("previous_action_offset", 36)
+                ),
+                command_offset=int(policy_config.get("command_offset", 9)),
+                command_dimension=int(
+                    policy_config.get("command_dimension", 3)
+                ),
+                gait_parameter_limits=policy_config["gait_parameter_limits"],
+                nonnegative_stride_smoothing=bool(
+                    policy_config.get("nonnegative_stride_smoothing", False)
+                ),
+                smoothing_logit_gain=float(
+                    policy_config.get("smoothing_logit_gain", 1.0)
+                ),
+                degraded_stride_min_scale=float(
+                    policy_config.get("degraded_stride_min_scale", 1.0)
+                ),
+                degraded_stride_confidence_low=float(
+                    policy_config.get("degraded_stride_confidence_low", 0.2)
+                ),
+                degraded_stride_confidence_high=float(
+                    policy_config.get("degraded_stride_confidence_high", 1.0)
+                ),
+                degraded_stride_age_ratio_max=float(
+                    policy_config.get("degraded_stride_age_ratio_max", 0.45)
+                ),
+                degraded_stride_envelope_power=float(
+                    policy_config.get("degraded_stride_envelope_power", 1.0)
+                ),
+                suppress_gait_when_tracking_invalid=bool(
+                    policy_config.get("suppress_gait_when_tracking_invalid", False)
+                ),
+                gait_delta_safe_scale_power=float(
+                    policy_config.get("gait_delta_safe_scale_power", 0.0)
+                ),
+                intent_blend_max=float(
+                    policy_config.get("intent_blend_max", 1.0)
+                ),
+            ).eval()
+            actor.load_state_dict(
+                {
+                    key.removeprefix("actor."): value
+                    for key, value in state.items()
+                    if key.startswith("actor.")
+                },
+                strict=True,
+            )
+            gait_dimensions = [
+                [int(state[f"actor.gait_head.{index}.weight"].shape[1]),
+                 int(state[f"actor.gait_head.{index}.weight"].shape[0])]
+                for index in _linear_indices(state, "actor.gait_head.")
+            ]
+            details = {
+                "architecture": "frozen_model1450_aux_intent_structured_gait",
+                "checkpoint_iteration": checkpoint.get("iter"),
+                "activation": policy_config["activation"],
+                "input_dimension": input_dimension,
+                "output_dimension": output_dimension,
+                "backbone_layer_dimensions": backbone_dimensions,
+                "gait_head_layer_dimensions": gait_dimensions,
+                "gait_parameter_limits": policy_config["gait_parameter_limits"],
+                "confidence_offset": confidence_offset,
+                "degraded_stride_envelope": {
+                    "minimum_scale": float(
+                        policy_config.get("degraded_stride_min_scale", 1.0)
+                    ),
+                    "confidence_low": float(
+                        policy_config.get("degraded_stride_confidence_low", 0.2)
+                    ),
+                    "confidence_high": float(
+                        policy_config.get("degraded_stride_confidence_high", 1.0)
+                    ),
+                    "age_to_confidence_loss_ratio_max": float(
+                        policy_config.get("degraded_stride_age_ratio_max", 0.45)
+                    ),
+                    "power": float(
+                        policy_config.get("degraded_stride_envelope_power", 1.0)
+                    ),
+                },
+                "suppress_gait_when_tracking_invalid": bool(
+                    policy_config.get("suppress_gait_when_tracking_invalid", False)
+                ),
+                "gait_delta_safe_scale_power": float(
+                    policy_config.get("gait_delta_safe_scale_power", 0.0)
+                ),
+                "intent_blend_max": float(
+                    policy_config.get("intent_blend_max", 1.0)
+                ),
+                "actor_observation_normalization": False,
+            }
+        elif "actor.safe_command_gain" in state:
             input_dimension = 51
             actor = _SafeCommandCheckpointActor(
                 backbone,
@@ -287,6 +399,8 @@ def main() -> int:
     args = _parse_args()
     if args.samples < 2:
         raise ValueError("--samples must be at least 2")
+    if args.rollout_steps < 2:
+        raise ValueError("--rollout-steps must be at least 2")
     if args.atol < 0.0 or args.rtol < 0.0:
         raise ValueError("Comparison tolerances must be non-negative")
 
@@ -349,7 +463,100 @@ def main() -> int:
             rtol=args.rtol,
         ),
     }
-    passed = all(result["allclose"] for result in comparisons.values())
+
+    rollout_generator = np.random.default_rng(args.seed + 1)
+    rollout_base = rollout_generator.standard_normal(
+        (args.rollout_steps, input_dimension), dtype=np.float32
+    ) * np.float32(0.25)
+    rollout_base[:, 9:12] = np.asarray([1.5, 0.0, 0.0], dtype=np.float32)
+    if input_dimension == 51:
+        phases = np.arange(args.rollout_steps, dtype=np.float32) / np.float32(
+            args.rollout_steps
+        )
+        confidence = np.ones(args.rollout_steps, dtype=np.float32)
+        valid = np.ones(args.rollout_steps, dtype=np.float32)
+        age = np.zeros(args.rollout_steps, dtype=np.float32)
+        degrading = (phases >= 0.30) & (phases < 0.50)
+        degrade_progress = np.clip((phases - 0.30) / 0.20, 0.0, 1.0)
+        confidence[degrading] = 1.0 - 0.8 * degrade_progress[degrading]
+        age[degrading] = 0.30 * degrade_progress[degrading]
+        lost = (phases >= 0.50) & (phases < 0.70)
+        confidence[lost] = 0.2
+        valid[lost] = 0.0
+        age[lost] = 0.3 + 0.7 * np.clip(
+            (phases[lost] - 0.50) / 0.20, 0.0, 1.0
+        )
+        recovering = phases >= 0.70
+        recover_progress = np.clip((phases - 0.70) / 0.30, 0.0, 1.0)
+        confidence[recovering] = 0.2 + 0.8 * recover_progress[recovering]
+        valid[recovering] = (recover_progress[recovering] >= (1.0 / 3.0)).astype(
+            np.float32
+        )
+        age[recovering] = 0.5 * (1.0 - recover_progress[recovering])
+        rollout_base[:, 48:51] = np.stack((confidence, valid, age), axis=1)
+
+    rollout_outputs: dict[str, list[np.ndarray]] = {
+        "checkpoint": [],
+        "torchscript": [],
+        "onnx": [],
+    }
+    rollout_previous = {
+        name: np.zeros(output_dimension, dtype=np.float32)
+        for name in rollout_outputs
+    }
+    for base in rollout_base:
+        per_backend_observations = {}
+        for name in rollout_outputs:
+            observation = base.copy()
+            observation[36:48] = rollout_previous[name]
+            per_backend_observations[name] = observation[None, :]
+        with torch.inference_mode():
+            checkpoint_action = actor(
+                torch.from_numpy(per_backend_observations["checkpoint"])
+            ).numpy()[0]
+            jit_action = jit_policy(
+                torch.from_numpy(per_backend_observations["torchscript"])
+            ).numpy()[0]
+        onnx_action = onnx_policy.run(
+            [output_name],
+            {input_name: per_backend_observations["onnx"]},
+        )[0][0]
+        for name, action in (
+            ("checkpoint", checkpoint_action),
+            ("torchscript", jit_action),
+            ("onnx", onnx_action),
+        ):
+            rollout_outputs[name].append(action.copy())
+            rollout_previous[name] = action.astype(np.float32, copy=True)
+    rollout_arrays = {
+        name: np.stack(actions, axis=0)
+        for name, actions in rollout_outputs.items()
+    }
+    rollout_comparisons = {
+        "checkpoint_vs_torchscript": _comparison(
+            rollout_arrays["checkpoint"],
+            rollout_arrays["torchscript"],
+            atol=args.atol,
+            rtol=args.rtol,
+        ),
+        "checkpoint_vs_onnx": _comparison(
+            rollout_arrays["checkpoint"],
+            rollout_arrays["onnx"],
+            atol=args.atol,
+            rtol=args.rtol,
+        ),
+        "torchscript_vs_onnx": _comparison(
+            rollout_arrays["torchscript"],
+            rollout_arrays["onnx"],
+            atol=args.atol,
+            rtol=args.rtol,
+        ),
+    }
+    passed = all(
+        result["allclose"]
+        for group in (comparisons, rollout_comparisons)
+        for result in group.values()
+    )
     report = {
         "passed": passed,
         "samples": args.samples,
@@ -371,6 +578,13 @@ def main() -> int:
             "agent_config": {"path": str(agent_config_path), "sha256": _sha256(agent_config_path)},
         },
         "comparisons": comparisons,
+        "closed_loop_previous_action_rollout": {
+            "steps": args.rollout_steps,
+            "confidence_schedule": (
+                "healthy_degrade_invalid_recover" if input_dimension == 51 else None
+            ),
+            "comparisons": rollout_comparisons,
+        },
     }
 
     rendered = json.dumps(report, indent=2, sort_keys=True)

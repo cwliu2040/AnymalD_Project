@@ -1,0 +1,31 @@
+schema_version: 1
+governor_id: slam-confidence-gait-mode-v1
+
+# Stateful policy-side command governor.  The SLAM validity authority remains
+# immediate and fail-closed; these limits only shape the locomotion command.
+policy_rate_hz: 50.0
+degrade_below: 0.45
+degrade_dwell_s: 0.10
+recover_at_or_above: 0.55
+recover_dwell_s: 0.50
+hold_minimum_dwell_s: 0.50
+command_scale_rate_down_per_s: 0.8
+command_scale_rate_up_per_s: 2.0
+
+modes:
+  track: 0
+  decelerate: 1
+  hold: 2
+  recover: 3
+
+reset:
+  healthy_valid_source: track
+  missing_or_invalid_source: hold
+
+invariants:
+  healthy_track_scale: 1.0
+  hold_scale: 0.0
+  invalid_scale_must_not_increase: true
+  deceleration_tracks_continuous_safe_scale: true
+  recovery_requires_healthy_dwell: true
+  stale_high_valid_false_is_invalid: true

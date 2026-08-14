@@ -1,0 +1,37 @@
+schema_version: 1
+matrix_id: phase-separated-model48-intent079-estimator15-v2
+launch_file: fastlio2_locomotion_benchmark.launch.py
+repetitions: 1
+simulation_steps: 4000
+
+candidate:
+  policy_path: exported/anymal_d_locomotion_slam_confidence_phase_separated_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/policy.onnx
+  metadata_path: exported/anymal_d_locomotion_slam_confidence_phase_separated_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/policy_metadata.yaml
+  parity_report_path: docs/validation/slam_confidence_phase_separated_model48_export_parity.json
+  checkpoint_sha256: 888bc682eda65e2c427eccd445d8b9cb1e787635b5da86e6fa8a85b83fda4fa0
+  policy_sha256: c8225b05a2b8fd1a35fb919593a68326b0ddac3d955b69191708def5d071f4a5
+  velocity_estimator_metadata_path: exported/proprioceptive_velocity_estimator/v1/clean_lateral_transition_candidate_15/velocity_estimator_metadata.json
+  velocity_estimator_metadata_sha256: 041c9f8a85d220120f6ed5de41bb8e58f7f95a03f3a03c9121898af18c25a1ff
+
+backends:
+  fastlio2:
+    expected_calibration_id: native-v1-1e6cf8347be1
+    deskew_mode: native
+    policy_odometry_topic: /locomotion/estimated_odom
+  liosam:
+    expected_calibration_id: native-v1-edc098b0bd98
+    deskew_mode: native
+    policy_odometry_topic: /locomotion/estimated_odom
+
+profiles:
+  - forward_1_5
+  - lateral_1_5
+  - lateral_right_1_5
+  - backward_1_0
+  - curve_1_5_left_1_0
+
+policy_diagnostics_gate:
+  observation_dimension: 51
+  minimum_records: 25
+  require_tracking_valid_observation: true
+  require_non_fail_closed_observation: true

@@ -59,6 +59,91 @@ class SlamConfidenceSafeGaitActorCriticCfg(SlamConfidenceSafeCommandActorCriticC
 
 
 @configclass
+class SlamConfidenceGaitModeActorCriticCfg(RslRlPpoActorCriticCfg):
+    """Frozen model1450 consuming a statefully governed 51-D observation."""
+
+    class_name: str = (
+        "anymal_locomotion.policies.slam_confidence_residual:"
+        "SlamConfidenceGaitModeActorCritic"
+    )
+    legacy_observation_dim: int = 48
+
+
+@configclass
+class SlamConfidenceStructuredGaitActorCriticCfg(RslRlPpoActorCriticCfg):
+    """Frozen model1450 plus a four-coordinate confidence gait head."""
+
+    class_name: str = (
+        "anymal_locomotion.policies.slam_confidence_residual:"
+        "SlamConfidenceStructuredGaitActorCritic"
+    )
+    gait_hidden_dims: list[int] = [64, 64]
+    gait_parameter_limits: list[float] = [0.6, 0.3, 0.2, 0.5]
+    legacy_observation_dim: int = 48
+    confidence_offset: int = 48
+    previous_action_offset: int = 36
+
+
+@configclass
+class SlamConfidenceIntentGaitActorCriticCfg(RslRlPpoActorCriticCfg):
+    """Frozen model1450 plus locomotion intent and four gait coordinates."""
+
+    class_name: str = (
+        "anymal_locomotion.policies.slam_confidence_residual:"
+        "SlamConfidenceIntentGaitActorCritic"
+    )
+    gait_hidden_dims: list[int] = [64, 64]
+    gait_parameter_limits: list[float] = [1.0, 0.6, 0.3, 0.2, 0.5]
+    legacy_observation_dim: int = 48
+    confidence_offset: int = 48
+    previous_action_offset: int = 36
+    command_offset: int = 9
+    command_dimension: int = 3
+    intent_logit_gain: float = 1.0
+
+
+@configclass
+class SlamConfidenceAuxIntentGaitActorCriticCfg(RslRlPpoActorCriticCfg):
+    """Separate 1-D auxiliary intent and 4-D PPO gait heads."""
+
+    class_name: str = (
+        "anymal_locomotion.policies.slam_confidence_residual:"
+        "SlamConfidenceAuxIntentGaitActorCritic"
+    )
+    gait_hidden_dims: list[int] = [64, 64]
+    gait_parameter_limits: list[float] = [0.6, 0.3, 0.2, 0.5]
+    legacy_observation_dim: int = 48
+    confidence_offset: int = 48
+    previous_action_offset: int = 36
+    command_offset: int = 9
+    command_dimension: int = 3
+    nonnegative_stride_smoothing: bool = False
+    smoothing_logit_gain: float = 1.0
+    degraded_stride_min_scale: float = 1.0
+    degraded_stride_confidence_low: float = 0.2
+    degraded_stride_confidence_high: float = 1.0
+    degraded_stride_age_ratio_max: float = 0.45
+    degraded_stride_envelope_power: float = 1.0
+    suppress_gait_when_tracking_invalid: bool = False
+    gait_delta_safe_scale_power: float = 0.0
+    intent_blend_max: float = 1.0
+
+
+@configclass
+class SlamConfidenceIntentPpoAlgorithmCfg(RslRlPpoAlgorithmCfg):
+    """PPO plus a separate short-credit intent-head auxiliary update."""
+
+    class_name: str = (
+        "anymal_locomotion.algorithms.slam_confidence_intent_ppo:"
+        "SlamConfidenceIntentPPO"
+    )
+    intent_learning_rate: float = 5.0e-3
+    intent_num_epochs: int = 5
+    intent_num_mini_batches: int = 4
+    intent_loss_coef: float = 1.0
+
+
+@configclass
 class SlamConfidenceTeacherPpoAlgorithmCfg(RslRlPpoAlgorithmCfg):
     """Fresh critic PPO plus explicit residual stop teacher."""
 
@@ -374,3 +459,341 @@ class AnymalDLocomotionSlamConfidenceGaitPPORunnerCfg(
         self.run_name = "safe_command_gait_adaptation"
         self.max_iterations = 100
         self.save_interval = 10
+
+
+@configclass
+class AnymalDLocomotionSlamConfidenceGaitModePPORunnerCfg(
+    AnymalDLocomotionFlatPPORunnerCfg
+):
+    """Architecture-gate runner for the deterministic gait-mode governor."""
+
+    policy = SlamConfidenceGaitModeActorCriticCfg(
+        init_noise_std=1.0,
+        actor_obs_normalization=False,
+        critic_obs_normalization=False,
+        actor_hidden_dims=[128, 128, 128],
+        critic_hidden_dims=[128, 128, 128],
+        activation="elu",
+    )
+    algorithm = RslRlPpoAlgorithmCfg(
+        value_loss_coef=1.0,
+        use_clipped_value_loss=True,
+        clip_param=0.2,
+        entropy_coef=0.0,
+        num_learning_epochs=5,
+        num_mini_batches=4,
+        learning_rate=1.0e-4,
+        schedule="fixed",
+        gamma=0.99,
+        lam=0.95,
+        desired_kl=0.01,
+        max_grad_norm=1.0,
+        symmetry_cfg=RslRlSymmetryCfg(
+            use_data_augmentation=True,
+            data_augmentation_func=mdp.compute_symmetric_states,
+        ),
+    )
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.experiment_name = "anymal_d_locomotion_slam_confidence_gait_mode_v1"
+        self.run_name = "gait_mode_architecture_gate"
+        self.max_iterations = 1
+        self.save_interval = 1
+
+
+@configclass
+class AnymalDLocomotionSlamConfidenceStructuredGaitPPORunnerCfg(
+    AnymalDLocomotionFlatPPORunnerCfg
+):
+    """C candidate: PPO trains only four structured gait coordinates and critic."""
+
+    policy = SlamConfidenceStructuredGaitActorCriticCfg(
+        init_noise_std=1.0,
+        actor_obs_normalization=False,
+        critic_obs_normalization=False,
+        actor_hidden_dims=[128, 128, 128],
+        critic_hidden_dims=[128, 128, 128],
+        activation="elu",
+        gait_hidden_dims=[64, 64],
+        gait_parameter_limits=[0.6, 0.3, 0.2, 0.5],
+    )
+    algorithm = RslRlPpoAlgorithmCfg(
+        value_loss_coef=1.0,
+        use_clipped_value_loss=True,
+        clip_param=0.2,
+        entropy_coef=0.0,
+        num_learning_epochs=5,
+        num_mini_batches=4,
+        learning_rate=1.0e-4,
+        schedule="fixed",
+        gamma=0.99,
+        lam=0.95,
+        desired_kl=0.01,
+        max_grad_norm=1.0,
+        symmetry_cfg=RslRlSymmetryCfg(
+            use_data_augmentation=True,
+            data_augmentation_func=mdp.compute_symmetric_states,
+        ),
+    )
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.experiment_name = (
+            "anymal_d_locomotion_slam_confidence_structured_gait_v1"
+        )
+        self.run_name = "four_coordinate_gait_head"
+        self.max_iterations = 25
+        self.save_interval = 5
+
+
+@configclass
+class AnymalDLocomotionSlamConfidenceIntentGaitPPORunnerCfg(
+    AnymalDLocomotionFlatPPORunnerCfg
+):
+    """C-v2 architecture gate for joint PPO locomotion intent and gait control."""
+
+    policy = SlamConfidenceIntentGaitActorCriticCfg(
+        init_noise_std=1.0,
+        actor_obs_normalization=False,
+        critic_obs_normalization=False,
+        actor_hidden_dims=[128, 128, 128],
+        critic_hidden_dims=[128, 128, 128],
+        activation="elu",
+        gait_hidden_dims=[64, 64],
+        gait_parameter_limits=[1.0, 0.6, 0.3, 0.2, 0.5],
+    )
+    algorithm = RslRlPpoAlgorithmCfg(
+        value_loss_coef=1.0,
+        use_clipped_value_loss=True,
+        clip_param=0.2,
+        entropy_coef=0.0,
+        num_learning_epochs=5,
+        num_mini_batches=4,
+        learning_rate=1.0e-4,
+        schedule="fixed",
+        gamma=0.99,
+        lam=0.95,
+        desired_kl=0.01,
+        max_grad_norm=1.0,
+        symmetry_cfg=RslRlSymmetryCfg(
+            use_data_augmentation=True,
+            data_augmentation_func=mdp.compute_symmetric_states,
+        ),
+    )
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.experiment_name = (
+            "anymal_d_locomotion_slam_confidence_intent_gait_v1"
+        )
+        self.run_name = "five_coordinate_intent_gait_head"
+        self.max_iterations = 25
+        self.save_interval = 5
+
+
+@configclass
+class AnymalDLocomotionSlamConfidenceIntentGaitGain20PPORunnerCfg(
+    AnymalDLocomotionSlamConfidenceIntentGaitPPORunnerCfg
+):
+    """C-v3 with higher PPO intent-coordinate control resolution."""
+
+    policy = SlamConfidenceIntentGaitActorCriticCfg(
+        init_noise_std=1.0,
+        actor_obs_normalization=False,
+        critic_obs_normalization=False,
+        actor_hidden_dims=[128, 128, 128],
+        critic_hidden_dims=[128, 128, 128],
+        activation="elu",
+        gait_hidden_dims=[64, 64],
+        gait_parameter_limits=[1.0, 0.6, 0.3, 0.2, 0.5],
+        intent_logit_gain=20.0,
+    )
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.experiment_name = (
+            "anymal_d_locomotion_slam_confidence_intent_gait_gain20_v1"
+        )
+        self.run_name = "five_coordinate_intent_gait_gain20"
+
+
+@configclass
+class AnymalDLocomotionSlamConfidenceAuxIntentGaitPPORunnerCfg(
+    AnymalDLocomotionFlatPPORunnerCfg
+):
+    """C-v4 fixed pilot with separate intent auxiliary and PPO gait heads."""
+
+    policy = SlamConfidenceAuxIntentGaitActorCriticCfg(
+        init_noise_std=1.0,
+        actor_obs_normalization=False,
+        critic_obs_normalization=False,
+        actor_hidden_dims=[128, 128, 128],
+        critic_hidden_dims=[128, 128, 128],
+        activation="elu",
+        gait_hidden_dims=[64, 64],
+        gait_parameter_limits=[0.6, 0.3, 0.2, 0.5],
+    )
+    algorithm = SlamConfidenceIntentPpoAlgorithmCfg(
+        value_loss_coef=1.0,
+        use_clipped_value_loss=True,
+        clip_param=0.2,
+        entropy_coef=0.0,
+        num_learning_epochs=5,
+        num_mini_batches=4,
+        learning_rate=1.0e-4,
+        schedule="fixed",
+        gamma=0.99,
+        lam=0.95,
+        desired_kl=0.01,
+        max_grad_norm=1.0,
+        symmetry_cfg=RslRlSymmetryCfg(
+            use_data_augmentation=True,
+            data_augmentation_func=mdp.compute_symmetric_states,
+        ),
+        intent_learning_rate=5.0e-3,
+        intent_num_epochs=5,
+        intent_num_mini_batches=4,
+        intent_loss_coef=1.0,
+    )
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.experiment_name = (
+            "anymal_d_locomotion_slam_confidence_aux_intent_gait_v1"
+        )
+        self.run_name = "separate_aux_intent_ppo_gait"
+        self.max_iterations = 25
+        self.save_interval = 5
+
+
+@configclass
+class AnymalDLocomotionSlamConfidenceEstimatorRobustGaitPPORunnerCfg(
+    AnymalDLocomotionSlamConfidenceAuxIntentGaitPPORunnerCfg
+):
+    """C-v5: train the PPO gait head through the deployable velocity estimator."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.experiment_name = (
+            "anymal_d_locomotion_slam_confidence_estimator_robust_gait_v1"
+        )
+        self.run_name = "closed_loop_estimator_aux_intent_ppo_gait"
+        self.max_iterations = 25
+        self.save_interval = 5
+
+
+@configclass
+class AnymalDLocomotionSlamConfidenceRecoverySafeGaitPPORunnerCfg(
+    AnymalDLocomotionSlamConfidenceEstimatorRobustGaitPPORunnerCfg
+):
+    """C-v6 fixed pilot with estimator closure and explicit fall/recovery costs."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.experiment_name = (
+            "anymal_d_locomotion_slam_confidence_recovery_safe_gait_v1"
+        )
+        self.run_name = "recovery_penalty_estimator_aux_intent_ppo_gait"
+
+
+@configclass
+class AnymalDLocomotionSlamConfidenceConstrainedGaitPPORunnerCfg(
+    AnymalDLocomotionSlamConfidenceRecoverySafeGaitPPORunnerCfg
+):
+    """C-v7: PPO gait coordinates with physically valid smoothing signs."""
+
+    policy = SlamConfidenceAuxIntentGaitActorCriticCfg(
+        init_noise_std=1.0,
+        actor_obs_normalization=False,
+        critic_obs_normalization=False,
+        actor_hidden_dims=[128, 128, 128],
+        critic_hidden_dims=[128, 128, 128],
+        activation="elu",
+        gait_hidden_dims=[64, 64],
+        gait_parameter_limits=[0.6, 0.3, 0.2, 0.9],
+        nonnegative_stride_smoothing=True,
+    )
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.experiment_name = (
+            "anymal_d_locomotion_slam_confidence_constrained_gait_v1"
+        )
+        self.run_name = "nonnegative_smoothing_recovery_safe_ppo_gait"
+
+
+@configclass
+class AnymalDLocomotionSlamConfidenceAmplifiedSmoothingPPORunnerCfg(
+    AnymalDLocomotionSlamConfidenceRecoverySafeGaitPPORunnerCfg
+):
+    """C-v8: higher PPO control resolution for the safe smoothing coordinate."""
+
+    policy = SlamConfidenceAuxIntentGaitActorCriticCfg(
+        init_noise_std=1.0,
+        actor_obs_normalization=False,
+        critic_obs_normalization=False,
+        actor_hidden_dims=[128, 128, 128],
+        critic_hidden_dims=[128, 128, 128],
+        activation="elu",
+        gait_hidden_dims=[64, 64],
+        gait_parameter_limits=[0.6, 0.3, 0.2, 0.9],
+        nonnegative_stride_smoothing=True,
+        smoothing_logit_gain=10.0,
+    )
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.experiment_name = (
+            "anymal_d_locomotion_slam_confidence_amplified_smoothing_v1"
+        )
+        self.run_name = "gain10_smoothing_recovery_safe_ppo_gait"
+
+
+@configclass
+class AnymalDLocomotionSlamConfidenceDegradedSlipPPORunnerCfg(
+    AnymalDLocomotionSlamConfidenceConstrainedGaitPPORunnerCfg
+):
+    """C-v9 continuation runner for the remaining degradation slip gate."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.experiment_name = (
+            "anymal_d_locomotion_slam_confidence_constrained_gait_v1"
+        )
+        self.run_name = "degraded_slip_model48_continuation"
+        self.max_iterations = 15
+
+
+@configclass
+class AnymalDLocomotionSlamConfidencePhaseSeparatedGaitPPORunnerCfg(
+    AnymalDLocomotionSlamConfidenceConstrainedGaitPPORunnerCfg
+):
+    """C-v10: suppress degradation stride without weakening recovery stride."""
+
+    policy = SlamConfidenceAuxIntentGaitActorCriticCfg(
+        init_noise_std=1.0,
+        actor_obs_normalization=False,
+        critic_obs_normalization=False,
+        actor_hidden_dims=[128, 128, 128],
+        critic_hidden_dims=[128, 128, 128],
+        activation="elu",
+        gait_hidden_dims=[64, 64],
+        gait_parameter_limits=[0.6, 0.3, 0.2, 0.9],
+        nonnegative_stride_smoothing=True,
+        degraded_stride_min_scale=0.0,
+        degraded_stride_confidence_low=0.2,
+        degraded_stride_confidence_high=1.0,
+        degraded_stride_age_ratio_max=0.45,
+        degraded_stride_envelope_power=3.0,
+        suppress_gait_when_tracking_invalid=True,
+        gait_delta_safe_scale_power=10.0,
+        intent_blend_max=0.79,
+    )
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.experiment_name = (
+            "anymal_d_locomotion_slam_confidence_phase_separated_gait_v1"
+        )
+        self.run_name = "degraded_stride_envelope_recovery_safe_ppo_gait"

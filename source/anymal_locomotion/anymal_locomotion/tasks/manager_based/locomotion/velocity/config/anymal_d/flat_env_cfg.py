@@ -454,3 +454,84 @@ class AnymalDLocomotionSlamConfidenceGaitEnvCfg(
         super().__post_init__()
         self.events.push_robot = None
         self.events.base_external_force_torque = None
+
+
+@configclass
+class AnymalDLocomotionSlamConfidenceRecoveryGaitRewardsCfg(
+    AnymalDLocomotionSlamConfidenceGaitRewardsCfg
+):
+    """C-v6 rewards that make estimator-sensitive recovery failures expensive."""
+
+    termination_penalty = RewTerm(func=isaac_mdp.is_terminated, weight=-200.0)
+    confidence_recovery_action_rate_l2 = RewTerm(
+        func=mdp.confidence_recovery_action_rate_l2,
+        weight=-0.1,
+        params={"cycle_s": 10.0},
+    )
+    confidence_recovery_ang_vel_xy_l2 = RewTerm(
+        func=mdp.confidence_recovery_ang_vel_xy_l2,
+        weight=-2.0,
+        params={"cycle_s": 10.0, "asset_cfg": SceneEntityCfg("robot")},
+    )
+    confidence_recovery_flat_orientation_l2 = RewTerm(
+        func=mdp.confidence_recovery_flat_orientation_l2,
+        weight=-10.0,
+        params={"cycle_s": 10.0, "asset_cfg": SceneEntityCfg("robot")},
+    )
+
+
+@configclass
+class AnymalDLocomotionSlamConfidenceRecoveryGaitEnvCfg(
+    AnymalDLocomotionSlamConfidenceGaitEnvCfg
+):
+    """Estimator-closed-loop gait task with an explicit recovery safety signal."""
+
+    rewards: AnymalDLocomotionSlamConfidenceRecoveryGaitRewardsCfg = (
+        AnymalDLocomotionSlamConfidenceRecoveryGaitRewardsCfg()
+    )
+
+
+@configclass
+class AnymalDLocomotionSlamConfidenceDegradedSlipRewardsCfg(
+    AnymalDLocomotionSlamConfidenceRecoveryGaitRewardsCfg
+):
+    """C-v9 adds the one gait-value term that C-v7 model48 missed."""
+
+    confidence_degradation_feet_slide = RewTerm(
+        func=mdp.confidence_degradation_feet_slide,
+        weight=-1.0,
+        params={
+            "cycle_s": 10.0,
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*FOOT"),
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*FOOT"),
+        },
+    )
+
+
+@configclass
+class AnymalDLocomotionSlamConfidenceDegradedSlipEnvCfg(
+    AnymalDLocomotionSlamConfidenceRecoveryGaitEnvCfg
+):
+    """Recovery-safe task with a targeted degradation slip objective."""
+
+    rewards: AnymalDLocomotionSlamConfidenceDegradedSlipRewardsCfg = (
+        AnymalDLocomotionSlamConfidenceDegradedSlipRewardsCfg()
+    )
+
+
+@configclass
+class AnymalDLocomotionSlamConfidenceGaitModeEnvCfg(
+    AnymalDLocomotionSlamConfidenceGaitEnvCfg
+):
+    """Stateful rate-limited command governor with an exact model1450 actor."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.observations.policy.velocity_commands = ObsTerm(
+            func=mdp.gait_mode_velocity_command,
+            params={
+                "command_name": "base_velocity",
+                "cycle_s": 10.0,
+                "phase_offset_mode": "distributed",
+            },
+        )

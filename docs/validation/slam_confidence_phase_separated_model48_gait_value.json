@@ -1,0 +1,63 @@
+{
+  "baseline": {
+    "path": "/home/ros/anymal_locomotion/docs/validation/slam_confidence_gait_ab_model1450_supervisor.json",
+    "sha256": "202617f47817d3a2f906b0a36b38bfea05e133b074acd251d1db42aa6254ad39"
+  },
+  "candidate": {
+    "path": "/home/ros/anymal_locomotion/logs/rsl_rl/anymal_d_locomotion_slam_confidence_constrained_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/diagnostics/behavior_gate_model48_phase_separated_v3.json",
+    "sha256": "d5faf72ec5e8ad973df74d146cfd83bcdfbab1e97de9c93e75c9c3c4dc433101"
+  },
+  "checks": {
+    "baseline_behavior_gate": true,
+    "candidate_behavior_gate": true,
+    "candidate_hard_termination_environments": true,
+    "degraded_invalid_gait_value_added": true,
+    "degraded_invalid_no_gait_metric_regressed": true,
+    "healthy_gait_not_regressed": true,
+    "healthy_tracking_not_regressed": true,
+    "recovery_gait_not_regressed": true,
+    "recovery_tracking_not_regressed": true
+  },
+  "derived": {
+    "candidate_hard_terminated_env_fraction": 0.00390625,
+    "degraded_invalid_gait_composite_ratio": 0.7703536019162487
+  },
+  "gate": {
+    "path": "/home/ros/anymal_locomotion/configs/slam_confidence_gait_value_gate.yaml",
+    "sha256": "dea8386ad6bb1ea0da9a4be0df4e56a00c66d4c1c8b84a2237708d7ba89682ff"
+  },
+  "gate_id": "slam-confidence-gait-value-v1",
+  "kind": "slam_confidence_gait_value_comparison",
+  "passed": true,
+  "ratios_candidate_over_baseline": {
+    "degraded_late": {
+      "action_rate_rms": 0.8877250989634318,
+      "body_roll_pitch_rate_rms_radps": 0.9906843851250093,
+      "body_tilt_rms": 0.9903703563764201,
+      "mean_absolute_vertical_speed_mps": 0.9433696589507762,
+      "mean_stance_foot_slip_speed_mps": 1.0572961510683094
+    },
+    "healthy": {
+      "action_rate_rms": 0.9967073703543898,
+      "body_roll_pitch_rate_rms_radps": 0.9739524701627731,
+      "body_tilt_rms": 0.9395549992188688,
+      "mean_absolute_vertical_speed_mps": 0.9964816157478951,
+      "mean_stance_foot_slip_speed_mps": 0.9913691227545105
+    },
+    "invalid_settled": {
+      "action_rate_rms": 0.6677760153666584,
+      "body_roll_pitch_rate_rms_radps": 0.070153430384055,
+      "body_tilt_rms": 0.682256480774263,
+      "mean_absolute_vertical_speed_mps": 0.7520467148621356,
+      "mean_stance_foot_slip_speed_mps": 0.6618577272914284
+    },
+    "recovery_settled": {
+      "action_rate_rms": 0.9739461845365077,
+      "body_roll_pitch_rate_rms_radps": 0.6459785526193977,
+      "body_tilt_rms": 0.44250632666589884,
+      "mean_absolute_vertical_speed_mps": 0.904769455690035,
+      "mean_stance_foot_slip_speed_mps": 1.0307017689686977
+    }
+  },
+  "schema_version": 1
+}

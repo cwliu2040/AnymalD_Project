@@ -54,6 +54,7 @@ class ProprioceptiveVelocityEstimatorNode(Node):
         self._frame = str(self.get_parameter("expected_frame").value)
         self._sync_tolerance = float(self.get_parameter("synchronization_tolerance_s").value)
         self._receipt_timeout = float(self.get_parameter("receipt_timeout_s").value)
+        self._uses_sim_time = bool(self.get_parameter("use_sim_time").value)
         if self._sync_tolerance < 0.0 or self._receipt_timeout <= 0.0:
             raise ValueError("synchronization tolerance must be non-negative and timeout positive")
         self._imu: tuple[float, int, np.ndarray, np.ndarray, np.ndarray, tuple[float, ...]] | None = None
@@ -101,7 +102,11 @@ class ProprioceptiveVelocityEstimatorNode(Node):
         contact_stamp, contact_receipt, contacts = self._contacts
         if (
             max(abs(joint_stamp - imu_stamp), abs(joint_stamp - contact_stamp)) > self._sync_tolerance
-            or max(now_ns - imu_receipt, now_ns - contact_receipt) * 1.0e-9 > self._receipt_timeout
+            or (
+                not self._uses_sim_time
+                and max(now_ns - imu_receipt, now_ns - contact_receipt) * 1.0e-9
+                > self._receipt_timeout
+            )
         ):
             self._runtime.reset()
             return

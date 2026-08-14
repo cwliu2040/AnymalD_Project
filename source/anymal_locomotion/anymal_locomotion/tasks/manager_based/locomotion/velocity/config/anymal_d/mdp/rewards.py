@@ -7,7 +7,12 @@ from isaaclab.envs import mdp as isaac_mdp
 from isaaclab.managers import SceneEntityCfg
 from isaaclab_tasks.manager_based.locomotion.velocity.mdp import feet_slide
 
-from .slam_confidence import confidence_safe_scale, simulated_slam_confidence
+from .slam_confidence import (
+    confidence_degradation_mask,
+    confidence_recovery_mask,
+    confidence_safe_scale,
+    simulated_slam_confidence,
+)
 
 
 def _high_combined_command_mask(
@@ -334,3 +339,43 @@ def confidence_gait_feet_slide(
     """Penalize stance-foot slip outside the healthy confidence state."""
     penalty = feet_slide(env, sensor_cfg=sensor_cfg, asset_cfg=asset_cfg)
     return penalty * _confidence_severity(env, cycle_s)
+
+
+def confidence_recovery_action_rate_l2(env, cycle_s: float = 10.0) -> torch.Tensor:
+    """Penalize abrupt joint targets specifically during confidence recovery."""
+    delta = env.action_manager.action - env.action_manager.prev_action
+    return torch.sum(torch.square(delta), dim=1) * confidence_recovery_mask(
+        env, cycle_s=cycle_s
+    )
+
+
+def confidence_recovery_ang_vel_xy_l2(
+    env,
+    cycle_s: float = 10.0,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize recovery roll/pitch rate using a privileged training label."""
+    asset = env.scene[asset_cfg.name]
+    rate = torch.sum(torch.square(asset.data.root_ang_vel_b[:, :2]), dim=1)
+    return rate * confidence_recovery_mask(env, cycle_s=cycle_s)
+
+
+def confidence_recovery_flat_orientation_l2(
+    env,
+    cycle_s: float = 10.0,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize body tilt specifically while locomotion is reacquired."""
+    penalty = isaac_mdp.flat_orientation_l2(env, asset_cfg=asset_cfg)
+    return penalty * confidence_recovery_mask(env, cycle_s=cycle_s)
+
+
+def confidence_degradation_feet_slide(
+    env,
+    sensor_cfg: SceneEntityCfg,
+    cycle_s: float = 10.0,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize stance-foot slip specifically during gradual degradation."""
+    penalty = feet_slide(env, sensor_cfg=sensor_cfg, asset_cfg=asset_cfg)
+    return penalty * confidence_degradation_mask(env, cycle_s=cycle_s)

@@ -92,6 +92,11 @@ parser.add_argument(
     default=None,
     help="Replace policy base velocity with a qualified project-local estimator artifact.",
 )
+parser.add_argument(
+    "--export_only",
+    action="store_true",
+    help="Export the resolved checkpoint and exit without stepping simulation.",
+)
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
@@ -239,6 +244,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             env_cfg.observations.policy.slam_confidence.params[
                 "phase_offset_mode"
             ] = "synchronized"
+            velocity_command_term = env_cfg.observations.policy.velocity_commands
+            if velocity_command_term.func is simulated_slam_confidence:
+                raise RuntimeError("velocity command term cannot be the confidence observation")
+            if "phase_offset_mode" in velocity_command_term.params:
+                velocity_command_term.params["phase_offset_mode"] = "synchronized"
         env_cfg.events.base_external_force_torque = None
         env_cfg.events.push_robot = None
 
@@ -321,16 +331,73 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         export_model_dir = str(EXPORT_ROOT / agent_cfg.experiment_name / os.path.basename(log_dir))
         export_policy_as_jit(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt")
         export_policy_as_onnx(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx")
+        resolved_agent_path = Path(export_model_dir) / "resolved_agent.yaml"
+        resolved_agent_path.write_text(
+            yaml.safe_dump(agent_cfg.to_dict(), sort_keys=False),
+            encoding="utf-8",
+        )
         contract_path = (
             SLAM_CONFIDENCE_POLICY_CONTRACT_PATH
             if "SlamConfidence" in args_cli.task
             else POLICY_CONTRACT_PATH
         )
+        actor = getattr(policy_nn, "actor", None)
+        extension_metadata = None
+        if actor is not None and getattr(actor, "intent_auxiliary", False):
+            extension_metadata = {
+                "architecture": "frozen_model1450_aux_intent_structured_gait",
+                "confidence_offset": int(actor.confidence_offset),
+                "legacy_observation_dimension": int(actor.legacy_observation_dim),
+                "gait_coordinates": [
+                    "stride_attenuation",
+                    "crouch",
+                    "stance_width",
+                    "action_smoothing",
+                ],
+                "gait_parameter_limits": [
+                    float(value)
+                    for value in actor.gait_parameter_limits.detach().cpu().tolist()
+                ],
+                "nonnegative_stride_smoothing": bool(
+                    actor.nonnegative_stride_smoothing
+                ),
+                "suppress_gait_when_tracking_invalid": bool(
+                    actor.suppress_gait_when_tracking_invalid
+                ),
+                "gait_delta_safe_scale_power": float(
+                    actor.gait_delta_safe_scale_power
+                ),
+                "intent_blend_max": float(actor.intent_blend_max),
+                "degraded_stride_envelope": {
+                    "minimum_scale": float(actor.degraded_stride_min_scale),
+                    "confidence_low": float(
+                        actor.degraded_stride_confidence_low
+                    ),
+                    "confidence_high": float(
+                        actor.degraded_stride_confidence_high
+                    ),
+                    "age_to_confidence_loss_ratio_max": float(
+                        actor.degraded_stride_age_ratio_max
+                    ),
+                    "power": float(actor.degraded_stride_envelope_power),
+                    "tracking_valid_only": True,
+                },
+                "runtime_ground_truth_inputs": False,
+                "resolved_agent_config": {
+                    "path": resolved_agent_path.name,
+                    "sha256": _sha256(resolved_agent_path),
+                },
+            }
         write_export_metadata(
             export_model_dir,
             resume_path,
             contract_path=contract_path,
+            policy_extension=extension_metadata,
         )
+        if args_cli.export_only:
+            print(f"[INFO] Export-only completed: {export_model_dir}")
+            env.close()
+            return
 
     dt = env.unwrapped.step_dt
 
@@ -364,6 +431,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                 "absolute_vertical_speed": 0.0,
                 "stance_foot_samples": 0,
                 "stance_foot_slip_speed": 0.0,
+                "effective_command_scale": 0.0,
+                "gait_mode_counts": [0, 0, 0, 0],
+                "policy_intent_blend": 0.0,
+                "policy_gait_coordinates": [0.0, 0.0, 0.0, 0.0],
             }
             for name in behavior_gate_cfg["windows"]
         }
@@ -373,6 +444,12 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         dtype=torch.bool,
         device=env.unwrapped.device,
     )
+    hard_termination_phase_counts = {
+        "healthy": 0,
+        "deceleration": 0,
+        "invalid": 0,
+        "recovery": 0,
+    }
     timeout_count = 0
     estimator_batches: dict[str, list[np.ndarray]] | None = None
     estimator_episode_ids: torch.Tensor | None = None
@@ -669,6 +746,35 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                 body_tilt = robot.data.projected_gravity_b[:, :2]
                 body_roll_pitch_rate = robot.data.root_ang_vel_b[:, :2]
                 absolute_vertical_speed = torch.abs(robot.data.root_lin_vel_b[:, 2])
+                actor = getattr(policy_nn, "actor", None)
+                policy_intent_blend = None
+                policy_gait_coordinates = None
+                if getattr(actor, "intent_auxiliary", False):
+                    legacy_action = actor.backbone(
+                        policy_observation[:, : actor.legacy_observation_dim]
+                    )
+                    policy_intent_blend = actor.intent_blend(
+                        policy_observation, legacy_action
+                    ).squeeze(-1)
+                    confidence_input = policy_observation[:, actor.confidence_offset]
+                    valid_input = policy_observation[:, actor.confidence_offset + 1]
+                    safe_scale_input = torch.clamp(valid_input, 0.0, 1.0) * torch.clamp(
+                        (confidence_input - 0.2) / 0.8, 0.0, 1.0
+                    )
+                    safe_observation = policy_observation[
+                        :, : actor.legacy_observation_dim
+                    ].clone()
+                    safe_observation[
+                        :, actor.command_offset : actor.command_offset
+                        + actor.command_dimension
+                    ] *= safe_scale_input.unsqueeze(-1)
+                    safe_action = actor.backbone(safe_observation)
+                    intent_action = legacy_action + policy_intent_blend.unsqueeze(-1) * (
+                        safe_action - legacy_action
+                    )
+                    policy_gait_coordinates = actor.gait_coordinates(
+                        policy_observation, intent_action
+                    )
                 contact_mask = (
                     torch.abs(
                         contact_sensor.data.net_forces_w[
@@ -726,10 +832,61 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                     values["stance_foot_slip_speed"] += float(
                         torch.sum(foot_planar_speed[mask][window_contacts])
                     )
+                    raw_command_norm = torch.linalg.vector_norm(command[mask], dim=1)
+                    effective_command_norm = torch.linalg.vector_norm(
+                        policy_observation[mask, 9:12], dim=1
+                    )
+                    values["effective_command_scale"] += float(
+                        torch.sum(
+                            torch.where(
+                                raw_command_norm > 1.0e-6,
+                                effective_command_norm / raw_command_norm,
+                                torch.ones_like(raw_command_norm),
+                            )
+                        )
+                    )
+                    if policy_intent_blend is not None:
+                        values["policy_intent_blend"] += float(
+                            torch.sum(policy_intent_blend[mask])
+                        )
+                    if policy_gait_coordinates is not None:
+                        coordinate_sums = torch.sum(
+                            policy_gait_coordinates[mask], dim=0
+                        ).tolist()
+                        values["policy_gait_coordinates"] = [
+                            total + float(value)
+                            for total, value in zip(
+                                values["policy_gait_coordinates"], coordinate_sums
+                            )
+                        ]
+                    governor = getattr(
+                        env.unwrapped,
+                        "_slam_confidence_gait_mode_governor",
+                        None,
+                    )
+                    if governor is not None:
+                        for mode_index in range(4):
+                            values["gait_mode_counts"][mode_index] += int(
+                                torch.sum(governor.mode[mask] == mode_index)
+                            )
                 previous_evaluation_actions.copy_(actions)
                 previous_evaluation_actions[dones] = 0.0
-            hard_termination_count += int(env.unwrapped.reset_terminated.sum())
+            hard_reset = env.unwrapped.reset_terminated
+            hard_termination_count += int(hard_reset.sum())
             hard_terminated_envs |= env.unwrapped.reset_terminated
+            if evaluation_phase is not None and torch.any(hard_reset):
+                phase_masks = {
+                    "healthy": evaluation_phase < 0.30,
+                    "deceleration": (evaluation_phase >= 0.30)
+                    & (evaluation_phase < 0.50),
+                    "invalid": (evaluation_phase >= 0.50)
+                    & (evaluation_phase < 0.70),
+                    "recovery": evaluation_phase >= 0.70,
+                }
+                for phase_name, phase_mask in phase_masks.items():
+                    hard_termination_phase_counts[phase_name] += int(
+                        torch.sum(hard_reset & phase_mask)
+                    )
             timeout_count += int(env.unwrapped.reset_time_outs.sum())
         timestep += 1
         if args_cli.video:
@@ -767,6 +924,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             "hard_terminated_env_fraction": float(
                 hard_terminated_envs.sum().item() / env.num_envs
             ),
+            "hard_termination_phase_counts": hard_termination_phase_counts,
             "timeout_count": timeout_count,
         }
         for name, sums in metric_sums.items():
@@ -818,6 +976,16 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                         else None
                     ),
                     "stance_foot_samples": sums["stance_foot_samples"],
+                    "mean_effective_command_scale": (
+                        sums["effective_command_scale"] / count
+                    ),
+                    "gait_mode_counts": sums["gait_mode_counts"],
+                    "mean_policy_intent_blend": (
+                        sums["policy_intent_blend"] / count
+                    ),
+                    "mean_policy_gait_coordinates": [
+                        value / count for value in sums["policy_gait_coordinates"]
+                    ],
                 }
             windows = report["windows"]
             thresholds = behavior_gate_cfg["gates"]
@@ -847,7 +1015,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                 <= float(thresholds["recovery_linear_rmse_max_mps"]),
                 "recovery_speed_reacquired": windows["recovery_settled"]["mean_planar_speed"]
                 >= float(thresholds["recovery_mean_planar_speed_min_mps"]),
-                "hard_termination_rate": hard_termination_fraction
+                "hard_termination_rate": hard_terminated_env_fraction
                 <= float(thresholds["hard_termination_fraction_max"]),
             }
             optional_yaw_checks = {

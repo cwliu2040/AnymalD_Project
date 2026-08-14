@@ -1,0 +1,142 @@
+{
+  "artifacts": {
+    "agent_config": {
+      "path": "/home/ros/anymal_locomotion/exported/anymal_d_locomotion_slam_confidence_phase_separated_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/resolved_agent.yaml",
+      "sha256": "45bbd223aceade79fb2282e34158383aa57a8883bfdbde30a98963b50143ef6b"
+    },
+    "checkpoint": {
+      "path": "/home/ros/anymal_locomotion/logs/rsl_rl/anymal_d_locomotion_slam_confidence_constrained_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/model_48.pt",
+      "sha256": "888bc682eda65e2c427eccd445d8b9cb1e787635b5da86e6fa8a85b83fda4fa0"
+    },
+    "onnx": {
+      "path": "/home/ros/anymal_locomotion/exported/anymal_d_locomotion_slam_confidence_phase_separated_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/policy.onnx",
+      "sha256": "c8225b05a2b8fd1a35fb919593a68326b0ddac3d955b69191708def5d071f4a5"
+    },
+    "torchscript": {
+      "path": "/home/ros/anymal_locomotion/exported/anymal_d_locomotion_slam_confidence_phase_separated_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/policy.pt",
+      "sha256": "75fcb74d02890b42d139614179168a87e241ad9f57316719258d1dd454205110"
+    }
+  },
+  "checkpoint_reconstruction": {
+    "activation": "elu",
+    "actor_observation_normalization": false,
+    "architecture": "frozen_model1450_aux_intent_structured_gait",
+    "backbone_layer_dimensions": [
+      [
+        48,
+        128
+      ],
+      [
+        128,
+        128
+      ],
+      [
+        128,
+        128
+      ],
+      [
+        128,
+        12
+      ]
+    ],
+    "checkpoint_iteration": 48,
+    "confidence_offset": 48,
+    "degraded_stride_envelope": {
+      "age_to_confidence_loss_ratio_max": 0.45,
+      "confidence_high": 1.0,
+      "confidence_low": 0.2,
+      "minimum_scale": 0.0,
+      "power": 3.0
+    },
+    "gait_delta_safe_scale_power": 10.0,
+    "gait_head_layer_dimensions": [
+      [
+        63,
+        64
+      ],
+      [
+        64,
+        64
+      ],
+      [
+        64,
+        4
+      ]
+    ],
+    "gait_parameter_limits": [
+      0.6,
+      0.3,
+      0.2,
+      0.9
+    ],
+    "input_dimension": 51,
+    "intent_blend_max": 0.79,
+    "output_dimension": 12,
+    "suppress_gait_when_tracking_invalid": true
+  },
+  "closed_loop_previous_action_rollout": {
+    "comparisons": {
+      "checkpoint_vs_onnx": {
+        "allclose": true,
+        "max_absolute_error": 1.0728836059570312e-06,
+        "max_relative_error": 0.0005562302540056407,
+        "mean_absolute_error": 1.4370668566243694e-07
+      },
+      "checkpoint_vs_torchscript": {
+        "allclose": true,
+        "max_absolute_error": 0.0,
+        "max_relative_error": 0.0,
+        "mean_absolute_error": 0.0
+      },
+      "torchscript_vs_onnx": {
+        "allclose": true,
+        "max_absolute_error": 1.0728836059570312e-06,
+        "max_relative_error": 0.0005562302540056407,
+        "mean_absolute_error": 1.4370668566243694e-07
+      }
+    },
+    "confidence_schedule": "healthy_degrade_invalid_recover",
+    "steps": 200
+  },
+  "comparisons": {
+    "checkpoint_vs_onnx": {
+      "allclose": true,
+      "max_absolute_error": 5.7220458984375e-06,
+      "max_relative_error": 0.00023817084729671478,
+      "mean_absolute_error": 4.021030690637417e-07
+    },
+    "checkpoint_vs_torchscript": {
+      "allclose": true,
+      "max_absolute_error": 0.0,
+      "max_relative_error": 0.0,
+      "mean_absolute_error": 0.0
+    },
+    "torchscript_vs_onnx": {
+      "allclose": true,
+      "max_absolute_error": 5.7220458984375e-06,
+      "max_relative_error": 0.00023817084729671478,
+      "mean_absolute_error": 4.021030690637417e-07
+    }
+  },
+  "input": {
+    "dimension": 51,
+    "dtype": "float32"
+  },
+  "onnx_backend": "onnx.reference.ReferenceEvaluator",
+  "output": {
+    "dimension": 12,
+    "dtype": "float32"
+  },
+  "passed": true,
+  "samples": 256,
+  "seed": 42,
+  "tolerances": {
+    "absolute": 1e-05,
+    "relative": 1e-05
+  },
+  "versions": {
+    "numpy": "1.26.0",
+    "onnx": "1.20.1",
+    "torch": "2.7.0+cu128"
+  }
+}

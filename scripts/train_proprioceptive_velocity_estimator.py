@@ -48,6 +48,24 @@ class NormalizedEstimator(torch.nn.Module):
         return self.model((history - self.mean) / self.std)
 
 
+def _batched_predict(
+    model: torch.nn.Module,
+    features: np.ndarray,
+    *,
+    device: torch.device,
+    batch_size: int,
+) -> np.ndarray:
+    """Run a large environment-disjoint holdout without GPU-sized allocation."""
+    predictions = []
+    with torch.inference_mode():
+        for start in range(0, features.shape[0], batch_size):
+            batch = torch.from_numpy(features[start : start + batch_size]).to(
+                device, non_blocking=True
+            )
+            predictions.append(model(batch).cpu().numpy())
+    return np.concatenate(predictions, axis=0)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=Path, required=True, nargs="+")
@@ -55,7 +73,19 @@ def main() -> None:
     parser.add_argument("--epochs", type=int, default=40)
     parser.add_argument("--batch-size", type=int, default=4096)
     parser.add_argument("--learning-rate", type=float, default=3.0e-4)
+    parser.add_argument(
+        "--vertical-transition-weight",
+        type=float,
+        default=0.0,
+        help="Additional MSE weight for rare high-|vz| fall/contact transitions.",
+    )
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--initial-checkpoint",
+        type=Path,
+        default=None,
+        help="Project-local qualified estimator checkpoint used for fine-tuning.",
+    )
     parser.add_argument("--device", default="cuda:0" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
 
@@ -78,9 +108,23 @@ def main() -> None:
     )
     train_x, train_y = build_history_windows(dataset, train_envs)
     holdout_x, holdout_y = build_history_windows(dataset, holdout_envs)
-    step_mean = train_x.reshape(-1, STEP_DIMENSION).mean(axis=0).astype(np.float32)
-    step_std = train_x.reshape(-1, STEP_DIMENSION).std(axis=0).astype(np.float32)
-    step_std = np.maximum(step_std, 1.0e-4)
+    initial_checkpoint_path = (
+        args.initial_checkpoint.expanduser().resolve()
+        if args.initial_checkpoint is not None
+        else None
+    )
+    if initial_checkpoint_path is not None:
+        if not initial_checkpoint_path.is_relative_to(PROJECT_ROOT):
+            raise ValueError("initial checkpoint must remain inside the repository")
+        initial_checkpoint = torch.load(
+            initial_checkpoint_path, map_location="cpu", weights_only=False
+        )
+        step_mean = np.asarray(initial_checkpoint["step_mean"], dtype=np.float32)
+        step_std = np.asarray(initial_checkpoint["step_std"], dtype=np.float32)
+    else:
+        step_mean = train_x.reshape(-1, STEP_DIMENSION).mean(axis=0).astype(np.float32)
+        step_std = train_x.reshape(-1, STEP_DIMENSION).std(axis=0).astype(np.float32)
+        step_std = np.maximum(step_std, 1.0e-4)
     mean = np.tile(step_mean, HISTORY_LENGTH)
     std = np.tile(step_std, HISTORY_LENGTH)
     normalized_train_x = (train_x - mean) / std
@@ -89,10 +133,17 @@ def main() -> None:
     airborne_weight = 1.0 + 2.0 * (
         np.sum(train_x[:, -4:] > 0.5, axis=1) == 0
     ).astype(np.float32)
-    sample_weight = (speed_weight * airborne_weight).astype(np.float32)
+    vertical_transition_weight = 1.0 + args.vertical_transition_weight * np.clip(
+        np.abs(train_y[:, 2]) - 0.2, 0.0, 2.0
+    )
+    sample_weight = (
+        speed_weight * airborne_weight * vertical_transition_weight
+    ).astype(np.float32)
 
     device = torch.device(args.device)
     model = ProprioceptiveVelocityEstimator(HISTORY_LENGTH * STEP_DIMENSION).to(device)
+    if initial_checkpoint_path is not None:
+        model.load_state_dict(initial_checkpoint["model_state_dict"], strict=True)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     # The deployment gate includes a hard maximum-error bound.  Squared loss
     # intentionally keeps rare push/airborne transitions influential instead
@@ -129,8 +180,12 @@ def main() -> None:
         history.append({"epoch": epoch + 1, "training_loss": total / count})
 
     wrapped = NormalizedEstimator(model.eval(), mean, std).to(device).eval()
-    with torch.inference_mode():
-        holdout_prediction = wrapped(torch.from_numpy(holdout_x).to(device)).cpu().numpy()
+    holdout_prediction = _batched_predict(
+        wrapped,
+        holdout_x,
+        device=device,
+        batch_size=args.batch_size,
+    )
     metrics = velocity_metrics(holdout_prediction, holdout_y)
 
     checkpoint_path = output_dir / "model.pt"
@@ -172,7 +227,7 @@ def main() -> None:
             for path in dataset_paths
         ],
         "split": {"unit": "simulator_environment", "train_environment_ids": train_envs.tolist(), "holdout_environment_ids": holdout_envs.tolist()},
-        "training": {"seed": args.seed, "epochs": args.epochs, "batch_size": args.batch_size, "learning_rate": args.learning_rate, "loss": "transition_weighted_mean_squared_error", "history": history},
+        "training": {"seed": args.seed, "epochs": args.epochs, "batch_size": args.batch_size, "learning_rate": args.learning_rate, "loss": "transition_weighted_mean_squared_error", "vertical_transition_weight": args.vertical_transition_weight, "initial_checkpoint": ({"path": str(initial_checkpoint_path.relative_to(PROJECT_ROOT)), "sha256": _sha256(initial_checkpoint_path)} if initial_checkpoint_path is not None else None), "history": history},
         "architecture": {"type": "windowed_gru", "hidden_dimension": 128, "layers": 2, "head_hidden_dimension": 128, "activation": "elu"},
         "normalization": {"step_mean": step_mean.astype(float).tolist(), "step_std": step_std.astype(float).tolist()},
         "holdout_metrics": metrics,

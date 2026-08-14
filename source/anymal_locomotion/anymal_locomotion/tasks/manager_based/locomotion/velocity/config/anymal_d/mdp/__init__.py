@@ -11,10 +11,14 @@ from .commands import (
 from .events import validate_anymal_d_joint_contract
 from .rewards import (
     confidence_gait_action_rate_l2,
+    confidence_degradation_feet_slide,
     confidence_gait_ang_vel_xy_l2,
     confidence_gait_feet_slide,
     confidence_gait_flat_orientation_l2,
     confidence_gait_lin_vel_z_l2,
+    confidence_recovery_action_rate_l2,
+    confidence_recovery_ang_vel_xy_l2,
+    confidence_recovery_flat_orientation_l2,
     confidence_invalid_action_l2,
     confidence_invalid_planar_speed_l2,
     confidence_invalid_yaw_rate_l2,
@@ -28,5 +32,13 @@ from .rewards import (
     refinery_feet_slide,
     refinery_flat_orientation_l2,
 )
-from .slam_confidence import confidence_phase, confidence_safe_scale, simulated_slam_confidence
+from .slam_confidence import (
+    confidence_phase,
+    confidence_degradation_mask,
+    confidence_recovery_mask,
+    confidence_safe_scale,
+    gait_mode_command_scale,
+    gait_mode_velocity_command,
+    simulated_slam_confidence,
+)
 from .symmetry import compute_symmetric_states

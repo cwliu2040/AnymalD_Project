@@ -9,6 +9,7 @@ import pytest
 import yaml
 
 from anymal_locomotion_ros2.policy_core import (
+    GaitModeGovernor,
     PolicyContract,
     PolicyRuntime,
     RobotState,
@@ -256,3 +257,35 @@ def test_runtime_rejects_non_finite_policy_output(contract: PolicyContract) -> N
     )
     with pytest.raises(ValueError, match="NaN or Inf"):
         runtime.step(state, [0.0, 0.0, 0.0])
+
+
+def test_runtime_gait_mode_governs_command_before_51d_inference(
+    confidence_contract: PolicyContract,
+) -> None:
+    class FakeBackend:
+        def __init__(self) -> None:
+            self.inputs: list[np.ndarray] = []
+
+        def __call__(self, observations: np.ndarray) -> np.ndarray:
+            self.inputs.append(observations.copy())
+            return np.zeros((1, 12), dtype=np.float32)
+
+    backend = FakeBackend()
+    runtime = PolicyRuntime(
+        confidence_contract,
+        backend,
+        gait_mode_governor=GaitModeGovernor(),
+    )
+    state = RobotState(
+        base_linear_velocity=np.zeros(3),
+        base_angular_velocity=np.zeros(3),
+        projected_gravity=np.asarray([0.0, 0.0, -1.0]),
+        joint_positions=np.asarray(confidence_contract.default_joint_positions),
+        joint_velocities=np.zeros(12),
+    )
+    runtime.step(state, [1.5, 0.0, 0.0], [1.0, 1.0, 0.0])
+    np.testing.assert_allclose(backend.inputs[-1][0, 9:12], [1.5, 0.0, 0.0])
+    for _ in range(70):
+        runtime.step(state, [1.5, 0.0, 0.0], [1.0, 0.0, 1.0])
+    np.testing.assert_allclose(backend.inputs[-1][0, 9:12], [0.0, 0.0, 0.0])
+    np.testing.assert_allclose(backend.inputs[-1][0, 48:51], [1.0, 0.0, 1.0])

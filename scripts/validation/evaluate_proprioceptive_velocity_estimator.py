@@ -18,6 +18,18 @@ sys.path.insert(0, str(PROJECT_ROOT / "source" / "anymal_locomotion"))
 from anymal_locomotion.velocity_estimator.dataset import VelocityDataset, build_history_windows, concatenate_datasets, velocity_metrics
 
 
+def _onnx_predict(session, features: np.ndarray, batch_size: int = 4096) -> np.ndarray:
+    predictions = []
+    for start in range(0, features.shape[0], batch_size):
+        predictions.append(
+            session.run(
+                None,
+                {session.input_names[0]: features[start : start + batch_size]},
+            )[0]
+        )
+    return np.concatenate(predictions, axis=0)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--metadata", type=Path, required=True)
@@ -37,7 +49,7 @@ def main() -> None:
 
     model_path = metadata_path.parent / metadata["artifacts"]["onnx"]["path"]
     session = ReferenceEvaluator(str(model_path))
-    predictions = session.run(None, {session.input_names[0]: features})[0]
+    predictions = _onnx_predict(session, features)
     metrics = velocity_metrics(predictions, labels)
     torchscript_path = metadata_path.parent / metadata["artifacts"]["torchscript"]["path"]
     torchscript = torch.jit.load(str(torchscript_path), map_location="cpu").eval()

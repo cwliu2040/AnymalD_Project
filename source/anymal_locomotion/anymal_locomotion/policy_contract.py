@@ -84,6 +84,7 @@ def write_export_metadata(
     checkpoint_path: str | Path,
     *,
     contract_path: str | Path = POLICY_CONTRACT_PATH,
+    policy_extension: dict[str, Any] | None = None,
 ) -> Path:
     """Write versioned deployment metadata beside a policy export."""
     export_path = assert_project_local_path(export_dir)
@@ -132,6 +133,8 @@ def write_export_metadata(
         "config_sha256": _sha256(selected_contract_path),
         "project_git_commit": project_revision,
     }
+    if policy_extension is not None:
+        metadata["policy_extension"] = policy_extension
     metadata_path = export_path / "policy_metadata.yaml"
     metadata_path.write_text(yaml.safe_dump(metadata, sort_keys=False), encoding="utf-8")
     return metadata_path
