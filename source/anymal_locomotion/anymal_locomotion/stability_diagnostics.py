@@ -502,13 +502,16 @@ def evaluate_stability_gate(
     config: dict[str, Any],
     driver_passed: bool = True,
 ) -> dict[str, Any]:
-    """Evaluate a frozen hard-failure and command-tracking gate."""
+    """Evaluate hard-failure and, when enabled, command-tracking gates."""
     if config.get("schema_version") != 1:
         raise ValueError("stability config schema_version must be 1")
     hard_gate = config.get("hard_gate")
     tracking_gate = config.get("tracking_gate")
     if not isinstance(hard_gate, dict) or not isinstance(tracking_gate, dict):
         raise ValueError("stability config is missing gate mappings")
+    tracking_enabled = tracking_gate.get("enabled", True)
+    if not isinstance(tracking_enabled, bool):
+        raise ValueError("tracking_gate.enabled must be boolean")
 
     failures: list[str] = []
     if not driver_passed:
@@ -546,7 +549,7 @@ def evaluate_stability_gate(
     tracking = summary["tracking"]
     stationary = max(abs(value) for value in target) < 0.05
     axis_names = ("vx_mps", "vy_mps", "wz_radps")
-    if stationary:
+    if tracking_enabled and stationary:
         limits = tracking_gate.get(
             "stationary_maximum_mean_absolute_velocity",
             {},
@@ -587,7 +590,7 @@ def evaluate_stability_gate(
             failures.append(
                 f"stationary_yaw_change_rad={yaw_change:.6g}>{yaw_limit:.6g}"
             )
-    else:
+    elif tracking_enabled:
         minimum_target_samples = int(
             tracking_gate.get("minimum_target_samples", 0)
         )
@@ -613,5 +616,6 @@ def evaluate_stability_gate(
         "passed": not failures,
         "target": list(target),
         "driver_passed": driver_passed,
+        "tracking_gate_applied": tracking_enabled,
         "failures": failures,
     }

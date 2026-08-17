@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 import yaml
@@ -8,6 +9,9 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "configs/slam_confidence_locomotion_matrix.yaml"
+PHASE_CONFIG = (
+    ROOT / "configs/slam_confidence_phase_separated_locomotion_matrix.yaml"
+)
 RUNNER = ROOT / "scripts/validation/run_slam_confidence_locomotion_matrix.py"
 LAUNCH = (
     ROOT
@@ -61,6 +65,98 @@ def test_matrix_candidate_hashes_and_parity_are_self_consistent() -> None:
         "checkpoint_sha256"
     ]
     assert artifacts["policy_sha256"] == matrix["candidate"]["policy_sha256"]
+
+
+def test_phase_matrix_uses_explicit_confidence_aware_stability_semantics() -> None:
+    module = _load_runner()
+    matrix = yaml.safe_load(PHASE_CONFIG.read_text(encoding="utf-8"))
+    artifacts = module.validate_stability_config(matrix)
+    stability_config = yaml.safe_load(
+        Path(artifacts["stability_config_path"]).read_text(encoding="utf-8")
+    )
+    assert stability_config["tracking_gate"]["enabled"] is False
+    assert stability_config["hard_gate"] == yaml.safe_load(
+        (ROOT / "configs/stability_diagnostics.yaml").read_text(encoding="utf-8")
+    )["hard_gate"]
+    candidate = matrix["candidate"]
+    assert candidate["checkpoint_path"].endswith("/model_48.pt")
+    assert candidate["agent_config_path"].endswith("/resolved_agent.yaml")
+    assert matrix["mechanism_sidecar_gate"] == {
+        "enabled": True,
+        "maximum_action_reconstruction_error": 1.0e-5,
+    }
+
+
+def test_matrix_output_root_is_derived_from_valid_matrix_id() -> None:
+    module = _load_runner()
+    assert module._matrix_output_root("candidate-v2") == (
+        ROOT / "logs/slam_confidence_locomotion_matrix/candidate-v2"
+    )
+    for invalid in ("../escape", "Candidate", "two words", "/absolute"):
+        try:
+            module._matrix_output_root(invalid)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"invalid matrix id accepted: {invalid}")
+
+
+def test_subset_summary_does_not_overwrite_full_matrix_summary() -> None:
+    module = _load_runner()
+    configured_backends = ("fastlio2", "liosam")
+    configured_profiles = ("forward_1_5", "lateral_1_5")
+    assert module._summary_filename(
+        configured_backends=configured_backends,
+        configured_profiles=configured_profiles,
+        configured_repetitions=1,
+        backends=configured_backends,
+        profiles=configured_profiles,
+        repetitions=1,
+    ) == "matrix_summary.json"
+    subset = module._summary_filename(
+        configured_backends=configured_backends,
+        configured_profiles=configured_profiles,
+        configured_repetitions=1,
+        backends=("liosam",),
+        profiles=("forward_1_5",),
+        repetitions=1,
+    )
+    assert subset.startswith("matrix_summary.selection-")
+    assert subset.endswith(".json")
+
+
+def test_passed_cell_requires_current_matrix_and_artifact_identity(tmp_path) -> None:
+    module = _load_runner()
+    path = tmp_path / "cell.json"
+    cell = {
+        "passed": True,
+        "matrix_id": "candidate-v2",
+        "matrix_sha256": "matrix-sha",
+        "backend": "liosam",
+        "profile": "forward_1_5",
+        "repetition": 1,
+        "expected_calibration_id": "calibration-v1",
+        "artifacts": {
+            "checkpoint_sha256": "checkpoint-sha",
+            "policy_sha256": "policy-sha",
+        },
+    }
+    path.write_text(json.dumps(cell), encoding="utf-8")
+    arguments = {
+        "matrix_id": "candidate-v2",
+        "matrix_sha256": "matrix-sha",
+        "backend": "liosam",
+        "profile": "forward_1_5",
+        "repetition": 1,
+        "calibration_id": "calibration-v1",
+        "artifacts": {
+            "checkpoint_sha256": "checkpoint-sha",
+            "policy_sha256": "policy-sha",
+        },
+    }
+    assert module._validated_passed_cell(path, **arguments) == cell
+    arguments["matrix_sha256"] = "new-matrix-sha"
+    assert module._validated_passed_cell(path, **arguments) is None
 
 
 def test_policy_diagnostics_gate_requires_real_51d_confidence_consumption() -> None:

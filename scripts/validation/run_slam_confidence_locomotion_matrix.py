@@ -8,6 +8,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -21,11 +22,13 @@ ROS2_WORKSPACE = PROJECT_ROOT / "deployment" / "ros2_ws"
 DEFAULT_MATRIX = (
     PROJECT_ROOT / "configs" / "slam_confidence_locomotion_matrix.yaml"
 )
-DEFAULT_OUTPUT_ROOT = (
+DEFAULT_STABILITY_CONFIG = (
+    PROJECT_ROOT / "configs" / "stability_diagnostics.yaml"
+)
+DEFAULT_OUTPUT_PARENT = (
     PROJECT_ROOT
     / "logs"
     / "slam_confidence_locomotion_matrix"
-    / "bounded_safe_command_model19_screening_v1"
 )
 
 
@@ -106,6 +109,28 @@ def validate_candidate_artifacts(
         "policy_sha256": policy_sha256,
         "parity_report_sha256": _sha256(parity_path),
     }
+    checkpoint_value = candidate.get("checkpoint_path")
+    agent_config_value = candidate.get("agent_config_path")
+    if (checkpoint_value is None) != (agent_config_value is None):
+        raise ValueError(
+            "candidate checkpoint_path and agent_config_path must be configured together"
+        )
+    if checkpoint_value is not None:
+        checkpoint_path = _project_path(
+            PROJECT_ROOT / str(checkpoint_value), must_exist=True
+        )
+        agent_config_path = _project_path(
+            PROJECT_ROOT / str(agent_config_value), must_exist=True
+        )
+        if _sha256(checkpoint_path) != metadata_checkpoint_sha256:
+            raise ValueError("candidate checkpoint SHA-256 does not match metadata")
+        artifacts.update(
+            {
+                "checkpoint_path": str(checkpoint_path),
+                "agent_config_path": str(agent_config_path),
+                "agent_config_sha256": _sha256(agent_config_path),
+            }
+        )
     estimator_metadata_value = candidate.get("velocity_estimator_metadata_path")
     if estimator_metadata_value is not None:
         estimator_metadata_path = _project_path(
@@ -135,6 +160,28 @@ def validate_candidate_artifacts(
             }
         )
     return artifacts
+
+
+def validate_stability_config(matrix: dict[str, Any]) -> dict[str, str]:
+    value = matrix.get("stability_config_path")
+    path = _project_path(
+        PROJECT_ROOT / str(value) if value is not None else DEFAULT_STABILITY_CONFIG,
+        must_exist=True,
+    )
+    config = _load_document(path)
+    if config.get("schema_version") != 1:
+        raise ValueError("stability config schema_version must be 1")
+    hard_gate = config.get("hard_gate")
+    tracking_gate = config.get("tracking_gate")
+    if not isinstance(hard_gate, dict) or not isinstance(tracking_gate, dict):
+        raise ValueError("stability config is missing gate mappings")
+    tracking_enabled = tracking_gate.get("enabled", True)
+    if not isinstance(tracking_enabled, bool):
+        raise ValueError("tracking_gate.enabled must be boolean")
+    return {
+        "stability_config_path": str(path),
+        "stability_config_sha256": _sha256(path),
+    }
 
 
 def validate_policy_diagnostics(
@@ -210,14 +257,85 @@ def validate_policy_diagnostics(
     }
 
 
-def _passed_cell(path: Path) -> dict[str, Any] | None:
+def _validated_passed_cell(
+    path: Path,
+    *,
+    matrix_id: str,
+    matrix_sha256: str,
+    backend: str,
+    profile: str,
+    repetition: int,
+    calibration_id: str,
+    artifacts: dict[str, str],
+) -> dict[str, Any] | None:
     if not path.is_file():
         return None
     try:
         result = _load_document(path)
     except (OSError, ValueError, json.JSONDecodeError, yaml.YAMLError):
         return None
-    return result if result.get("passed") else None
+    expected_artifacts = {
+        key: artifacts[key]
+        for key in (
+            "checkpoint_sha256",
+            "policy_sha256",
+            "parity_report_sha256",
+            "velocity_estimator_metadata_sha256",
+            "velocity_estimator_onnx_sha256",
+            "stability_config_sha256",
+            "agent_config_sha256",
+        )
+        if key in artifacts
+    }
+    identity_matches = bool(
+        result.get("passed")
+        and result.get("matrix_id") == matrix_id
+        and result.get("matrix_sha256") == matrix_sha256
+        and result.get("backend") == backend
+        and result.get("profile") == profile
+        and result.get("repetition") == repetition
+        and result.get("expected_calibration_id") == calibration_id
+        and all(
+            result.get("artifacts", {}).get(key) == value
+            for key, value in expected_artifacts.items()
+        )
+    )
+    return result if identity_matches else None
+
+
+def _matrix_output_root(matrix_id: str) -> Path:
+    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]*", matrix_id):
+        raise ValueError(
+            "matrix_id must contain only lowercase letters, digits, '.', '_', or '-'"
+        )
+    return DEFAULT_OUTPUT_PARENT / matrix_id
+
+
+def _summary_filename(
+    *,
+    configured_backends: tuple[str, ...],
+    configured_profiles: tuple[str, ...],
+    configured_repetitions: int,
+    backends: tuple[str, ...],
+    profiles: tuple[str, ...],
+    repetitions: int,
+) -> str:
+    if (
+        backends == configured_backends
+        and profiles == configured_profiles
+        and repetitions == configured_repetitions
+    ):
+        return "matrix_summary.json"
+    selection = json.dumps(
+        {
+            "backends": backends,
+            "profiles": profiles,
+            "repetitions": repetitions,
+        },
+        sort_keys=True,
+    ).encode("utf-8")
+    digest = hashlib.sha256(selection).hexdigest()[:12]
+    return f"matrix_summary.selection-{digest}.json"
 
 
 def _write_json(path: Path, value: dict[str, Any]) -> None:
@@ -231,7 +349,7 @@ def _write_json(path: Path, value: dict[str, Any]) -> None:
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--matrix", type=Path, default=DEFAULT_MATRIX)
-    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
+    parser.add_argument("--output-root", type=Path)
     parser.add_argument("--backend", action="append", dest="backends")
     parser.add_argument("--profile", action="append", dest="profiles")
     parser.add_argument("--repetitions", type=int)
@@ -243,11 +361,39 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
     matrix_path = _project_path(args.matrix, must_exist=True)
-    output_root = _project_path(args.output_root, must_exist=False)
     matrix = _load_document(matrix_path)
     if matrix.get("schema_version") != 1:
         raise ValueError("locomotion matrix schema_version must be 1")
+    matrix_id = str(matrix["matrix_id"])
+    matrix_sha256 = _sha256(matrix_path)
+    output_root = _project_path(
+        args.output_root if args.output_root is not None else _matrix_output_root(matrix_id),
+        must_exist=False,
+    )
     artifacts = validate_candidate_artifacts(matrix)
+    artifacts.update(validate_stability_config(matrix))
+    mechanism_gate_config = matrix.get("mechanism_sidecar_gate", {})
+    mechanism_enabled = bool(mechanism_gate_config.get("enabled", False))
+    if mechanism_enabled and not {
+        "checkpoint_path",
+        "agent_config_path",
+    }.issubset(artifacts):
+        raise ValueError(
+            "mechanism sidecar requires candidate checkpoint_path and agent_config_path"
+        )
+    mechanism_action_atol = float(
+        mechanism_gate_config.get("maximum_action_reconstruction_error", 1.0e-5)
+    )
+    if not math.isfinite(mechanism_action_atol) or mechanism_action_atol < 0.0:
+        raise ValueError("mechanism action reconstruction tolerance is invalid")
+    isaaclab_root = Path(
+        os.environ.get("ISAACLAB_ROOT", Path.home() / "IsaacLab")
+    ).expanduser()
+    mechanism_python = isaaclab_root / "_isaac_sim" / "python.sh"
+    if mechanism_enabled and not mechanism_python.is_file():
+        raise FileNotFoundError(
+            f"mechanism sidecar Python runtime is missing: {mechanism_python}"
+        )
 
     configured_backends = tuple(str(value) for value in matrix["backends"])
     backends = tuple(args.backends) if args.backends else configured_backends
@@ -266,6 +412,7 @@ def main() -> None:
     )
     if repetitions <= 0 or not backends or not profiles:
         raise ValueError("matrix requires positive repetitions and nonempty axes")
+    configured_repetitions = int(matrix["repetitions"])
 
     environment = os.environ.copy()
     environment["ROS_LOG_DIR"] = str(PROJECT_ROOT / "logs" / "ros")
@@ -293,7 +440,20 @@ def main() -> None:
                     output_root / backend / profile / f"run_{repetition:02d}"
                 )
                 cell_path = run_dir / "cell.json"
-                existing = None if args.rerun else _passed_cell(cell_path)
+                existing = (
+                    None
+                    if args.rerun
+                    else _validated_passed_cell(
+                        cell_path,
+                        matrix_id=matrix_id,
+                        matrix_sha256=matrix_sha256,
+                        backend=backend,
+                        profile=profile,
+                        repetition=repetition,
+                        calibration_id=calibration_id,
+                        artifacts=artifacts,
+                    )
+                )
                 if existing is not None:
                     print(
                         f"SKIP passed {backend}/{profile}/run_{repetition:02d}",
@@ -342,6 +502,7 @@ def main() -> None:
                 driver_path = run_dir / "driver.json"
                 policy_diagnostics_path = run_dir / "policy_diagnostics.json"
                 gate_path = run_dir / "gate.json"
+                mechanism_path = run_dir / "mechanism_sidecar.json"
                 evaluation_returncode: int | None = None
                 if trace_path.is_file() and driver_path.is_file():
                     evaluation = subprocess.run(
@@ -357,6 +518,8 @@ def main() -> None:
                             str(trace_path),
                             "--driver",
                             str(driver_path),
+                            "--config",
+                            artifacts["stability_config_path"],
                             "--output",
                             str(gate_path),
                         ),
@@ -365,6 +528,35 @@ def main() -> None:
                         check=False,
                     )
                     evaluation_returncode = evaluation.returncode
+
+                mechanism_returncode: int | None = None
+                if mechanism_enabled and policy_diagnostics_path.is_file():
+                    mechanism_path.unlink(missing_ok=True)
+                    mechanism = subprocess.run(
+                        (
+                            str(mechanism_python),
+                            str(
+                                PROJECT_ROOT
+                                / "scripts"
+                                / "validation"
+                                / "build_slam_confidence_mechanism_sidecar.py"
+                            ),
+                            "--diagnostics",
+                            str(policy_diagnostics_path),
+                            "--checkpoint",
+                            artifacts["checkpoint_path"],
+                            "--agent-config",
+                            artifacts["agent_config_path"],
+                            "--output",
+                            str(mechanism_path),
+                            "--action-atol",
+                            str(mechanism_action_atol),
+                        ),
+                        cwd=PROJECT_ROOT,
+                        env=environment,
+                        check=False,
+                    )
+                    mechanism_returncode = mechanism.returncode
 
                 driver = (
                     _load_document(driver_path) if driver_path.is_file() else {}
@@ -386,16 +578,31 @@ def main() -> None:
                     if gate_path.is_file()
                     else {}
                 )
+                mechanism_gate = (
+                    _load_document(mechanism_path).get("gate", {})
+                    if mechanism_path.is_file()
+                    else (
+                        {"passed": False, "failures": ["mechanism sidecar is missing"]}
+                        if mechanism_enabled
+                        else {"passed": True, "enabled": False}
+                    )
+                )
                 passed = bool(
                     launch.returncode == 0
                     and evaluation_returncode == 0
                     and driver.get("passed")
                     and stability_gate.get("passed")
                     and policy_gate.get("passed")
+                    and (
+                        not mechanism_enabled
+                        or mechanism_returncode == 0
+                    )
+                    and mechanism_gate.get("passed")
                 )
                 cell = {
                     "schema_version": 1,
-                    "matrix_id": matrix["matrix_id"],
+                    "matrix_id": matrix_id,
+                    "matrix_sha256": matrix_sha256,
                     "backend": backend,
                     "expected_calibration_id": calibration_id,
                     "deskew_mode": "native",
@@ -404,10 +611,12 @@ def main() -> None:
                     "artifacts": artifacts,
                     "launch_returncode": launch.returncode,
                     "evaluation_returncode": evaluation_returncode,
+                    "mechanism_returncode": mechanism_returncode,
                     "driver_passed": bool(driver.get("passed")),
                     "slam_confidence": driver.get("slam_confidence"),
                     "stability_gate": stability_gate,
                     "policy_diagnostics_gate": policy_gate,
+                    "mechanism_sidecar_gate": mechanism_gate,
                     "passed": passed,
                 }
                 _write_json(cell_path, cell)
@@ -424,14 +633,19 @@ def main() -> None:
     expected_count = len(backends) * len(profiles) * repetitions
     summary = {
         "schema_version": 1,
-        "matrix_id": matrix["matrix_id"],
+        "matrix_id": matrix_id,
         "matrix_path": str(matrix_path),
-        "matrix_sha256": _sha256(matrix_path),
+        "matrix_sha256": matrix_sha256,
         "output_root": str(output_root),
         "artifacts": artifacts,
         "backends": list(backends),
         "profiles": list(profiles),
         "repetitions": repetitions,
+        "selection_is_full_matrix": bool(
+            backends == configured_backends
+            and profiles == configured_profiles
+            and repetitions == configured_repetitions
+        ),
         "expected_run_count": expected_count,
         "completed_run_count": len(results),
         "passed_run_count": len(results) - len(failed),
@@ -439,7 +653,14 @@ def main() -> None:
         "passed": not failed and len(results) == expected_count,
         "runs": results,
     }
-    summary_path = output_root / "matrix_summary.json"
+    summary_path = output_root / _summary_filename(
+        configured_backends=configured_backends,
+        configured_profiles=configured_profiles,
+        configured_repetitions=configured_repetitions,
+        backends=backends,
+        profiles=profiles,
+        repetitions=repetitions,
+    )
     _write_json(summary_path, summary)
     print(
         json.dumps(

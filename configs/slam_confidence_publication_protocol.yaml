@@ -1,0 +1,270 @@
+schema_version: 1
+protocol_id: slam-confidence-publication-v1
+status: preregistered_not_ready_for_collection
+date: 2026-08-17
+formal_collection_authorized: false
+
+scope:
+  claim: confidence_conditioned_learned_gait_adaptation_with_safety_structure
+  causal_chain:
+    - confidence_decreases
+    - gait_changes
+    - body_motion_and_foot_slip_decrease
+    - slam_tracking_survival_increases
+    - task_efficiency_is_retained
+  replay_is_closed_loop_evidence: false
+  promotion_decision_in_scope: false
+
+frozen_artifacts:
+  formal_model1450:
+    policy: exported/anymal_d_locomotion_v1/recovery_v0.4.0/policy.onnx
+    policy_sha256: 721a918533cd00e605cf6edfcd8bf8bba9cbd56f26e22c2eda26604f03ee54c0
+    checkpoint: checkpoints/anymal_d_locomotion_v1/recovery_v0.4.0/model_1450.pt
+    checkpoint_sha256: 3bbaff6247fdb59808af42a59e2ec9477c047531a3e2aa6cd0df6208a796feee
+  model48:
+    policy: exported/anymal_d_locomotion_slam_confidence_phase_separated_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/policy.onnx
+    checkpoint: logs/rsl_rl/anymal_d_locomotion_slam_confidence_constrained_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/model_48.pt
+    checkpoint_sha256: 888bc682eda65e2c427eccd445d8b9cb1e787635b5da86e6fa8a85b83fda4fa0
+    policy_sha256: c8225b05a2b8fd1a35fb919593a68326b0ddac3d955b69191708def5d071f4a5
+    intent_blend_max: 0.79
+    gait_delta_safe_scale_power: 10.0
+  velocity_estimator15:
+    metadata: exported/proprioceptive_velocity_estimator/v1/clean_lateral_transition_candidate_15/velocity_estimator_metadata.json
+    metadata_sha256: 041c9f8a85d220120f6ed5de41bb8e58f7f95a03f3a03c9121898af18c25a1ff
+  arm_b_deterministic_supervisor:
+    status: provisional_regenerate_after_clean_commit
+    policy: exported/anymal_d_locomotion_slam_confidence_publication_v1/arm_b_model1450_deterministic_supervisor/policy.onnx
+    policy_sha256: 9f485d39aa02d65672082520edf68b49d9308b66d2e2ac382523691f4204ec8b
+    metadata: exported/anymal_d_locomotion_slam_confidence_publication_v1/arm_b_model1450_deterministic_supervisor/policy_metadata.yaml
+    metadata_sha256: e67d09cbe00edf0e589b09dcdfd8f7d9dae36c18c648dbc1c5fd1548e9483cd4
+  arm_d_intent_only:
+    status: provisional_regenerate_after_clean_commit
+    policy: exported/anymal_d_locomotion_slam_confidence_publication_v1/arm_d_model48_intent_only/policy.onnx
+    policy_sha256: 72c9e534a146c27d3ab99d005b042472b73598d1efb4ed7920dbaa772b045a0d
+    metadata: exported/anymal_d_locomotion_slam_confidence_publication_v1/arm_d_model48_intent_only/policy_metadata.yaml
+    metadata_sha256: f02b1f331effd53263cffe76fe93f048e86d26f6b82c8618129e515081ee0fb9
+  confidence:
+    fastlio2:
+      calibration_id: native-v1-1e6cf8347be1
+      deskew_mode: native
+    liosam:
+      calibration_id: native-v1-edc098b0bd98
+      deskew_mode: native
+
+policy_arms:
+  A:
+    label: model1450_no_confidence
+    actor: formal_model1450
+    confidence_consumption: none
+    deterministic_supervisor: false
+    learned_gait_coordinates_applied: false
+  B:
+    label: model1450_deterministic_supervisor
+    actor: formal_model1450
+    confidence_consumption: deterministic_safe_command_only
+    deterministic_supervisor: true
+    learned_gait_coordinates_applied: false
+  C:
+    label: model48_estimator15
+    actor: model48
+    confidence_consumption: intent_and_structured_gait
+    deterministic_supervisor: embedded_safe_command_reference
+    learned_gait_coordinates_applied: true
+  D:
+    label: model48_intent_only
+    actor: model48
+    confidence_consumption: intent_only
+    deterministic_supervisor: embedded_safe_command_reference
+    learned_gait_coordinates_applied: false
+    ablation: force_applied_structured_delta_to_zero_after_computing_coordinates
+
+common_runtime:
+  velocity_estimator: velocity_estimator15
+  policy_rate_hz: 50.0
+  confidence_receipt_watchdog_s: 0.15
+  backend_deskew_mode: native
+  gui: false
+  rviz: false
+  simulator_ground_truth_role: offline_metrics_only
+  formal_model_replaced: false
+  deterministic_safe_scale: "tracking_valid * clip((confidence - 0.2) / 0.8, 0, 1)"
+
+live_matrix:
+  purpose: closed_loop_policy_and_backend_causal_evidence
+  scene: assets/maps/factory/Factory_Layout.usd
+  initial_pose: {x_m: 0.0, y_m: -18.0, yaw_rad: 0.0}
+  simulation_steps: 4000
+  backends: [fastlio2, liosam]
+  policy_arms: [A, B, C, D]
+  profiles:
+    - lateral_right_1_5
+    - curve_1_5_left_1_0
+    - curve_1_5_right_1_0
+    - warehouse_mapping_stress
+  perception_conditions:
+    native:
+      lidar_modification: none
+    gradual_support_loss:
+      lidar_modification: deterministic_sensor_order_preserving_ring_fov_density_loss
+      timeline_s:
+        healthy: 3.0
+        ramp_down: 1.5
+        low_support_hold: 4.5
+        recovery: 3.0
+      minimum_support_fraction: 0.001
+      after_recovery: full_support_until_profile_end
+      interpretation: controlled_support_loss_not_generic_lidar_degradation
+  paired_block_ids: [43, 44, 45, 46, 47]
+  simulation_seed_equals_paired_block_id: true
+  repetitions_per_cell: 5
+  policy_order: seeded_balanced_latin_square_within_backend_profile_condition
+  expected_run_count: 320
+
+replay_matrix:
+  purpose: matched_input_backend_and_measurement_reproducibility
+  source: every_accepted_live_raw_sensor_bag
+  backends: [fastlio2, liosam]
+  repetitions_per_backend_bag: 2
+  policy_counterfactual_role: action_response_only_no_physics_or_slam_survival_claim
+  replay_must_not_be_used_for_closed_loop_gait_causality: true
+
+readiness_gates:
+  - id: clean_identifiable_baseline
+    requirement: root_project_owned_tracked_files_clean_and_commit_matches_manifest
+  - id: protected_upstream_dirty_inventory
+    requirement: protected_nested_dirty_hashes_recorded_and_excluded_from_headless_runtime
+  - id: arm_artifact_identity
+    requirement: all_four_arms_have_hash_locked_metadata_and_export_parity
+  - id: common_estimator_identity
+    requirement: every_arm_uses_estimator15_with_matching_metadata_sha256
+  - id: mechanism_sidecar
+    requirement: offline_sidecar_reconstructs_action_and_logs_safe_scale_intent_raw_and_applied_gait_coordinates
+  - id: intent_only_ablation
+    requirement: arm_D_action_equals_model48_intent_action_and_structured_delta_is_exact_zero
+  - id: supervisor_parity
+    requirement: arm_B_safe_scale_and_safe_command_match_model48_reference_formula
+  - id: gradual_live_challenge
+    requirement: live_sensor_order_preserving_challenge_matches_frozen_timeline_without_ground_truth_input
+  - id: route_and_initial_state
+    requirement: command_trace_initial_pose_duration_seed_and_reset_handshake_match_within_each_paired_block
+  - id: time_alignment
+    requirement: all_required_topics_use_simulation_time_and_pass_monotonicity_rate_and_gap_checks
+  - id: offline_usability_label
+    requirement: future_horizon_ground_truth_label_is_generated_only_after_run_for_false_stop_analysis
+  - id: map_consistency_evaluator
+    requirement: factory_reference_surface_metric_passes synthetic_split_and_no_split_validation
+  - id: smoke_before_formal
+    requirement: one_excluded_smoke_block_completes_all_arms_backends_and_conditions
+  - id: sample_size_justification
+    requirement: simulation_based_power_or_precision_analysis_confirms_or_increases_five_paired_blocks_before_first_formal_run
+
+metric_definitions:
+  safety:
+    fall: any_hard_termination_or_base_height_below_frozen_threshold
+    base_contact: base_contact_force_above_zero_and_force_time_integral
+    foot_slip_event: stance_force_at_least_50N_and_tangential_speed_at_least_0.6mps_for_two_ticks
+    foot_slip_continuous: stance_weighted_tangential_speed_rms_and_integral
+    body_tilt: "sqrt(roll^2 + pitch^2), RMS/p95/max"
+    roll_pitch_rate: "sqrt(wx^2 + wy^2), RMS/p95/max"
+    action_rate: "norm(raw_action[t] - raw_action[t-1]) / dt, RMS/p95"
+  efficiency:
+    normalized_progress: along_reference_route_progress_divided_by_reference_length
+    completion: normalized_progress_at_least_0.95_without_hard_failure
+    completion_time: first_time_completion_is_sustained_for_0.5s
+    moving_speed: ground_truth_planar_speed_while_requested_speed_at_least_0.25mps
+    stopped_fraction: requested_speed_at_least_0.25mps_and_actual_speed_below_0.10mps
+    confidence_stop_fraction: requested_speed_at_least_0.25mps_and_safe_scale_below_0.20
+    false_stop_fraction: confidence_stop_samples_with_offline_future_usability_label_equal_to_one
+    recovery_latency: sustained_confidence_recovery_to_sustained_50pct_requested_speed
+  slam:
+    tracking_survival: time_to_first_invalid_or_lost_interval_sustained_for_0.25s
+    tracking_valid_fraction: valid_duration_divided_by_post_ready_duration
+    ate: initial_se2_aligned_translation_rmse
+    rpe: translation_and_yaw_error_at_1.0s_delta
+    confidence: score_distribution_calibration_id_and_reason_mask
+    map_consistency: reference_surface_distance_p50_p95_and_duplicate_surface_fraction
+  mechanism:
+    - safe_scale
+    - intent_blend
+    - raw_stride_attenuation
+    - applied_stride_attenuation
+    - crouch
+    - stance_width
+    - action_smoothing
+    - structured_delta_l2
+
+primary_contrasts:
+  - {id: learned_total_value, treatment: C, control: B}
+  - {id: learned_gait_value, treatment: C, control: D}
+  - {id: deterministic_supervisor_value, treatment: B, control: A}
+  - {id: backend_interaction, factor: backend, contrasts: [C_vs_B, C_vs_D]}
+
+confirmatory_endpoints:
+  population: gradual_support_loss_live_runs
+  learned_gait_contrast: C_vs_D
+  endpoints:
+    - stance_weighted_foot_slip_rms_mps
+    - roll_pitch_rate_rms_radps
+    - tracking_restricted_mean_survival_time_s
+    - normalized_progress_per_elapsed_second
+  evidence_rule:
+    mechanism: applied_gait_coordinates_are_nonzero_during_degradation
+    safety_direction: C_minus_D_is_below_zero_for_slip_and_roll_pitch_rate
+    survival_direction: C_minus_D_is_above_zero_for_tracking_rmst
+    efficiency_noninferiority_ratio: 0.90
+    uncertainty: report_95pct_intervals_without_post_hoc_threshold_changes
+
+statistics:
+  experimental_unit: accepted_live_run
+  frame_samples_are_independent_replicates: false
+  confidence_level: 0.95
+  bootstrap_resamples: 10000
+  bootstrap_clusters: [paired_block_id, profile]
+  binary_endpoints: paired_risk_difference_with_cluster_bootstrap_interval
+  continuous_endpoints: paired_median_and_mean_difference_with_cluster_bootstrap_interval
+  survival_endpoint: restricted_mean_survival_time_with_run_level_censoring
+  secondary_multiplicity: holm
+  report_effect_sizes_even_when_interval_crosses_zero: true
+  safety_efficiency_pareto:
+    efficiency_value: normalized_progress_per_elapsed_second
+    safety_axes:
+      - hard_failure_risk
+      - stance_weighted_foot_slip_rms_mps
+      - roll_pitch_rate_rms_radps
+    dominated_points_must_be_shown: true
+
+run_disposition:
+  infrastructure_failure: rerun_same_block_id_and_retain_failed_attempt_manifest
+  policy_or_slam_failure: retain_as_outcome_do_not_rerun_for_replacement
+  operator_abort: exclude_only_with_predeclared_safety_or_external_host_reason
+  timeout: retain_and_censor_time_to_event_metrics_at_timeout
+  efficacy_early_stopping: forbidden
+  safety_early_stopping: allowed_and_must_be_reported
+
+data_contract:
+  root: outputs/slam_confidence_publication_v1
+  raw_bags: source_bags
+  live_runs: live
+  replays: replay
+  derived: derived
+  immutable_manifest: manifest.json
+  required_identity:
+    - root_git_commit
+    - root_git_status
+    - nested_repository_commits_and_dirty_hashes
+    - protocol_sha256
+    - policy_metadata_and_artifact_sha256
+    - estimator_metadata_and_artifact_sha256
+    - confidence_backend_calibration_id
+    - launch_arguments
+    - command_trace_sha256
+    - initial_pose
+    - paired_block_id
+    - ros_domain_id
+    - topic_schema_and_rate_summary
+    - raw_bag_sha256
+
+decision_boundary:
+  publication_matrix_required_before_model48_promotion: true
+  physical_anymal_d_required_for_sim_to_real_claim: true
+  model1450_remains_formal: true

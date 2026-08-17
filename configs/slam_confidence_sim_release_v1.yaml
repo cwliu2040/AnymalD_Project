@@ -1,0 +1,89 @@
+schema_version: 1
+release_id: slam-confidence-sim-v1
+status: engineering_candidate_not_promoted
+branch: exp/slam-fastlio2
+main_branch_mutation_allowed: false
+formal_default_switch_authorized: false
+physical_anymal_d_claim_allowed: false
+
+rollback:
+  release: recovery-v0.4.0-model1450
+  policy_path: exported/anymal_d_locomotion_v1/recovery_v0.4.0/policy.onnx
+  policy_sha256: 721a918533cd00e605cf6edfcd8bf8bba9cbd56f26e22c2eda26604f03ee54c0
+
+common_runtime:
+  velocity_estimator_metadata_path: exported/proprioceptive_velocity_estimator/v1/clean_lateral_transition_candidate_15/velocity_estimator_metadata.json
+  velocity_estimator_metadata_sha256: 041c9f8a85d220120f6ed5de41bb8e58f7f95a03f3a03c9121898af18c25a1ff
+  velocity_estimator_onnx_sha256: 6216637115c85f240d8305de118de5729d1df87b924dd2bf25d21d42d455288e
+  policy_rate_hz: 50.0
+  policy_odometry_topic: /locomotion/estimated_odom
+  policy_inference_trigger: estimator_joint_state
+  confidence_receipt_timeout_s: 0.15
+  native_confidence_artifacts:
+    fastlio2: native-v1-1e6cf8347be1
+    liosam: native-v1-edc098b0bd98
+
+arms:
+  A:
+    role: rollback_and_confidence_unaware_control
+    observation_dimension: 48
+    policy_path: exported/anymal_d_locomotion_v1/recovery_v0.4.0/policy.onnx
+    policy_sha256: 721a918533cd00e605cf6edfcd8bf8bba9cbd56f26e22c2eda26604f03ee54c0
+    metadata_path: exported/anymal_d_locomotion_v1/recovery_v0.4.0/policy_metadata.yaml
+    metadata_sha256: 436ffc022ee6a77526e3fc7f69047bb486bfa4d3de940ba3995879b58f043667
+  B:
+    role: deterministic_confidence_supervisor_control
+    observation_dimension: 51
+    policy_path: exported/anymal_d_locomotion_slam_confidence_publication_v1/arm_b_model1450_deterministic_supervisor/policy.onnx
+    policy_sha256: 9f485d39aa02d65672082520edf68b49d9308b66d2e2ac382523691f4204ec8b
+    metadata_path: exported/anymal_d_locomotion_slam_confidence_publication_v1/arm_b_model1450_deterministic_supervisor/policy_metadata.yaml
+    metadata_sha256: e67d09cbe00edf0e589b09dcdfd8f7d9dae36c18c648dbc1c5fd1548e9483cd4
+    parity_path: exported/anymal_d_locomotion_slam_confidence_publication_v1/arm_b_model1450_deterministic_supervisor/export_parity.json
+  C:
+    role: model48_intent_and_structured_gait_candidate
+    observation_dimension: 51
+    checkpoint_path: logs/rsl_rl/anymal_d_locomotion_slam_confidence_constrained_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/model_48.pt
+    checkpoint_sha256: 888bc682eda65e2c427eccd445d8b9cb1e787635b5da86e6fa8a85b83fda4fa0
+    checkpoint_curation_required: true
+    policy_path: exported/anymal_d_locomotion_slam_confidence_phase_separated_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/policy.onnx
+    policy_sha256: c8225b05a2b8fd1a35fb919593a68326b0ddac3d955b69191708def5d071f4a5
+    metadata_path: exported/anymal_d_locomotion_slam_confidence_phase_separated_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/policy_metadata.yaml
+    metadata_sha256: 14d47b0e16249394257afea2f29a2b7b04f70a4becf8a73109a796d0aabce5c9
+    parity_path: docs/validation/slam_confidence_phase_separated_model48_export_parity.json
+  D:
+    role: model48_intent_only_ablation
+    observation_dimension: 51
+    policy_path: exported/anymal_d_locomotion_slam_confidence_publication_v1/arm_d_model48_intent_only/policy.onnx
+    policy_sha256: 72c9e534a146c27d3ab99d005b042472b73598d1efb4ed7920dbaa772b045a0d
+    metadata_path: exported/anymal_d_locomotion_slam_confidence_publication_v1/arm_d_model48_intent_only/policy_metadata.yaml
+    metadata_sha256: f02b1f331effd53263cffe76fe93f048e86d26f6b82c8618129e515081ee0fb9
+    parity_path: exported/anymal_d_locomotion_slam_confidence_publication_v1/arm_d_model48_intent_only/export_parity.json
+
+artifact_state:
+  B_and_D_generated_from_dirty_worktree: true
+  action: regenerate_after_release_code_is_committed_before_formal_collection
+
+promotion_gates:
+  - id: clean_hash_locked_artifacts
+    status: pending_clean_commit_and_regeneration
+  - id: mechanism_sidecar
+    status: implementation_passed_one_real_liosam_trace
+  - id: common_estimator_replay_with_foot_contacts
+    status: pending
+  - id: engineering_native_matrix
+    requirement: two_backends_five_profiles_three_independent_blocks
+    status: ten_of_ten_single_block_smoke_passed
+  - id: controlled_degradation_recovery_matrix
+    status: pending
+  - id: recovery_v040_regression_suite
+    status: pending_for_model48
+  - id: efficiency_and_false_stop_noninferiority
+    status: pending
+  - id: publication_matrix_and_statistics
+    status: pending
+
+promotion_rule:
+  all_gates_must_pass: true
+  model1450_remains_default_until_explicit_user_approval: true
+  branch_only_release: true
+  merge_to_main: forbidden

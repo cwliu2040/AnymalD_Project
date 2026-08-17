@@ -11,12 +11,17 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
 
 - 專案根目錄：`/home/ros/anymal_locomotion`
 - 目前 branch：`exp/slam-fastlio2`。
+- 使用者於2026-08-17再次確認：`main`保存已完成、供國科會計畫使用的既有LIO-SAM成果，
+  model48＋estimator15的正式化與論文工作只在`exp/slam-fastlio2`進行；不得為此合併或修改
+  `main`。近期目標是第一級simulation deployment release及可發表的完整數據鏈，不宣稱實體
+  ANYmal-D qualification。
 - `main` 與 `origin/main` 仍停在 `98b43dd`（`驗證：完成 reset、地圖品質與
   閉環驗證`）；benchmark base branch
   `benchmark/slam-liosam-fastlio2` 與目前實驗 branch 都以
   `fee8c9f 建立 SLAM backend 比較基線` 為共同基礎。
-- 本次交接前 `exp/slam-fastlio2` 的本機與遠端baseline均為
-  `8392743 加入雙 SLAM backend 互動驗證入口`；其parent
+- 本次交接後 `exp/slam-fastlio2` 的本機與遠端baseline均為
+  `7a5675a 修正 LIO-SAM 信心誤判並完成互動驗證`；其前一個commit為
+  `8392743 加入雙 SLAM backend 互動驗證入口`，再前一個parent為
   `0d38247 完成 confidence-aware PPO 與狀態估計候選`，再前一個commit為
   `fbee219 更新 SLAM confidence 對話交接狀態`，均已push。使用者確認
   `exp/slam-fastlio2`作為完整SLAM confidence開發線，因此51-D observation/training、
@@ -36,12 +41,20 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   第二輪 bounded safe-command `model_19` 已通過五個模擬confidence-state profiles與
   export parity，但兩backend live screening在LIO-SAM `forward_1_5`失敗，因此不可promotion，
   尚未接入或取代正式policy。
-  目前working tree另含尚未commit的C-v4至C-v10 confidence-conditioned PPO實作、
-  estimator-closed-loop訓練接線、測試與驗證文件；C-v10模擬候選已通過固定behavior及
-  gait-value gate、export parity與FAST/LIO各一個最難右移live cell，但尚未完成兩backend
-  全矩陣或取代正式policy。
+  C-v4至C-v10 confidence-conditioned PPO實作、estimator-closed-loop訓練接線、測試、
+  驗證文件與interactive false-stop修正均已提交並push；C-v10模擬候選已通過固定behavior及
+  gait-value gate、export parity與FAST/LIO完整五方向live matrix，但尚未取代正式policy。
+  本輪另建立publication data-collection protocol，但使用者決定先完善工程實作；尚未執行
+  publication formal runs、未建立B/D deployment artifacts，也未授權promotion。
+- 目前尚未提交的project-owned變更為：
+  `configs/slam_confidence_phase_separated_locomotion_matrix.yaml`、
+  `configs/stability_diagnostics.yaml`、
+  `configs/stability_diagnostics_confidence_aware.yaml`、
+  `scripts/validation/run_slam_confidence_locomotion_matrix.py`、
+  `source/anymal_locomotion/anymal_locomotion/stability_diagnostics.py`、兩個對應測試檔、
+  本文件，以及先前建立但暫緩執行的publication protocol YAML／說明文件。尚未commit或push。
   root `build/`、`install/`、`log/`
-  是未追蹤runtime產物，不納入提交，其他 `logs/`／`outputs/` 實驗
+  與`lidar_type`是未追蹤runtime產物，不納入提交，其他 `logs/`／`outputs/` 實驗
   產物也不提交。
 - 更早的核心修正仍位於歷史 commit，包括：
   `e34f023 修正：改用增量診斷並穩定視窗效能`、
@@ -79,8 +92,9 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   第二輪bounded safe-command候選已通過模擬confidence-state gate；兩backend live screening
   的FAST arm通過、LIO arm失敗。後續以獨立proprioceptive velocity estimator關閉LIO
   policy-state問題，並完成C-v10 structured-gait PPO候選、export parity及兩backend最難
-  右移live cell；下一步是人工LIO操作、兩backend完整replay/live qualification與
-  safety-efficiency trade-off量化，而不是繼續外部限速器或盲目reward sweep。
+  右移live cell，人工LIO操作與兩backend完整五方向live matrix也已完成。使用者目前要求先
+  完善工程實作，再依凍結publication protocol補齊replay、readiness gates與
+  safety-efficiency trade-off量化；不繼續外部限速器或盲目reward sweep。
 - 不為每個「SLAM 方法 × PPO 版本」建立永久 branch。先在共用介面 branch
   定義 backend selector、共同輸出與 benchmark，再合併穩定的中性基礎回
   `main`。每個侵入性較大的 SLAM 實作可暫時使用獨立實驗 branch，例如
@@ -1240,16 +1254,17 @@ Checkpoint：
    reward-only、不安全short-credit-path與外部gait-mode候選均已retire；bounded safe-command
    `model_19`已通過五profile模擬behavior qualification與export parity但不具gait value。
    C-v10 phase-separated structured-gait model48現已通過固定512-env behavior、
-   gait-value A/B、export parity及兩backend各一個live右移cell；仍是實驗deployment
+   gait-value A/B、export parity及兩backend完整五方向live matrix；仍是實驗deployment
    candidate，不是正式policy。
 5. `model_19`兩backend minimum screening為FAST通過、LIO失敗。LIO
    policy-state quality contract、evaluator與high-rate native predictor candidate已實作；
    direct age/accuracy/outlier為3/3 pass，但正式model1450 locomotion與stopped-tail action
    sensitivity均為0/3，故整體contract仍fail。下一個架構gate是獨立於SLAM的policy-grade
    proprioceptive body-velocity estimator已由candidate08在模擬中關閉，並已放進PPO rollout
-   observation loop。人工LIO操作現已完成，下一個gate是用相同
-   estimator/confidence artifacts跑完FAST/LIO replay及live matrix，並執行凍結protocol的
-   safety-efficiency／false-stop／SLAM survival量化；通過前不得取代model1450。
+   observation loop。人工LIO操作與相同estimator/confidence artifacts的FAST/LIO五方向
+   live matrix現已完成；replay與凍結protocol的safety-efficiency／false-stop／SLAM
+   survival量化仍未執行，且使用者目前先要求完善工程實作。完整publication與實體gate
+   通過前不得取代model1450。
    實體 ANYmal-D
    sensor extrinsic、
    low-level interface；IMU frame contract
@@ -1262,7 +1277,7 @@ Checkpoint：
 GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfactual；
 後續結論仍必須保留 Factory/contact history dependency。
 
-## Next diagnostic gate
+## Latest validation state and remaining gates
 
 ### Model48 deployment candidate v2 qualification (2026-08-13)
 
@@ -1298,6 +1313,68 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
 - 此結果仍是experimental deployment candidate；正式 recovery v0.4.0 model1450未被
   取代，實體ANYmal-D qualification與包含新 `/foot_contacts` 的bag replay仍未完成。
 
+### Model48 two-backend full live matrix (2026-08-17)
+
+- `run_slam_confidence_locomotion_matrix.py`原本有三個結果可信度問題：phase matrix未指定
+  `--output-root`時會寫入model19預設目錄；subset smoke會覆寫完整
+  `matrix_summary.json`；passed cell只看`passed=true`，未核對matrix、calibration及artifact
+  identity。現已改為由安全的`matrix_id`推導輸出目錄、subset使用selection hash命名summary，
+  並以matrix SHA、backend/profile/repetition、calibration、policy/estimator/parity及stability
+  config SHA共同決定可否skip舊cell。
+- 通用stability gate仍保留原始command tracking門檻。Model48 phase-separated matrix另明確
+  選用`configs/stability_diagnostics_confidence_aware.yaml`：termination、truncation、finite
+  samples及instability的硬安全門檻完全相同；raw-command tracking仍保存在summary，但因
+  confidence-conditioned policy在low confidence時本來就會主動偏離raw command，故不作此
+  matrix的pass/fail條件，gate輸出明示`tracking_gate_applied=false`。這不是放寬安全門檻，
+  也不宣稱任務效率已驗證。
+- 修正前第一次完整執行FAST五項全過，LIO forward只因`vx_mps_mae=0.940452>0.2`被誤判；
+  該run為0 termination/truncation、`no_instability`、policy watchdog 0，confidence確實在前進
+  時退化並觸發model48降速。新語意先對同一trace重算通過，再重新執行完整matrix。
+- 最終matrix位於
+  `logs/slam_confidence_locomotion_matrix/phase-separated-model48-intent079-estimator15-v2/`，
+  matrix SHA為`351895fbc3faecb633f802813257ed540bde78608131942db3cd8184451336f7`；FAST-LIO2與
+  LIO-SAM的forward/left/right/backward/curve共10/10通過。每格driver、硬安全、51-D policy
+  consumption與confidence identity/calibration checks均通過，policy watchdog timeout皆0。
+  這完成目前simulation live backend implementation matrix，但仍不是publication因果證據、
+  實體ANYmal-D qualification或promotion授權。
+- 本輪相關core/integration/contract/estimator/stability/matrix測試共76項通過，三個修改的
+  Python入口亦通過`py_compile`，`git diff --check`通過。Matrix teardown後FAST-LIO2或
+  LIO-SAM部分upstream程序仍會被launch以SIGTERM結束並印出`process has died ... -15`；
+  benchmark host、driver、policy與launch總回傳碼皆成功，因此不影響10/10結論，但屬於可再
+  整理的project-owned launch shutdown噪音，且不可藉此修改或還原nested upstream。
+- 使用者已明確決定publication收數延後。近期工程優先順序是保持正式model1450不變，先完善
+  deployment／qualification tooling；仍缺包含新`/foot_contacts`契約的bag replay、實體
+  ANYmal-D driver/SDK、extrinsic與safety controller整合。Publication B/D artifacts、正式
+  repetitions與因果統計等到實作穩定後再做。
+
+### Branch-only simulation release and publication readiness (2026-08-17)
+
+- 使用者其後將目標明確提升為：仍只在`exp/slam-fastlio2`上，完成第一級正式simulation
+  deployment release，並完善到可執行publication A/B/C/D收數與產生數據支持；`main`不動。
+  在所有promotion gates通過且使用者再次核准切換前，model1450仍是branch內正式default與
+  rollback，formal publication collection也尚未開始。
+- 新增`configs/slam_confidence_sim_release_v1.yaml`，固定branch-only／no-main-merge邊界、
+  model1450 rollback、共同estimator15與confidence artifacts、A/B/C/D identity及promotion
+  gates。C checkpoint目前仍位於`logs/`，必須在clean commit前curate到`checkpoints/`；不得把
+  現況誤寫成已promotion。
+- 新增B/D可執行artifact exporter。B是frozen model1450 backbone在deterministic safe command
+  上的51-D control；D是model48 learned intent-only，structured gait delta精確為零。暫定輸出
+  位於`exported/anymal_d_locomotion_slam_confidence_publication_v1/`，B/D ONNX SHA分別為
+  `9f485d39...ec8b`與`72c9e534...a0d`；module→ONNX最大誤差分別`2.861e-6`與`5.007e-6`，
+  TorchScript誤差皆0，ROS external ONNX backend 51-D smoke亦通過。因export產生時root worktree
+  尚未clean，metadata明確列為provisional，正式收數前必須在release code commit後重產；新
+  export目錄符合`.gitignore`的`exported/*`，未來提交須明確force-add所需正式產物。
+- 新增offline mechanism sidecar：由實際policy diagnostics observation與model48 checkpoint
+  逐幀重建safe scale、intent blend、raw/applied stride、crouch、stance width、action smoothing、
+  structured-delta L2及A/B/C/D actions，並以live ONNX raw action作一致性gate。實際LIO-SAM
+  `forward_1_5` 735 records全部finite，checkpoint reconstruction對live ONNX最大誤差
+  `7.153e-7`，D structured delta精確為零。
+- Mechanism sidecar已接入locomotion matrix runner：cell identity另綁checkpoint/agent config
+  SHA，sidecar missing、stale、nonzero return code或action reconstruction超差都會使cell失敗。
+  一格excluded LIO-SAM forward integration smoke已通過driver、硬安全、51-D consumption、
+  confidence identity與mechanism gate；selection summary為
+  `matrix_summary.selection-5a19625513cb.json`。此smoke不算正式publication樣本。
+
 ### 2026-08-14 to 2026-08-17 interactive manual observation and publication gate
 
 - LIO-SAM interactive 啟動後已重現一個與定位品質無關的 false stop：開啟官方
@@ -1328,9 +1405,9 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
   旋轉後極小、短暫的點雲錯位，繼續行走後視覺上重新重合。這是人工觀察，尚未由bag或
   map-consistency metric量化；目前FAST-LIO2設定沒有loop closure，因此不可歸因為閉環修正，
   較可能是後續scan-to-map registration與registered-cloud更新造成局部重新對齊。
-- 同一次人工操作主觀感受為：feature不足或confidence下降時policy容易停下，整體控制速度
+- FAST-LIO2同一次人工操作主觀感受為：feature不足或confidence下降時policy容易停下，整體控制速度
   偏慢。這證明fail-closed鏈路有介入，但是否過度保守尚未量化；不可只憑主觀操作promote或
-  否定研究方向。LIO-SAM interactive manual arm尚未執行。
+  否定研究方向。LIO-SAM interactive manual arm其後亦已完成，結果如上所述。
 - 論文必要的新gate是安全性與效率的Pareto比較，而非只報告跌倒率。至少比較
   confidence-unaware model1450、model1450＋相同deterministic confidence supervisor、
   confidence-aware model48三組；固定相同backend／route／command／seed，記錄fall/base
@@ -1343,6 +1420,13 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
   stride/crouch/stance-width/smoothing coordinates，證明`confidence下降→步態改變→機身晃動
   /foot slip下降→SLAM survival提高→仍保有效率`。現有simulation gait-value A/B是支持證據，
   但不能取代真實backend closed-loop重複實驗與confidence interval。
+- 2026-08-17已建立第一版凍結protocol：機讀設定為
+  `configs/slam_confidence_publication_protocol.yaml`，說明為
+  `docs/validation/slam_confidence_publication_protocol.md`。Live matrix固定A/B/C/D四arms、
+  兩backend、四條route、native／controlled-support-loss兩conditions與五個paired blocks；
+  replay明確只作matched-input backend／量測可重現性，不能冒充closed-loop gait causality。
+  正式收數仍未授權；需先完成B/D hash-locked artifacts、mechanism sidecar、live gradual
+  challenge、false-stop label、map-consistency evaluator與完整excluded smoke block。
 
 ### Proprioceptive estimator and gait-value A/B (2026-08-13)
 
@@ -1474,8 +1558,8 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
   Isaac-runtime skips；`git diff --check`通過。機讀報告在
   `docs/validation/slam_confidence_phase_separated_model48_{behavior,gait_value}.json`，詳細因果
   與失敗候選見`docs/validation/slam_confidence_intent_gait_v1.md`。Export parity與
-  FAST/LIO各一個最難右移live cell已通過；尚未完成完整backend matrix、正式promotion、
-  commit或push，正式policy仍是recovery v0.4.0 model1450。
+  FAST/LIO完整五方向live matrix已通過；尚未完成正式promotion、commit或push，正式policy
+  仍是recovery v0.4.0 model1450。
 
 2026-08-13 已完成第一版 proprioceptive velocity gate。Project-owned v1 契約固定
 50 Hz、20-step／0.4 s history、每步 37-D：IMU angular velocity／linear
@@ -1502,9 +1586,8 @@ teacher變體均已retire。Bounded safe-command `model_19`保有iteration-0 hea
 通過五profile behavior qualification與同checkpoint export parity。兩backend minimum live
 screening結果為FAST pass、LIO fail。LIO policy-state contract現已freeze並實作：分離的高頻
 native predictor讓direct state quality達3/3，但model1450停止尾端stability與action sensitivity
-仍0/3；pose regression arm也已明確失敗並移除。因此下一個gate不再微分／平滑SLAM mapping
-pose，而是接入並qualification獨立的proprioceptive locomotion state estimator；之前不得跑
-剩餘matrix或promote候選。
+仍0/3；pose regression arm也已明確失敗並移除。獨立proprioceptive locomotion state
+estimator現已接入model48並通過兩backend完整live matrix；仍不得據此promote候選。
 Recovery v0.4.0仍是正式policy。
 
 Recovery v0.5 的 `curve_3_0_left_0_5 <= 0.2` 仍是未來 candidate 的必要

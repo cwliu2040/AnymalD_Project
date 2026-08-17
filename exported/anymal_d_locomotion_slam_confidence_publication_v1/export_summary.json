@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "kind": "slam_confidence_publication_arm_exports",
+  "passed": true,
+  "arms": [
+    {
+      "schema_version": 1,
+      "kind": "slam_confidence_publication_arm_export",
+      "arm": "B",
+      "label": "model1450_deterministic_supervisor",
+      "passed": true,
+      "source_checkpoint": "/home/ros/anymal_locomotion/logs/rsl_rl/anymal_d_locomotion_slam_confidence_constrained_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/model_48.pt",
+      "source_checkpoint_sha256": "888bc682eda65e2c427eccd445d8b9cb1e787635b5da86e6fa8a85b83fda4fa0",
+      "artifacts": {
+        "metadata": {
+          "path": "/home/ros/anymal_locomotion/exported/anymal_d_locomotion_slam_confidence_publication_v1/arm_b_model1450_deterministic_supervisor/policy_metadata.yaml",
+          "sha256": "e67d09cbe00edf0e589b09dcdfd8f7d9dae36c18c648dbc1c5fd1548e9483cd4"
+        },
+        "torchscript": {
+          "path": "policy.pt",
+          "sha256": "f05b1a6bf8b0947a57caea06c229c9ebaed5127ecad6c7450d8aa497b0420184",
+          "size_bytes": 178314
+        },
+        "onnx": {
+          "path": "policy.onnx",
+          "sha256": "9f485d39aa02d65672082520edf68b49d9308b66d2e2ac382523691f4204ec8b",
+          "size_bytes": 175896
+        }
+      },
+      "comparisons": {
+        "module_vs_torchscript": {
+          "max_absolute_error": 0.0,
+          "mean_absolute_error": 0.0,
+          "allclose_atol_1e-5": true
+        },
+        "module_vs_onnx": {
+          "max_absolute_error": 2.86102294921875e-06,
+          "mean_absolute_error": 3.950990503653884e-07,
+          "allclose_atol_1e-5": true
+        }
+      },
+      "report_path": "/home/ros/anymal_locomotion/exported/anymal_d_locomotion_slam_confidence_publication_v1/arm_b_model1450_deterministic_supervisor/export_parity.json"
+    },
+    {
+      "schema_version": 1,
+      "kind": "slam_confidence_publication_arm_export",
+      "arm": "D",
+      "label": "model48_intent_only",
+      "passed": true,
+      "source_checkpoint": "/home/ros/anymal_locomotion/logs/rsl_rl/anymal_d_locomotion_slam_confidence_constrained_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/model_48.pt",
+      "source_checkpoint_sha256": "888bc682eda65e2c427eccd445d8b9cb1e787635b5da86e6fa8a85b83fda4fa0",
+      "artifacts": {
+        "metadata": {
+          "path": "/home/ros/anymal_locomotion/exported/anymal_d_locomotion_slam_confidence_publication_v1/arm_d_model48_intent_only/policy_metadata.yaml",
+          "sha256": "f02b1f331effd53263cffe76fe93f048e86d26f6b82c8618129e515081ee0fb9"
+        },
+        "torchscript": {
+          "path": "policy.pt",
+          "sha256": "75b20d248cef949d58eb655dfd2f2db777f65cd70a3245d7b6a3c6c030c134f9",
+          "size_bytes": 221372
+        },
+        "onnx": {
+          "path": "policy.onnx",
+          "sha256": "72c9e534a146c27d3ab99d005b042472b73598d1efb4ed7920dbaa772b045a0d",
+          "size_bytes": 212285
+        }
+      },
+      "comparisons": {
+        "module_vs_torchscript": {
+          "max_absolute_error": 0.0,
+          "mean_absolute_error": 0.0,
+          "allclose_atol_1e-5": true
+        },
+        "module_vs_onnx": {
+          "max_absolute_error": 5.0067901611328125e-06,
+          "mean_absolute_error": 3.566580346614501e-07,
+          "allclose_atol_1e-5": true
+        }
+      },
+      "report_path": "/home/ros/anymal_locomotion/exported/anymal_d_locomotion_slam_confidence_publication_v1/arm_d_model48_intent_only/export_parity.json"
+    }
+  ]
+}

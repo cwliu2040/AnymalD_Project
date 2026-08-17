@@ -1,0 +1,160 @@
+schema_version: 1.2.0
+robot:
+  name: ANYmal-D
+  reference: official_isaac_sim_5_1_usd
+  usd_uri: https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1/Isaac/IsaacLab/Robots/ANYbotics/ANYmal-D/anymal_d.usd
+  custom_usd_integrated: false
+joint_order:
+- LF_HAA
+- LH_HAA
+- RF_HAA
+- RH_HAA
+- LF_HFE
+- LF_KFE
+- LH_HFE
+- LH_KFE
+- RF_HFE
+- RF_KFE
+- RH_HFE
+- RH_KFE
+observation:
+  dimension: 51
+  concatenation_order: preserved
+  terms:
+  - name: base_linear_velocity
+    offset: 0
+    dimension: 3
+    frame: base
+  - name: base_angular_velocity
+    offset: 3
+    dimension: 3
+    frame: base
+  - name: projected_gravity
+    offset: 6
+    dimension: 3
+    frame: base
+  - name: velocity_command
+    offset: 9
+    dimension: 3
+    frame: base
+    components:
+    - vx
+    - vy
+    - wz
+  - name: relative_joint_position
+    offset: 12
+    dimension: 12
+    order: canonical_joint_order
+  - name: relative_joint_velocity
+    offset: 24
+    dimension: 12
+    order: canonical_joint_order
+  - name: previous_action
+    offset: 36
+    dimension: 12
+    order: canonical_joint_order
+  - name: slam_confidence
+    offset: 48
+    dimension: 3
+    components:
+    - confidence
+    - tracking_valid
+    - normalized_age
+action:
+  dimension: 12
+  type: joint_position
+  order: canonical_joint_order
+  scale: 0.5
+  offset: default_joint_position
+  control_period_s: 0.02
+  default_joint_positions:
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.4
+  - -0.8
+  - -0.4
+  - 0.8
+  - 0.4
+  - -0.8
+  - -0.4
+  - 0.8
+command:
+  semantics: direct_body_velocity
+  components:
+  - vx
+  - vy
+  - wz
+  ros_source: geometry_msgs/msg/Twist
+  limits:
+    vx:
+    - -2.0
+    - 3.0
+    vy:
+    - -1.5
+    - 1.5
+    wz:
+    - -2.0
+    - 2.0
+frames:
+  base_linear_velocity: base
+  base_angular_velocity: base
+  projected_gravity: base
+  velocity_command: base
+  ros_convention: REP-103
+normalization:
+  actor_observation: false
+  critic_observation: false
+versions:
+  isaac_sim: 5.1.0
+  isaac_lab: v2.3.2
+  isaac_lab_commit: 37ddf626871758333d6ed89cf64ad702aef127d0
+checkpoint:
+  path: logs/rsl_rl/anymal_d_locomotion_slam_confidence_constrained_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/model_48.pt
+  sha256: 888bc682eda65e2c427eccd445d8b9cb1e787635b5da86e6fa8a85b83fda4fa0
+artifacts:
+  torchscript:
+    path: policy.pt
+    sha256: f05b1a6bf8b0947a57caea06c229c9ebaed5127ecad6c7450d8aa497b0420184
+    size_bytes: 178314
+  onnx:
+    path: policy.onnx
+    sha256: 9f485d39aa02d65672082520edf68b49d9308b66d2e2ac382523691f4204ec8b
+    size_bytes: 175896
+config_sha256: 7c48743b8850c95b281361adcd94926e7d8de797cdead0a158011e92e264089a
+project_git_commit: 7a5675af564460001ed5bb102b28712cc6e0a078
+policy_extension:
+  architecture: publication_arm_b_deterministic_safe_command
+  confidence_offset: 48
+  legacy_observation_dimension: 48
+  gait_coordinates:
+  - stride_attenuation
+  - crouch
+  - stance_width
+  - action_smoothing
+  gait_parameter_limits:
+  - 0.6000000238418579
+  - 0.30000001192092896
+  - 0.20000000298023224
+  - 0.8999999761581421
+  nonnegative_stride_smoothing: true
+  suppress_gait_when_tracking_invalid: true
+  gait_delta_safe_scale_power: 10.0
+  intent_blend_max: 0.79
+  degraded_stride_envelope:
+    minimum_scale: 0.0
+    confidence_low: 0.2
+    confidence_high: 1.0
+    age_to_confidence_loss_ratio_max: 0.45
+    power: 3.0
+    tracking_valid_only: true
+  runtime_ground_truth_inputs: false
+  resolved_agent_config:
+    path: resolved_agent.yaml
+    sha256: 45bbd223aceade79fb2282e34158383aa57a8883bfdbde30a98963b50143ef6b
+  publication_arm: B
+  publication_label: model1450_deterministic_supervisor
+  learned_gait_coordinates_applied: false
+  structured_delta_forced_exact_zero: false
+  deterministic_supervisor: true

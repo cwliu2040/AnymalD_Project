@@ -3,8 +3,11 @@ matrix_id: phase-separated-model48-intent079-estimator15-v2
 launch_file: fastlio2_locomotion_benchmark.launch.py
 repetitions: 1
 simulation_steps: 4000
+stability_config_path: configs/stability_diagnostics_confidence_aware.yaml
 
 candidate:
+  checkpoint_path: logs/rsl_rl/anymal_d_locomotion_slam_confidence_constrained_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/model_48.pt
+  agent_config_path: exported/anymal_d_locomotion_slam_confidence_phase_separated_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/resolved_agent.yaml
   policy_path: exported/anymal_d_locomotion_slam_confidence_phase_separated_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/policy.onnx
   metadata_path: exported/anymal_d_locomotion_slam_confidence_phase_separated_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/policy_metadata.yaml
   parity_report_path: docs/validation/slam_confidence_phase_separated_model48_export_parity.json
@@ -35,3 +38,7 @@ policy_diagnostics_gate:
   minimum_records: 25
   require_tracking_valid_observation: true
   require_non_fail_closed_observation: true
+
+mechanism_sidecar_gate:
+  enabled: true
+  maximum_action_reconstruction_error: 1.0e-5

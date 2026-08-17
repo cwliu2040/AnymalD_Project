@@ -219,4 +219,45 @@ def test_stability_gate_rejects_tracking_regression() -> None:
         config=config,
     )
     assert not gate["passed"]
+    assert gate["tracking_gate_applied"]
     assert any("vx_mps_mae" in failure for failure in gate["failures"])
+
+
+def test_stability_gate_can_report_tracking_without_gating_it() -> None:
+    samples = [_sample(index * 0.02) for index in range(30)]
+    thresholds = DiagnosticThresholds(
+        stance_min_normal_force_n=50.0,
+        foot_slip_speed_mps=0.6,
+        body_roll_pitch_rad=0.25,
+        min_base_height_m=0.45,
+        consecutive_samples=2,
+        coincidence_window_s=0.1,
+    )
+    summary = summarize_samples(samples, thresholds=thresholds)
+    config = {
+        "schema_version": 1,
+        "hard_gate": {
+            "require_zero_terminations": True,
+            "require_zero_truncations": True,
+            "require_finite_samples": True,
+            "require_no_instability_event": True,
+        },
+        "tracking_gate": {"enabled": False},
+    }
+    gate = evaluate_stability_gate(
+        summary,
+        target=(0.5, 0.0, 0.0),
+        config=config,
+    )
+    assert gate["passed"]
+    assert not gate["tracking_gate_applied"]
+    assert summary["tracking"]["vx_mps"]["target_mean_absolute_error"] > 0.01
+
+    summary["hard_failures"]["terminated_count"] = 1
+    hard_failure = evaluate_stability_gate(
+        summary,
+        target=(0.5, 0.0, 0.0),
+        config=config,
+    )
+    assert not hard_failure["passed"]
+    assert "terminated_count=1" in hard_failure["failures"]

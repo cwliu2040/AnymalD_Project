@@ -18,6 +18,7 @@ hard_gate:
   require_no_instability_event: true
 
 tracking_gate:
+  enabled: true
   minimum_target_samples: 25
   maximum_mean_absolute_error:
     vx_mps: 0.2
