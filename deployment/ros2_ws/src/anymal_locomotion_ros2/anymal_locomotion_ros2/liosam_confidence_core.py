@@ -460,7 +460,11 @@ class LiosamSignalAssembler:
             for stamp_ns in self._first_arrival_ns
             if stamp_ns < completed_stamp_ns
         ]
-        if expired:
+        if any(
+            self._is_mapping_source_candidate(stamp_ns)
+            and not self._bundle_complete(stamp_ns)
+            for stamp_ns in expired
+        ):
             self._record_event(DegradationReason.SIGNAL_MISSING)
         for stamp_ns in expired:
             self._evict_stamp(stamp_ns)
@@ -469,8 +473,21 @@ class LiosamSignalAssembler:
         return [
             stamp_ns
             for stamp_ns in self._first_arrival_ns
-            if not self._bundle_complete(stamp_ns)
+            if self._is_mapping_source_candidate(stamp_ns)
+            and not self._bundle_complete(stamp_ns)
         ]
+
+    def _is_mapping_source_candidate(self, stamp_ns: int) -> bool:
+        """Return whether a stamp represents an expected mapping source.
+
+        Feature extraction runs for scans that map optimization may
+        intentionally skip because of ``mappingProcessInterval``.  Those
+        feature/incremental-only stamps are useful if a mapping source with
+        the same stamp arrives, but they must not independently create a
+        missing mapping bundle.  Native mapping odometry and its canonical
+        adapter output are the two authoritative candidate anchors.
+        """
+        return stamp_ns in self._native or stamp_ns in self._canonical
 
     def _freshness_reason(
         self,
@@ -494,7 +511,11 @@ class LiosamSignalAssembler:
     def _prune_pending(self) -> None:
         while len(self._first_arrival_ns) > self._config.max_pending_bundles:
             stamp_ns = next(iter(self._first_arrival_ns))
-            self._record_event(DegradationReason.SIGNAL_MISSING)
+            if (
+                self._is_mapping_source_candidate(stamp_ns)
+                and not self._bundle_complete(stamp_ns)
+            ):
+                self._record_event(DegradationReason.SIGNAL_MISSING)
             self._evict_stamp(stamp_ns)
 
     def _evict_stamp(self, stamp_ns: int) -> None:

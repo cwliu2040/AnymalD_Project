@@ -135,6 +135,13 @@ bundle_assembly:
       - feature_cloud_info
     conditionally_required_exact_stamp_input: motion_deskew_status
     motion_deskew_required_when: project_motion_deskew_enabled
+    bundle_candidate_anchor:
+      - native_mapping_odometry
+      - canonical_odometry
+    auxiliary_only_stamp_semantics: >-
+      feature or incremental stamps without a mapping candidate are cached
+      for a possible exact join, then silently evicted; upstream
+      mappingProcessInterval intentionally skips some feature scans
     diagnostic_match_timeout_s: 0.20
     timeout_anchor: first_required_input_arrival_logical_time
     timeout_clock: ros_logical_time

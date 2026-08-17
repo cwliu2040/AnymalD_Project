@@ -1,6 +1,6 @@
 # Current project knowledge
 
-更新日期：2026-08-14
+更新日期：2026-08-17
 
 這份文件保存跨對話補充知識，讓 Work locally 模式的新對話在直接閱讀
 repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產物、近期
@@ -15,10 +15,10 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   閉環驗證`）；benchmark base branch
   `benchmark/slam-liosam-fastlio2` 與目前實驗 branch 都以
   `fee8c9f 建立 SLAM backend 比較基線` 為共同基礎。
-- `exp/slam-fastlio2` 的本機與遠端baseline目前都在
-  `fbee219 更新 SLAM confidence 對話交接狀態`；其parent為
-  `4c063a4 完成 SLAM 信心策略、狀態估計與步態驗證`，再前一個commit為
-  `0e9a571 完成 SLAM confidence DDS 與 FAST live gate`，兩者均已push。使用者確認
+- 本次交接前 `exp/slam-fastlio2` 的本機與遠端baseline均為
+  `8392743 加入雙 SLAM backend 互動驗證入口`；其parent
+  `0d38247 完成 confidence-aware PPO 與狀態估計候選`，再前一個commit為
+  `fbee219 更新 SLAM confidence 對話交接狀態`，均已push。使用者確認
   `exp/slam-fastlio2`作為完整SLAM confidence開發線，因此51-D observation/training、
   deployment consumer、第二輪bounded safe-command、proprioceptive estimator與gait-value
   實驗均保存在此branch。本機`feature/ppo-slam-confidence`目前亦指向`4c063a4`，但未建立
@@ -1247,8 +1247,9 @@ Checkpoint：
    direct age/accuracy/outlier為3/3 pass，但正式model1450 locomotion與stopped-tail action
    sensitivity均為0/3，故整體contract仍fail。下一個架構gate是獨立於SLAM的policy-grade
    proprioceptive body-velocity estimator已由candidate08在模擬中關閉，並已放進PPO rollout
-   observation loop。下一個gate是人工LIO操作與用相同estimator/confidence artifacts跑完
-   FAST/LIO replay及live matrix，並新增任務效率／false-stop量化；通過前不得取代model1450。
+   observation loop。人工LIO操作現已完成，下一個gate是用相同
+   estimator/confidence artifacts跑完FAST/LIO replay及live matrix，並執行凍結protocol的
+   safety-efficiency／false-stop／SLAM survival量化；通過前不得取代model1450。
    實體 ANYmal-D
    sensor extrinsic、
    low-level interface；IMU frame contract
@@ -1297,8 +1298,32 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
 - 此結果仍是experimental deployment candidate；正式 recovery v0.4.0 model1450未被
   取代，實體ANYmal-D qualification與包含新 `/foot_contacts` 的bag replay仍未完成。
 
-### 2026-08-14 interactive manual observation and publication gate
+### 2026-08-14 to 2026-08-17 interactive manual observation and publication gate
 
+- LIO-SAM interactive 啟動後已重現一個與定位品質無關的 false stop：開啟官方
+  RViz 時，feature `CloudInfo` 可約20 Hz輸出，而受`mappingProcessInterval`節流的
+  mapping odometry只對其中部分stamps輸出。舊assembler把feature/incremental-only
+  stamps也建立成expected mapping bundle，因而持續輸出score `1.0`但
+  `tracking_valid=false`、`SIGNAL_MISSING/RECOVERY_PENDING`，使model48正確地fail
+  closed而完全不走；同一pipeline在headless control因收到的topic rates接近而可進
+  TRACKING。Project-owned assembler現改由native/canonical mapping odometry anchor
+  bundle candidate；auxiliary-only stamps仍可exact join，但不再單獨宣告mapping source
+  遺失。`0.20 s` grace、exact-stamp requirements、source freshness與artifact均不變；
+  52項core/integration/contract/estimator測試（含anchored missing fault regression）通過。
+  重新build後以domain 1執行GUI＋官方RViz interactive smoke，穩定後實測
+  `tracking_state=TRACKING`、`tracking_valid=true`、confidence `1.0`、reasons `0`，
+  已確認原本持續false stop消失。
+- 2026-08-17使用者完成LIO-SAM interactive人工行走，主觀觀察為行走快速、點雲沒有裂圖，
+  且明顯快於先前FAST-LIO2人工操作。該launch未覆寫artifact，確定載入model48 51-D ONNX
+  （SHA `c8225b05...f4a5`）與estimator15；正式policy仍為model1450，model48＋estimator15
+  仍只是experimental candidate。LIO healthy confidence接近1時，model48依架構精確回到
+  frozen model1450 healthy path，因此這次結果證明LIO healthy deployment鏈路可用，不能
+  單獨證明low-confidence learned gait adaptation。
+- 兩次interactive diagnostics不是受控速度比較：FAST記錄4.0 s、active平均平面command
+  `0.622 m/s`、實際速度`0.378 m/s`；LIO記錄25.5 s、command `1.914 m/s`、實際速度
+  `1.562 m/s`。active confidence平均FAST/LIO約`0.793/0.792`，tracking-valid比例約
+  `0.793/0.797`。LIO command本身約為FAST三倍，故不可由主觀速度差推論FAST尚未調好；
+  必須使用相同command trace、route、seed與duration重測。
 - 使用者以新interactive入口人工操作FAST-LIO2，最高yaw command約`2.5 rad/s`。RViz觀察到
   旋轉後極小、短暫的點雲錯位，繼續行走後視覺上重新重合。這是人工觀察，尚未由bag或
   map-consistency metric量化；目前FAST-LIO2設定沒有loop closure，因此不可歸因為閉環修正，
@@ -1313,6 +1338,11 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
   confidence-triggered stop比例、false-stop時間、recovery latency與SLAM ATE/RPE。裂圖另需
   定義map-level consistency metric；現有confidence只預測短期tracking usability，不能當
   explicit split-map detector。
+- 工程上的closed loop已接通，但publication claim尚未完成。除前三組外，宜加入關閉四個
+  learned gait coordinates的intent-only ablation，並同步記錄safe scale、intent blend、
+  stride/crouch/stance-width/smoothing coordinates，證明`confidence下降→步態改變→機身晃動
+  /foot slip下降→SLAM survival提高→仍保有效率`。現有simulation gait-value A/B是支持證據，
+  但不能取代真實backend closed-loop重複實驗與confidence interval。
 
 ### Proprioceptive estimator and gait-value A/B (2026-08-13)
 

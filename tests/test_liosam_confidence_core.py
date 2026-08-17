@@ -337,6 +337,23 @@ def test_old_incomplete_bundle_becomes_one_shot_event_and_is_evicted() -> None:
     )
 
 
+def test_throttled_feature_only_stamps_do_not_create_missing_mapping_bundles() -> None:
+    assembler = _assembler(motion_required=False)
+    for stamp_ns in (100, 150):
+        _observe_component(assembler, "incremental", stamp_ns)
+        _observe_component(assembler, "features", stamp_ns)
+    _observe_complete(assembler, 200, motion_applied=None)
+
+    assert [bundle.source_stamp_ns for bundle in assembler.take_completed()] == [
+        200
+    ]
+    assert assembler.take_events() == DegradationReason.NONE
+    _observe_fresh_inputs(assembler, 250)
+    assert not assembler.assess(evaluation_ns=250).hard_reasons & (
+        DegradationReason.SIGNAL_MISSING
+    )
+
+
 def test_conflicting_duplicate_and_regression_are_timestamp_invalid() -> None:
     assembler = _assembler()
     _observe_component(assembler, "canonical", 200)

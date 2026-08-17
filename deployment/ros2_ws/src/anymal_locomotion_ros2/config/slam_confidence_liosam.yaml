@@ -21,9 +21,10 @@ anymal_liosam_confidence_extractor:
     imu_timeout_s: 0.05
     future_stamp_tolerance_s: 0.005
 
-    # Feature CloudInfo precedes map optimization. This provisional grace is
-    # deliberately larger than FAST's cross-publisher reorder grace and must
-    # be qualified from replay receipt traces before calibration is frozen.
+    # Feature CloudInfo precedes map optimization. Native/canonical mapping
+    # odometry anchor bundle candidates; feature/incremental-only stamps from
+    # scans intentionally skipped by mappingProcessInterval do not represent
+    # missing mapping outputs.
     diagnostic_match_timeout_s: 0.20
     max_pending_bundles: 64
 
