@@ -348,10 +348,16 @@ A/B/C/D；與formal `43..47`完全分離，且pilot永遠不得進formal efficac
 runtime dependency。
 
 新bag contract另要求`/foot_contacts`與`/locomotion/estimated_odom`。每格會用同一
-estimator15 ONNX、arm policy metadata的joint mapping，以及bag中按接收順序保存的IMU／joint／
-四腳contact重新建立20-step history，逐exact joint stamp比對live estimator output；至少95%
+estimator15 ONNX、arm policy metadata的joint mapping，以及固定`0.025 s` tolerance的
+source-stamp synchronizer重新建立IMU／joint／四腳contact 20-step history。Synchronizer等待
+各input stream watermark通過joint stamp後選nearest source stamp，tie固定選較早stamp，故不受
+跨topic DDS callback順序影響；逐exact joint stamp比對live estimator output，至少95%
 replay outputs需匹配且最大速度誤差`<=1e-5 m/s`。Estimator replay不讀GT。舊block43 bags沒有
 這兩個topics，因此不能拿來關閉此新gate；disjoint pilot的每格都必須通過後才能開始formal。
+新schema FAST-LIO2與LIO-SAM A/B/C/D共8格excluded qualifications全部通過，合計5486個
+replay outputs全部exact-stamp match且最大誤差皆為`0.0 m/s`，連同其他cell gates全過；機讀證據為
+`docs/validation/slam_confidence_estimator15_stamp_sync_qualification.json`。這只證明execution
+chain可用，不取代160格pilot的逐格gate。
 
 Model48＋estimator15的五方向simulation recovery regression已另行鎖定。Forward、lateral
 left、lateral right、reverse與combined各使用不同seed、512 environments與1000 steps；五份

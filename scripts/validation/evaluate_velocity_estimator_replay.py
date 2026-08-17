@@ -23,6 +23,8 @@ from anymal_locomotion_ros2.policy_core import (
     projected_gravity_from_quaternion,
 )
 from anymal_locomotion_ros2.proprioceptive_velocity_estimator_core import (
+    EstimatorInputBundle,
+    EstimatorInputSynchronizer,
     EstimatorRuntime,
     assemble_step,
     load_estimator_metadata,
@@ -65,6 +67,7 @@ def compare_estimates(
 
 def replay_bag(
     bag_dir: Path, estimator_metadata: Path, policy_metadata: Path,
+    *, sync_tolerance_s: float = 0.025,
 ) -> tuple[dict[str, int], dict[int, np.ndarray], dict[int, np.ndarray]]:
     try:
         import rosbag2_py
@@ -76,6 +79,7 @@ def replay_bag(
     contract = PolicyContract.from_metadata(policy_metadata)
     defaults = np.asarray(contract.default_joint_positions, dtype=np.float32)
     runtime = EstimatorRuntime(OnnxBackend(str(model_path)))
+    synchronizer = EstimatorInputSynchronizer(sync_tolerance_s)
     reader = rosbag2_py.SequentialReader()
     reader.open(
         rosbag2_py.StorageOptions(uri=str(bag_dir), storage_id="sqlite3"),
@@ -88,10 +92,32 @@ def replay_bag(
         raise ValueError(f"bag lacks estimator replay topics: {missing}")
     message_types = {topic: get_message(types[topic]) for topic in required}
     counts = {topic: 0 for topic in required}
-    imu: tuple[int, np.ndarray, np.ndarray, np.ndarray] | None = None
-    contacts: tuple[int, np.ndarray] | None = None
     replay: dict[int, np.ndarray] = {}
     recorded: dict[int, np.ndarray] = {}
+
+    def consume(bundles: list[EstimatorInputBundle]) -> None:
+        for bundle in bundles:
+            if not bundle.synchronized:
+                runtime.reset()
+                continue
+            message = bundle.joint
+            angular, acceleration, gravity = bundle.imu
+            try:
+                positions, velocities = canonical_joint_state(
+                    message.name, message.position, message.velocity, contract,
+                )
+                step = assemble_step(
+                    angular, acceleration, gravity,
+                    positions - defaults, velocities, bundle.contacts,
+                )
+                estimate = runtime.step(
+                    bundle.joint_stamp_ns * 1.0e-9, step
+                )
+                if estimate is not None:
+                    replay[bundle.joint_stamp_ns] = estimate
+            except ValueError:
+                runtime.reset()
+
     while reader.has_next():
         topic, data, _ = reader.read_next()
         if topic not in required:
@@ -102,7 +128,7 @@ def replay_bag(
         if topic == "/imu/data":
             if message.header.frame_id != "base_link":
                 runtime.reset()
-                imu = None
+                synchronizer.reset()
                 continue
             try:
                 gravity = projected_gravity_from_quaternion(
@@ -119,44 +145,42 @@ def replay_bag(
                 )
                 if not np.isfinite(angular).all() or not np.isfinite(acceleration).all():
                     raise ValueError
-                imu = (stamp_ns, angular, acceleration, gravity)
-            except ValueError:
-                runtime.reset()
-                imu = None
-        elif topic == "/foot_contacts":
-            if message.header.frame_id != "base_link":
-                runtime.reset()
-                contacts = None
-                continue
-            try:
-                contacts = (
-                    stamp_ns,
-                    reorder_foot_contacts(message.foot_names, message.contact_probabilities),
+                consume(
+                    synchronizer.push_imu(
+                        stamp_ns, (angular, acceleration, gravity)
+                    )
                 )
             except ValueError:
                 runtime.reset()
-                contacts = None
+                synchronizer.reset()
+        elif topic == "/foot_contacts":
+            if message.header.frame_id != "base_link":
+                runtime.reset()
+                synchronizer.reset()
+                continue
+            try:
+                consume(
+                    synchronizer.push_contacts(
+                        stamp_ns,
+                        reorder_foot_contacts(
+                            message.foot_names, message.contact_probabilities
+                        ),
+                    )
+                )
+            except ValueError:
+                runtime.reset()
+                synchronizer.reset()
         elif topic == "/locomotion/estimated_odom":
             recorded[stamp_ns] = np.asarray(
                 (message.twist.twist.linear.x, message.twist.twist.linear.y, message.twist.twist.linear.z),
                 dtype=np.float32,
             )
-        elif imu is not None and contacts is not None:
-            if max(abs(stamp_ns - imu[0]), abs(stamp_ns - contacts[0])) > 25_000_000:
-                runtime.reset()
-                continue
+        else:
             try:
-                positions, velocities = canonical_joint_state(
-                    message.name, message.position, message.velocity, contract,
-                )
-                step = assemble_step(
-                    imu[1], imu[2], imu[3], positions - defaults, velocities, contacts[1],
-                )
-                estimate = runtime.step(stamp_ns / 1e9, step)
-                if estimate is not None:
-                    replay[stamp_ns] = estimate
+                consume(synchronizer.push_joint(stamp_ns, message))
             except ValueError:
                 runtime.reset()
+                synchronizer.reset()
     return counts, replay, recorded
 
 
@@ -165,6 +189,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--bag", type=Path, required=True)
     parser.add_argument("--estimator-metadata", type=Path, required=True)
     parser.add_argument("--policy-metadata", type=Path, required=True)
+    parser.add_argument("--sync-tolerance-s", type=float, default=0.025)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--atol", type=float, default=1.0e-5)
     return parser.parse_args()
@@ -178,7 +203,10 @@ def main() -> int:
         raise ValueError("estimator replay paths must remain inside the project")
     if not (bag / "metadata.yaml").is_file():
         raise ValueError("bag is not a rosbag2 directory")
-    counts, replay, recorded = replay_bag(bag, estimator_metadata, policy_metadata)
+    counts, replay, recorded = replay_bag(
+        bag, estimator_metadata, policy_metadata,
+        sync_tolerance_s=args.sync_tolerance_s,
+    )
     parity = compare_estimates(replay, recorded, atol=args.atol)
     report = {
         "schema_version": 1,
@@ -188,6 +216,11 @@ def main() -> int:
         "policy_metadata_path": str(policy_metadata),
         "policy_metadata_sha256": _sha256(policy_metadata),
         "ground_truth_used_by_runtime_or_replay": False,
+        "synchronization": {
+            "method": "source_stamp_nearest_after_per_topic_watermark",
+            "tolerance_s": args.sync_tolerance_s,
+            "cross_topic_callback_order_independent": True,
+        },
         "topic_counts": counts,
         "parity": parity,
         "gate": {"passed": parity["passed"]},

@@ -6,7 +6,9 @@ import hashlib
 import json
 from collections import deque
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -14,6 +16,105 @@ STEP_DIMENSION = 37
 HISTORY_LENGTH = 20
 INPUT_DIMENSION = STEP_DIMENSION * HISTORY_LENGTH
 FOOT_ORDER = ("LF_FOOT", "LH_FOOT", "RF_FOOT", "RH_FOOT")
+
+
+@dataclass(frozen=True)
+class EstimatorInputBundle:
+    """One timestamp-selected estimator input bundle."""
+
+    joint_stamp_ns: int
+    joint: Any
+    imu_stamp_ns: int
+    imu: Any
+    contact_stamp_ns: int
+    contacts: Any
+    synchronized: bool
+
+
+class EstimatorInputSynchronizer:
+    """Select nearest inputs by source stamp, independent of callback order."""
+
+    def __init__(self, tolerance_s: float = 0.025) -> None:
+        if tolerance_s < 0.0:
+            raise ValueError("estimator synchronization tolerance must be non-negative")
+        self.tolerance_ns = int(round(float(tolerance_s) * 1.0e9))
+        self.reset()
+
+    def reset(self) -> None:
+        self._imu: dict[int, Any] = {}
+        self._contacts: dict[int, Any] = {}
+        self._joints: dict[int, Any] = {}
+        self._latest = {"imu": -1, "contacts": -1, "joint": -1}
+
+    def _push(self, stream: str, stamp_ns: int, value: Any) -> list[EstimatorInputBundle]:
+        stamp = int(stamp_ns)
+        if stamp < 0:
+            self.reset()
+            raise ValueError("estimator input timestamp must be non-negative")
+        latest = self._latest[stream]
+        if stamp < latest:
+            self.reset()
+            raise ValueError(f"estimator {stream} timestamp regressed")
+        self._latest[stream] = stamp
+        buffers = {
+            "imu": self._imu,
+            "contacts": self._contacts,
+            "joint": self._joints,
+        }
+        buffers[stream][stamp] = value
+        return self._pop_ready()
+
+    def push_imu(self, stamp_ns: int, value: Any) -> list[EstimatorInputBundle]:
+        return self._push("imu", stamp_ns, value)
+
+    def push_contacts(self, stamp_ns: int, value: Any) -> list[EstimatorInputBundle]:
+        return self._push("contacts", stamp_ns, value)
+
+    def push_joint(self, stamp_ns: int, value: Any) -> list[EstimatorInputBundle]:
+        return self._push("joint", stamp_ns, value)
+
+    @staticmethod
+    def _nearest(samples: dict[int, Any], stamp_ns: int) -> tuple[int, Any]:
+        selected = min(samples, key=lambda value: (abs(value - stamp_ns), value))
+        return selected, samples[selected]
+
+    def _pop_ready(self) -> list[EstimatorInputBundle]:
+        bundles: list[EstimatorInputBundle] = []
+        while self._joints:
+            joint_stamp = min(self._joints)
+            if (
+                self._latest["imu"] < joint_stamp
+                or self._latest["contacts"] < joint_stamp
+            ):
+                break
+            joint = self._joints.pop(joint_stamp)
+            imu_stamp, imu = self._nearest(self._imu, joint_stamp)
+            contact_stamp, contacts = self._nearest(self._contacts, joint_stamp)
+            synchronized = max(
+                abs(imu_stamp - joint_stamp),
+                abs(contact_stamp - joint_stamp),
+            ) <= self.tolerance_ns
+            bundles.append(
+                EstimatorInputBundle(
+                    joint_stamp_ns=joint_stamp,
+                    joint=joint,
+                    imu_stamp_ns=imu_stamp,
+                    imu=imu,
+                    contact_stamp_ns=contact_stamp,
+                    contacts=contacts,
+                    synchronized=synchronized,
+                )
+            )
+            oldest_needed = joint_stamp - self.tolerance_ns
+            self._imu = {
+                stamp: value for stamp, value in self._imu.items()
+                if stamp >= oldest_needed
+            }
+            self._contacts = {
+                stamp: value for stamp, value in self._contacts.items()
+                if stamp >= oldest_needed
+            }
+        return bundles
 
 
 def _vector(name: str, values: Sequence[float], size: int) -> np.ndarray:

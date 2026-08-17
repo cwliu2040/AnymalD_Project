@@ -17,6 +17,7 @@ common_runtime:
   velocity_estimator_metadata_path: exported/proprioceptive_velocity_estimator/v1/clean_lateral_transition_candidate_15/velocity_estimator_metadata.json
   velocity_estimator_metadata_sha256: 041c9f8a85d220120f6ed5de41bb8e58f7f95a03f3a03c9121898af18c25a1ff
   velocity_estimator_onnx_sha256: 6216637115c85f240d8305de118de5729d1df87b924dd2bf25d21d42d455288e
+  velocity_estimator_sync_tolerance_s: 0.025
   policy_rate_hz: 50.0
   policy_odometry_topic: /locomotion/estimated_odom
   policy_inference_trigger: estimator_joint_state
@@ -103,7 +104,8 @@ promotion_gates:
   - id: mechanism_sidecar
     status: two_backends_B_C_D_native_and_gradual_excluded_smoke_passed
   - id: common_estimator_replay_with_foot_contacts
-    status: implemented_in_new_bag_contract_live_replay_parity_pending
+    status: dual_backend_all_four_arms_excluded_smoke_exact_zero_passed_pilot_all_cells_pending
+    evidence: docs/validation/slam_confidence_estimator15_stamp_sync_qualification.json
   - id: engineering_native_matrix
     requirement: two_backends_five_profiles_three_independent_blocks
     status: ten_of_ten_single_block_smoke_passed

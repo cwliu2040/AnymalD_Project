@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "kind": "estimator15_source_stamp_synchronization_dual_backend_all_arm_qualification",
+  "dataset_role": "excluded_smoke",
+  "formal_or_pilot_efficacy_evidence": false,
+  "baseline_commit_before_fix": "d1128fe6f951bdf19c3ecbdfefa1102b646ff233",
+  "shared_identity": {
+    "profile": "lateral_right_1_5",
+    "condition": "gradual_support_loss",
+    "paired_block_id": 43,
+    "estimator_metadata_sha256": "041c9f8a85d220120f6ed5de41bb8e58f7f95a03f3a03c9121898af18c25a1ff",
+    "synchronization_tolerance_s": 0.025,
+    "method": "source_stamp_nearest_after_per_topic_watermark"
+  },
+  "cells": [
+    {
+      "backend": "fastlio2", "arm": "A", "passed": true,
+      "replay_outputs": 686, "recorded_outputs": 686, "exact_stamp_matches": 686,
+      "maximum_absolute_velocity_error_mps": 0.0,
+      "cell_sha256": "69b353622c1c70480742366ccdd71e3960d3d1fe037f41dcc531a7fbe5d661a2",
+      "bag_fingerprint_sha256": "9159926a0b6038a70af91c941569589e38893f361b6a03b192972dc67cd148d2"
+    },
+    {
+      "backend": "fastlio2", "arm": "B", "passed": true,
+      "replay_outputs": 685, "recorded_outputs": 686, "exact_stamp_matches": 685,
+      "maximum_absolute_velocity_error_mps": 0.0,
+      "cell_sha256": "04b8760c84be31ece4a390b875feb85976bbaf9a1fbee13f79a70ddd64e2c5be",
+      "bag_fingerprint_sha256": "b1c38b5ec9afaf59dbd94235684f3d9f263b482f43ba53b26374b9bbe25d0ecd"
+    },
+    {
+      "backend": "fastlio2", "arm": "C", "passed": true,
+      "replay_outputs": 686, "recorded_outputs": 686, "exact_stamp_matches": 686,
+      "maximum_absolute_velocity_error_mps": 0.0,
+      "cell_sha256": "799a26773a62cf0ccdb43e4d8aed09f4d4a6e9e470ce115af7509784e4460765",
+      "bag_fingerprint_sha256": "d87695cca51c506b93dd526c643b7ddd9671fd7eeaf80c7a720cc9d2cb4c9563"
+    },
+    {
+      "backend": "fastlio2", "arm": "D", "passed": true,
+      "replay_outputs": 686, "recorded_outputs": 687, "exact_stamp_matches": 686,
+      "maximum_absolute_velocity_error_mps": 0.0,
+      "cell_sha256": "38cca4023b6a48d2f34745881feb82bcdefbd040b62500f1e7354082e7a8faed",
+      "bag_fingerprint_sha256": "5cac1284aa10a401cd77e3b52aacb4041a0c2f288b50b153c5eeb6c4432f38c7"
+    },
+    {
+      "backend": "liosam", "arm": "A", "passed": true,
+      "replay_outputs": 686, "recorded_outputs": 686, "exact_stamp_matches": 686,
+      "maximum_absolute_velocity_error_mps": 0.0,
+      "cell_sha256": "731c643d4bf08ff1f993751e39615c11586f79c4b62e3afa858d0bf97a31cb54",
+      "bag_fingerprint_sha256": "f911a33cddb1785a6701b52759698efab29d82c0f0b6f00e29550683e4811682"
+    },
+    {
+      "backend": "liosam", "arm": "B", "passed": true,
+      "replay_outputs": 685, "recorded_outputs": 686, "exact_stamp_matches": 685,
+      "maximum_absolute_velocity_error_mps": 0.0,
+      "cell_sha256": "b9c781435deec299bd8463a6346ab4b0c67d2ca64d2ee09b5dabb47c8d4df7ff",
+      "bag_fingerprint_sha256": "3b68ab19648f89e99a9d779688e14c432926cb2ad9a733d97be5d0f80d2c5158"
+    },
+    {
+      "backend": "liosam", "arm": "C", "passed": true,
+      "replay_outputs": 686, "recorded_outputs": 686, "exact_stamp_matches": 686,
+      "maximum_absolute_velocity_error_mps": 0.0,
+      "cell_sha256": "dc6714160846c75b558a6014e8556b70c436df34923922588d0ce120e3ab2141",
+      "bag_fingerprint_sha256": "2937cc75e661230ee991da170b2c5390c3914a89bedb08223836974a12e45de1"
+    },
+    {
+      "backend": "liosam", "arm": "D", "passed": true,
+      "replay_outputs": 686, "recorded_outputs": 686, "exact_stamp_matches": 686,
+      "maximum_absolute_velocity_error_mps": 0.0,
+      "cell_sha256": "12f14f124a777f50843534b2992e87dc20d64bbc111caaaeb8e87bca54f924de",
+      "bag_fingerprint_sha256": "ca53e5e69bef040cde0fc9d4014efca6eceecdf3aacb294a39ad38dccd0014e3"
+    }
+  ],
+  "aggregate": {
+    "cell_count": 8,
+    "passed_cell_count": 8,
+    "replay_output_count": 5486,
+    "recorded_output_count": 5489,
+    "exact_stamp_match_count": 5486,
+    "matched_replay_fraction": 1.0,
+    "maximum_absolute_velocity_error_mps": 0.0,
+    "atol_mps": 0.00001,
+    "ground_truth_used": false,
+    "all_driver_stability_mechanism_offline_map_and_run_record_gates_passed": true
+  },
+  "passed": true,
+  "interpretation": "This closes all-arm dual-backend engineering qualification smoke for deterministic estimator replay. Every excluded-pilot cell must still pass independently."
+}

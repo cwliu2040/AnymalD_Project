@@ -218,6 +218,9 @@ def generate_launch_description() -> LaunchDescription:
     velocity_estimator_metadata_path = LaunchConfiguration(
         "velocity_estimator_metadata_path"
     )
+    velocity_estimator_sync_tolerance_s = LaunchConfiguration(
+        "velocity_estimator_sync_tolerance_s"
+    )
     imu_observation_parity_atol = LaunchConfiguration(
         "imu_observation_parity_atol"
     )
@@ -267,6 +270,10 @@ def generate_launch_description() -> LaunchDescription:
                 ),
                 "velocity_estimator_metadata_path": (
                     velocity_estimator_metadata_path
+                ),
+                "velocity_estimator_sync_tolerance_s": ParameterValue(
+                    velocity_estimator_sync_tolerance_s,
+                    value_type=float,
                 ),
                 "expected_odometry_child_frame": "base_link",
                 "inference_trigger": policy_inference_trigger,
@@ -549,6 +556,10 @@ def generate_launch_description() -> LaunchDescription:
                         "velocity_estimator_metadata.json",
                     ]
                 ),
+            ),
+            DeclareLaunchArgument(
+                "velocity_estimator_sync_tolerance_s",
+                default_value="0.025",
             ),
             DeclareLaunchArgument(
                 "expected_confidence_backend",

@@ -168,6 +168,11 @@ readiness_gates:
     status: passed_with_tracked_model48_checkpoint
   - id: common_estimator_identity
     requirement: every_arm_uses_estimator15_with_matching_metadata_sha256
+  - id: common_estimator_source_stamp_replay
+    requirement: live_policy_estimate_is_recorded_and_replayed_with_callback_order_independent_source_stamp_bundles
+    synchronization_tolerance_s: 0.025
+    status: dual_backend_all_four_arms_8_of_8_excluded_smoke_5486_exact_matches_zero_error_passed_pilot_pending
+    evidence: docs/validation/slam_confidence_estimator15_stamp_sync_qualification.json
   - id: model48_estimator15_recovery_regression
     requirement: five_profiles_use_distinct_seeds_and_pass_behavior_artifact_estimator_and_hard_termination_checks
     status: passed_2560_environments_6_hard_terminated

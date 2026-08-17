@@ -49,6 +49,7 @@ def test_artifact_validator_locks_all_arms_and_estimator() -> None:
     assert set(artifacts) == {"A", "B", "C", "D", "common"}
     assert artifacts["A"]["observation_dimension"] == "48"
     assert artifacts["C"]["observation_dimension"] == "51"
+    assert artifacts["common"]["velocity_estimator_sync_tolerance_s"] == "0.025"
 
 
 def test_formal_mode_is_fail_closed_until_explicit_authorization() -> None:
@@ -66,6 +67,11 @@ def test_runner_requires_offline_usability_for_each_executed_cell() -> None:
     assert '"offline_usability_gate": offline_gate' in source
     assert "evaluate_velocity_estimator_replay.py" in source
     assert "estimator_replay_returncode == 0" in source
+    assert 'PROJECT_ROOT / "deployment/python_vendor"' in source
+    assert 'PROJECT_ROOT / "source/anymal_locomotion"' in source
+    assert 'environment["PYTHONPATH"]' in source
+    assert "estimator_environment" in source
+    assert 'release["common_runtime"]["velocity_estimator_sync_tolerance_s"]' in source
 
 
 def test_selection_preserves_registered_cell_identity() -> None:

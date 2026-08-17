@@ -141,12 +141,16 @@ def validate_artifacts(release: dict[str, Any]) -> dict[str, dict[str, str]]:
             "observation_dimension": str(expected_dimension),
         }
     common = release["common_runtime"]
+    sync_tolerance_s = float(common["velocity_estimator_sync_tolerance_s"])
+    if sync_tolerance_s <= 0.0:
+        raise ValueError("estimator synchronization tolerance must be positive")
     estimator = _project_path(common["velocity_estimator_metadata_path"])
     if _sha256(estimator) != str(common["velocity_estimator_metadata_sha256"]):
         raise ValueError("estimator15 metadata SHA-256 mismatch")
     resolved["common"] = {
         "velocity_estimator_metadata_path": str(estimator),
         "velocity_estimator_metadata_sha256": _sha256(estimator),
+        "velocity_estimator_sync_tolerance_s": str(sync_tolerance_s),
         "stability_config_path": str(_project_path(common["stability_config_path"])),
         "model48_agent_config_path": str(_project_path(common["model48_agent_config_path"])),
         "model48_checkpoint_path": str(_project_path(release["arms"]["C"]["checkpoint_path"])),
@@ -298,6 +302,8 @@ def execute_cell(
         "enable_velocity_estimator:=true", "policy_inference_trigger:=estimator_joint_state",
         "policy_odometry_topic:=/locomotion/estimated_odom",
         f"velocity_estimator_metadata_path:={artifacts['common']['velocity_estimator_metadata_path']}",
+        "velocity_estimator_sync_tolerance_s:="
+        f"{release['common_runtime']['velocity_estimator_sync_tolerance_s']}",
         f"profile:={row['profile']}", f"simulation_seed:={row['simulation_seed']}",
         f"simulation_steps:={int(protocol['live_matrix']['simulation_steps'])}",
         "point_density:=1.0", f"point_density_profile:={density_profile}",
@@ -309,6 +315,12 @@ def execute_cell(
     environment["ROS_DOMAIN_ID"] = str(domain_id)
     environment["ROS_LOCALHOST_ONLY"] = "1"
     environment["ROS_LOG_DIR"] = str(PROJECT_ROOT / "logs/ros")
+    project_source = str(PROJECT_ROOT / "source/anymal_locomotion")
+    existing_python_path = environment.get("PYTHONPATH", "")
+    environment["PYTHONPATH"] = (
+        f"{project_source}:{existing_python_path}"
+        if existing_python_path else project_source
+    )
     command = (*command, "record_bag:=true")
     completed = subprocess.run(command, cwd=ROS2_WORKSPACE, env=environment, check=False)
     driver_path = run_dir / "driver.json"
@@ -367,6 +379,11 @@ def execute_cell(
     estimator_replay_returncode = None
     estimator_replay_gate: dict[str, Any] = {"passed": False}
     if bag_gate.get("passed"):
+        estimator_environment = environment.copy()
+        deployment_vendor = str(PROJECT_ROOT / "deployment/python_vendor")
+        estimator_environment["PYTHONPATH"] = (
+            f"{deployment_vendor}:{environment['PYTHONPATH']}"
+        )
         estimator_replay = subprocess.run(
             (
                 sys.executable,
@@ -374,9 +391,11 @@ def execute_cell(
                 "--bag", str(run_dir / "raw_bag"),
                 "--estimator-metadata", artifacts["common"]["velocity_estimator_metadata_path"],
                 "--policy-metadata", artifacts[arm_id]["metadata_path"],
+                "--sync-tolerance-s",
+                str(release["common_runtime"]["velocity_estimator_sync_tolerance_s"]),
                 "--output", str(estimator_replay_path),
             ),
-            cwd=PROJECT_ROOT, env=environment, check=False,
+            cwd=PROJECT_ROOT, env=estimator_environment, check=False,
         )
         estimator_replay_returncode = estimator_replay.returncode
         if estimator_replay_path.is_file():

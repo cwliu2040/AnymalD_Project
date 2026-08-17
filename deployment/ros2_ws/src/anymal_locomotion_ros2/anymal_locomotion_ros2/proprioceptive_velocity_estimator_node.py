@@ -19,6 +19,8 @@ from anymal_locomotion_ros2.policy_core import (
     projected_gravity_from_quaternion,
 )
 from anymal_locomotion_ros2.proprioceptive_velocity_estimator_core import (
+    EstimatorInputBundle,
+    EstimatorInputSynchronizer,
     EstimatorRuntime,
     assemble_step,
     load_estimator_metadata,
@@ -26,8 +28,11 @@ from anymal_locomotion_ros2.proprioceptive_velocity_estimator_core import (
 )
 
 
-def _stamp_s(message) -> float:
-    return float(message.header.stamp.sec) + float(message.header.stamp.nanosec) * 1.0e-9
+def _stamp_ns(message) -> int:
+    return (
+        int(message.header.stamp.sec) * 1_000_000_000
+        + int(message.header.stamp.nanosec)
+    )
 
 
 class ProprioceptiveVelocityEstimatorNode(Node):
@@ -57,8 +62,7 @@ class ProprioceptiveVelocityEstimatorNode(Node):
         self._uses_sim_time = bool(self.get_parameter("use_sim_time").value)
         if self._sync_tolerance < 0.0 or self._receipt_timeout <= 0.0:
             raise ValueError("synchronization tolerance must be non-negative and timeout positive")
-        self._imu: tuple[float, int, np.ndarray, np.ndarray, np.ndarray, tuple[float, ...]] | None = None
-        self._contacts: tuple[float, int, np.ndarray] | None = None
+        self._synchronizer = EstimatorInputSynchronizer(self._sync_tolerance)
         self._publisher = self.create_publisher(
             Odometry, str(self.get_parameter("output_topic").value), qos_profile_sensor_data
         )
@@ -68,6 +72,8 @@ class ProprioceptiveVelocityEstimatorNode(Node):
 
     def _on_imu(self, message: Imu) -> None:
         if message.header.frame_id != self._frame:
+            self._runtime.reset()
+            self._synchronizer.reset()
             return
         try:
             gravity = projected_gravity_from_quaternion(
@@ -79,34 +85,71 @@ class ProprioceptiveVelocityEstimatorNode(Node):
                 raise ValueError
         except ValueError:
             self._runtime.reset()
+            self._synchronizer.reset()
             return
         quaternion = (message.orientation.x, message.orientation.y, message.orientation.z, message.orientation.w)
-        self._imu = (_stamp_s(message), time.monotonic_ns(), angular, acceleration, gravity, quaternion)
+        try:
+            bundles = self._synchronizer.push_imu(
+                _stamp_ns(message),
+                (
+                    time.monotonic_ns(), angular, acceleration,
+                    gravity, quaternion,
+                ),
+            )
+        except ValueError:
+            self._runtime.reset()
+            self._synchronizer.reset()
+            return
+        self._consume(bundles)
 
     def _on_contacts(self, message: FootContactState) -> None:
         if message.header.frame_id != self._frame:
+            self._runtime.reset()
+            self._synchronizer.reset()
             return
         try:
             values = reorder_foot_contacts(message.foot_names, message.contact_probabilities)
         except ValueError:
             self._runtime.reset()
+            self._synchronizer.reset()
             return
-        self._contacts = (_stamp_s(message), time.monotonic_ns(), values)
+        try:
+            bundles = self._synchronizer.push_contacts(
+                _stamp_ns(message), (time.monotonic_ns(), values)
+            )
+        except ValueError:
+            self._runtime.reset()
+            self._synchronizer.reset()
+            return
+        self._consume(bundles)
 
     def _on_joints(self, message: JointState) -> None:
-        if self._imu is None or self._contacts is None:
-            return
-        now_ns = time.monotonic_ns()
-        joint_stamp = _stamp_s(message)
-        imu_stamp, imu_receipt, angular, acceleration, gravity, quaternion = self._imu
-        contact_stamp, contact_receipt, contacts = self._contacts
-        if (
-            max(abs(joint_stamp - imu_stamp), abs(joint_stamp - contact_stamp)) > self._sync_tolerance
-            or (
-                not self._uses_sim_time
-                and max(now_ns - imu_receipt, now_ns - contact_receipt) * 1.0e-9
-                > self._receipt_timeout
+        try:
+            bundles = self._synchronizer.push_joint(
+                _stamp_ns(message), message
             )
+        except ValueError:
+            self._runtime.reset()
+            self._synchronizer.reset()
+            return
+        self._consume(bundles)
+
+    def _consume(self, bundles: list[EstimatorInputBundle]) -> None:
+        for bundle in bundles:
+            self._process_bundle(bundle)
+
+    def _process_bundle(self, bundle: EstimatorInputBundle) -> None:
+        if not bundle.synchronized:
+            self._runtime.reset()
+            return
+        message = bundle.joint
+        now_ns = time.monotonic_ns()
+        imu_receipt, angular, acceleration, gravity, quaternion = bundle.imu
+        contact_receipt, contacts = bundle.contacts
+        if (
+            not self._uses_sim_time
+            and max(now_ns - imu_receipt, now_ns - contact_receipt) * 1.0e-9
+            > self._receipt_timeout
         ):
             self._runtime.reset()
             return
@@ -122,7 +165,9 @@ class ProprioceptiveVelocityEstimatorNode(Node):
                 velocities,
                 contacts,
             )
-            estimate = self._runtime.step(joint_stamp, sample)
+            estimate = self._runtime.step(
+                bundle.joint_stamp_ns * 1.0e-9, sample
+            )
         except ValueError:
             self._runtime.reset()
             return

@@ -19,6 +19,7 @@ from anymal_locomotion_ros2.hardware_state_estimator_adapter_core import (
     adapt_linear_velocity,
 )
 from anymal_locomotion_ros2.proprioceptive_velocity_estimator_core import (
+    EstimatorInputSynchronizer,
     EstimatorRuntime,
     assemble_step,
     load_estimator_metadata,
@@ -81,6 +82,46 @@ def test_runtime_waits_for_history_and_rejects_unsafe_output() -> None:
     with pytest.raises(ValueError, match="guard"):
         for index in range(HISTORY_LENGTH):
             unsafe.step(index * 0.02, np.zeros(STEP_DIMENSION))
+
+
+@pytest.mark.parametrize(
+    "order",
+    [
+        ("joint", "imu_before", "contact", "imu_after"),
+        ("imu_before", "imu_after", "contact", "joint"),
+        ("contact", "joint", "imu_before", "imu_after"),
+    ],
+)
+def test_input_synchronizer_is_independent_of_cross_topic_arrival_order(
+    order: tuple[str, ...],
+) -> None:
+    synchronizer = EstimatorInputSynchronizer(tolerance_s=0.025)
+    operations = {
+        "joint": lambda: synchronizer.push_joint(20_000_000, "joint"),
+        "imu_before": lambda: synchronizer.push_imu(15_000_000, "imu-before"),
+        "imu_after": lambda: synchronizer.push_imu(25_000_000, "imu-after"),
+        "contact": lambda: synchronizer.push_contacts(20_000_000, "contact"),
+    }
+    bundles = []
+    for name in order:
+        bundles.extend(operations[name]())
+    assert len(bundles) == 1
+    bundle = bundles[0]
+    assert bundle.synchronized
+    assert bundle.joint == "joint"
+    assert bundle.imu == "imu-before"
+    assert bundle.contacts == "contact"
+
+
+def test_input_synchronizer_flags_out_of_tolerance_and_timestamp_regression() -> None:
+    synchronizer = EstimatorInputSynchronizer(tolerance_s=0.005)
+    assert not synchronizer.push_joint(20_000_000, "joint")
+    assert not synchronizer.push_contacts(30_000_000, "contact")
+    bundles = synchronizer.push_imu(30_000_000, "imu")
+    assert len(bundles) == 1
+    assert not bundles[0].synchronized
+    with pytest.raises(ValueError, match="regressed"):
+        synchronizer.push_imu(29_000_000, "old")
 
 
 def test_metadata_loader_verifies_model_digest(tmp_path: Path) -> None:

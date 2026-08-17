@@ -1492,8 +1492,8 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
   原logs source path只作training provenance。這關閉「clean commit沒有model48 checkpoint」
   的artifact缺口。
 - 新publication raw-bag contract加入`/foot_contacts`與`/locomotion/estimated_odom`，並新增
-  estimator15 offline replay parity：由同一ONNX、policy joint mapping與bag接收順序重建
-  IMU/joint/contact 20-step history，逐exact stamp對live estimator output，要求match比例
+  estimator15 offline replay parity：由同一ONNX、policy joint mapping與deterministic
+  source-stamp bundle重建IMU/joint/contact 20-step history，逐exact stamp對live estimator output，要求match比例
   `>=0.95`與最大誤差`<=1e-5 m/s`，全程不讀GT。舊block43 bags缺少新增topics，故只能保留
   為舊schema smoke；新的160-cell disjoint pilot每格必須通過此gate，才能關閉common estimator
   foot-contact replay readiness。
@@ -1503,6 +1503,23 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
   各profile亦低於凍結的1%上限。機讀gate為
   `docs/validation/slam_confidence_model48_estimator15_regression_gate.json`。這關閉simulation
   recovery regression gate，但不取代尚未執行的pilot、正式雙backend matrix或promotion審查。
+- 在clean baseline `d1128fe`上執行第一個new-schema excluded-pilot qualification cell
+  （FAST-LIO2／lateral-right／gradual／block143／arm C）後，live driver、policy diagnostics、
+  `/foot_contacts`與stability資料均產生，但整格正確fail-close。原因有二：publication runner的
+  offline child process未明確加入project source `PYTHONPATH`；policy內建estimator雖供inference
+  使用，卻未發布bag contract要求的`/locomotion/estimated_odom`。目前修正為offline evaluator
+  依Python ABI分離環境（Isaac mechanism不注入ROS vendor；estimator replay才注入deployment
+  vendor），並由policy node直接發布實際供inference使用的同一estimate與joint exact stamp。
+  第二次excluded smoke證明topic與環境修正有效，但685個exact-stamp outputs中有48個因policy
+  subscriber與bag recorder的跨topic DDS callback順序不同而產生最大`0.03837 m/s`誤差；gate
+  未放寬並正確拒絕。Runtime與replay現共用source-stamp synchronizer：每個joint stamp等到IMU
+  與contact的per-topic watermark後，再以nearest stamp和固定`0.025 s` tolerance組bundle，tie
+  固定選較早stamp，timestamp regression會fail-close，因此不依賴跨topic callback順序。
+  後續永久排除的FAST-LIO2與LIO-SAM A/B/C/D共8格smoke均完整通過：合計5486個replay
+  outputs全部exact-stamp match，最大速度誤差皆為`0.0 m/s`，stability、mechanism（A不要求）、
+  offline usability、map measurement與run record亦全過。機讀證據為
+  `docs/validation/slam_confidence_estimator15_stamp_sync_qualification.json`。前兩次失敗cell只作
+  qualification/debug且永不納入pilot；完整160-cell pilot仍須在修正的clean commit後逐格通過。
 
 ### Proprioceptive estimator and gait-value A/B (2026-08-13)
 

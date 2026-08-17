@@ -197,6 +197,8 @@ def test_locomotion_wrapper_exposes_paired_seed_and_shared_degradation() -> None
     assert 'choices=["constant", "gradual_v1", "gradual_v2"]' in source
     assert 'LaunchConfiguration("record_bag")' in source
     assert 'LaunchConfiguration("confidence_loss_is_outcome")' in source
+    assert '"velocity_estimator_sync_tolerance_s"' in source
+    assert 'default_value="0.025"' in source
     assert '"allow_expected_tracking_loss": ParameterValue(' in source
     assert '"--disable-keyboard-controls"' not in source
     for topic in (
@@ -205,6 +207,18 @@ def test_locomotion_wrapper_exposes_paired_seed_and_shared_degradation() -> None
         "/slam_confidence",
     ):
         assert f'"{topic}"' in source
+
+
+def test_policy_publishes_the_estimate_used_for_inference() -> None:
+    source = (
+        ROS_PACKAGE
+        / "anymal_locomotion_ros2"
+        / "policy_node.py"
+    ).read_text(encoding="utf-8")
+    assert '"velocity_estimator_output_topic"' in source
+    assert "EstimatorInputSynchronizer" in source
+    assert "self._velocity_estimator_publisher.publish(output)" in source
+    assert "output.header = message.header" in source
 
 
 def test_fast_replay_evaluator_uses_fast_backend_signals() -> None:
