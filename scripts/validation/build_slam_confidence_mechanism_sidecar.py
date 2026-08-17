@@ -133,6 +133,7 @@ def build_sidecar(
     actor,
     actor_details: dict[str, Any],
     action_atol: float,
+    executed_arm: str = "C",
 ) -> dict[str, Any]:
     records = diagnostics.get("records")
     if diagnostics.get("schema_version") != 2 or not isinstance(records, list):
@@ -155,7 +156,13 @@ def build_sidecar(
 
     with torch.inference_mode():
         mechanisms = reconstruct_mechanisms(actor, observations)
-    action_errors = torch.abs(mechanisms["arm_c_action"] - logged_actions)
+    normalized_arm = executed_arm.upper()
+    if normalized_arm not in {"B", "C", "D"}:
+        raise ValueError("executed_arm must be B, C, or D for 51-D diagnostics")
+    reconstructed_action = mechanisms[
+        f"arm_{normalized_arm.lower()}_action"
+    ]
+    action_errors = torch.abs(reconstructed_action - logged_actions)
     finite = all(
         bool(torch.isfinite(value).all()) for value in mechanisms.values()
     ) and bool(torch.isfinite(logged_actions).all())
@@ -204,7 +211,11 @@ def build_sidecar(
             "finite": finite,
             "record_count": len(records),
             "action_reconstruction_atol": action_atol,
-            "model48_logged_action_max_absolute_error": max_action_error,
+            "executed_arm": normalized_arm,
+            "logged_action_max_absolute_error": max_action_error,
+            "model48_logged_action_max_absolute_error": (
+                max_action_error if normalized_arm == "C" else None
+            ),
             "arm_d_structured_delta_exact_zero": intent_only_zero,
             "arm_semantics": {
                 "A": "frozen_model1450_without_confidence",
@@ -224,6 +235,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--agent-config", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--action-atol", type=float, default=1.0e-5)
+    parser.add_argument(
+        "--executed-arm",
+        choices=("B", "C", "D"),
+        default="C",
+        help="51-D publication policy whose logged action must be reconstructed",
+    )
     return parser.parse_args()
 
 
@@ -245,6 +262,7 @@ def main() -> int:
         actor=actor,
         actor_details=actor_details,
         action_atol=args.action_atol,
+        executed_arm=args.executed_arm,
     )
     sidecar.update(
         {

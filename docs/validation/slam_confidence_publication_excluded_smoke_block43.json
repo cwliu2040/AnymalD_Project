@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "protocol_id": "slam-confidence-publication-v1",
+  "dataset_role": "excluded_smoke",
+  "date": "2026-08-17",
+  "git_head_during_execution": "9b015c7e40f532b22c5ae44634d27201cb46b738",
+  "tracked_worktree_was_dirty": true,
+  "formal_efficacy_use_allowed": false,
+  "cell_definition": {
+    "profile": "lateral_right_1_5",
+    "profile_sha256": "3c7702f621a52848dad38e7869787ca8cdc26fdf0a1887a58e76f43cd7c268c7",
+    "block_id": 43,
+    "simulation_seed": 43,
+    "backends": ["fastlio2", "liosam"],
+    "conditions": ["native", "gradual_support_loss"],
+    "arms": ["A", "B", "C", "D"]
+  },
+  "summary": {
+    "expected_cell_count": 16,
+    "completed_cell_count": 16,
+    "passed_cell_count": 16,
+    "failed_cell_count": 0,
+    "raw_bag_total_message_count": 120656,
+    "maximum_logged_action_reconstruction_error": 1.6689300537109375e-06,
+    "action_reconstruction_atol": 1e-05,
+    "arm_d_structured_delta_exact_zero": true,
+    "offline_label_cell_count": 16,
+    "offline_label_count": 4512,
+    "policy_record_count": 10972,
+    "matched_policy_record_count": 10972,
+    "known_label_confidence_stop_count": 1497,
+    "false_stop_count": 3,
+    "map_consistency_synthetic_gate_passed": true,
+    "map_consistency_cell_count": 16,
+    "map_consistency_measurement_completeness_passed": 16,
+    "publication_run_record_count": 16,
+    "publication_descriptive_analysis_completed": true,
+    "publication_formal_claim_allowed": false,
+    "publication_complete_support": false,
+    "replay_smoke_source_count": 1,
+    "replay_smoke_passed_cell_count": 4,
+    "passed": true
+  },
+  "map_consistency_readiness": {
+    "synthetic_evidence_path": "docs/validation/slam_confidence_map_consistency_synthetic.json",
+    "synthetic_evidence_sha256": "06416d64a971336168a9148f5969d9bdd5a95ab7a012128d592dc64b45a09e6c",
+    "native_arm_c_examples": {
+      "fastlio2": {
+        "reference_distance_p50_m": 0.19989417492650174,
+        "reference_distance_p95_m": 0.6674942695240621,
+        "duplicate_surface_fraction": 0.6557904411764706
+      },
+      "liosam": {
+        "reference_distance_p50_m": 0.07637532468100791,
+        "reference_distance_p95_m": 0.2946175922810718,
+        "duplicate_surface_fraction": 0.2634580291970803
+      }
+    },
+    "interpretation": "These two excluded examples validate end-to-end measurement only; no efficacy threshold or backend ranking is inferred."
+  },
+  "strata": [
+    {"backend": "fastlio2", "condition": "native", "cells": 4, "raw_bag_messages": 24823, "passed": true},
+    {"backend": "fastlio2", "condition": "gradual_support_loss", "cells": 4, "raw_bag_messages": 24835, "passed": true},
+    {"backend": "liosam", "condition": "native", "cells": 4, "raw_bag_messages": 35703, "passed": true},
+    {"backend": "liosam", "condition": "gradual_support_loss", "cells": 4, "raw_bag_messages": 35295, "passed": true}
+  ],
+  "runtime_summaries": [
+    {
+      "path": "logs/slam_confidence_publication_v1/excluded_smoke_native_both_backends_abcd_seed43/matrix_summary.json",
+      "sha256": "7585fb948d3a127b030c0aee636233e299ec1ad7defc6a55ef578f7dbec83e46",
+      "cell_count": 8
+    },
+    {
+      "path": "logs/slam_confidence_publication_v1/excluded_smoke_fastlio2_gradual_abcd_seed43/matrix_summary.json",
+      "sha256": "ed5b526a36312d5721de37e4eb375a90f972cfc546541290b0f746e2fff088a5",
+      "cell_count": 4
+    },
+    {
+      "path": "logs/slam_confidence_publication_v1/excluded_smoke_liosam_gradual_abc_seed43/matrix_summary.json",
+      "sha256": "9ae2672770df631e1b9f548070c7ca6731fcb28db9d0eb0b51fd4a74eaebe0f2",
+      "cell_count": 3
+    },
+    {
+      "path": "logs/slam_confidence_publication_v1/excluded_smoke_d_liosam_gradual_seed43_attempt04/matrix_summary.json",
+      "sha256": "f20fff93155109ece55a0a43c30eb2fba0406fc5114fd92db3e05afd8fd5de45",
+      "cell_count": 1
+    }
+  ],
+  "interpretation": "The executable harness, offline usability labeling, and map-measurement path passed excluded readiness checks. This is not formal efficacy evidence and not a promotion result."
+}

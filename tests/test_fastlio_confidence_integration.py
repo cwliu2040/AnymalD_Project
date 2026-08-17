@@ -183,6 +183,30 @@ def test_replay_and_locomotion_wrappers_keep_instrumentation_opt_in() -> None:
         assert 'default_value="false"' in source
 
 
+def test_locomotion_wrapper_exposes_paired_seed_and_shared_degradation() -> None:
+    source = LOCOMOTION_LAUNCH.read_text(encoding="utf-8")
+    assert 'LaunchConfiguration("simulation_seed")' in source
+    assert '"--seed",' in source
+    for argument in (
+        "point_density",
+        "point_density_profile",
+        "point_density_min",
+    ):
+        assert f'LaunchConfiguration("{argument}")' in source
+        assert source.count(f'"{argument}": {argument}') == 2
+    assert 'choices=["constant", "gradual_v1", "gradual_v2"]' in source
+    assert 'LaunchConfiguration("record_bag")' in source
+    assert 'LaunchConfiguration("confidence_loss_is_outcome")' in source
+    assert '"allow_expected_tracking_loss": ParameterValue(' in source
+    assert '"--disable-keyboard-controls"' not in source
+    for topic in (
+        "/lidar/points_raw",
+        "/simulation/episode_reset_ack",
+        "/slam_confidence",
+    ):
+        assert f'"{topic}"' in source
+
+
 def test_fast_replay_evaluator_uses_fast_backend_signals() -> None:
     source = REPLAY_LAUNCH.read_text(encoding="utf-8")
     assert '"backend_kind": "fastlio2"' in source

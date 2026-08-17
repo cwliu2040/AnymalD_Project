@@ -29,6 +29,9 @@ logs/*
 !logs/.gitkeep
 checkpoints/*
 !checkpoints/.gitkeep
+!checkpoints/anymal_d_locomotion_slam_confidence_sim_v1/
+checkpoints/anymal_d_locomotion_slam_confidence_sim_v1/*
+!checkpoints/anymal_d_locomotion_slam_confidence_sim_v1/model_48.pt
 exported/*
 !exported/.gitkeep
 !exported/anymal_d_locomotion_v1/

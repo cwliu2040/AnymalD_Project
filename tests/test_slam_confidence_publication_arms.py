@@ -48,5 +48,7 @@ def test_sim_release_manifest_is_branch_only_and_artifact_identifiable() -> None
         metadata = ROOT / arm["metadata_path"]
         assert _sha256(policy) == arm["policy_sha256"]
         assert _sha256(metadata) == arm["metadata_sha256"]
-    assert release["arms"]["C"]["checkpoint_curation_required"] is True
+    checkpoint = ROOT / release["arms"]["C"]["checkpoint_path"]
+    assert release["arms"]["C"]["checkpoint_curation_required"] is False
+    assert _sha256(checkpoint) == release["arms"]["C"]["checkpoint_sha256"]
     assert release["promotion_rule"]["merge_to_main"] == "forbidden"

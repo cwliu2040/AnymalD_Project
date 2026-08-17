@@ -89,6 +89,8 @@ def _simulation_actions(context, *_) -> list[object]:
         ),
         "--device",
         LaunchConfiguration("device"),
+        "--seed",
+        LaunchConfiguration("simulation_seed"),
     ]
     if headless:
         command.append("--headless")
@@ -204,6 +206,9 @@ def generate_launch_description() -> LaunchDescription:
     fastlio_time_offset_lidar_to_imu = LaunchConfiguration(
         "fastlio_time_offset_lidar_to_imu"
     )
+    point_density = LaunchConfiguration("point_density")
+    point_density_profile = LaunchConfiguration("point_density_profile")
+    point_density_min = LaunchConfiguration("point_density_min")
     enable_confidence = LaunchConfiguration("enable_confidence")
     slam_odom_topic = LaunchConfiguration("slam_odom_topic")
     policy_odometry_topic = LaunchConfiguration("policy_odometry_topic")
@@ -295,6 +300,10 @@ def generate_launch_description() -> LaunchDescription:
                     enable_confidence,
                     value_type=bool,
                 ),
+                "allow_expected_tracking_loss": ParameterValue(
+                    LaunchConfiguration("confidence_loss_is_outcome"),
+                    value_type=bool,
+                ),
                 "expected_confidence_backend": expected_confidence_backend,
                 "expected_calibration_id": expected_calibration_id,
                 "output_path": PathJoinSubstitution(
@@ -326,6 +335,9 @@ def generate_launch_description() -> LaunchDescription:
             "point_order": fastlio_point_order,
             "time_sync_en": fastlio_time_sync_en,
             "time_offset_lidar_to_imu": fastlio_time_offset_lidar_to_imu,
+            "point_density": point_density,
+            "point_density_profile": point_density_profile,
+            "point_density_min": point_density_min,
             "enable_confidence": enable_confidence,
             "enable_visual_outputs": use_rviz,
         }.items(),
@@ -347,6 +359,9 @@ def generate_launch_description() -> LaunchDescription:
                 + str(package_share / "config" / "cyclonedds_static_tf.xml")
             ),
             "loop_closure_enable": "false",
+            "point_density": point_density,
+            "point_density_profile": point_density_profile,
+            "point_density_min": point_density_min,
         }.items(),
         condition=IfCondition(
             PythonExpression(["'", slam_backend, "' == 'liosam'"])
@@ -413,6 +428,31 @@ def generate_launch_description() -> LaunchDescription:
         cmd=["mkdir", "-p", output_dir],
         output="screen",
     )
+    bag = ExecuteProcess(
+        cmd=[
+            "ros2",
+            "bag",
+            "record",
+            "-o",
+            PathJoinSubstitution([output_dir, "raw_bag"]),
+            "/clock",
+            "/odom",
+            "/imu/data",
+            "/lidar/points_raw",
+            "/cmd_vel",
+            "/joint_states",
+            "/foot_contacts",
+            "/locomotion/estimated_odom",
+            "/tf",
+            "/tf_static",
+            "/simulation/episode_reset",
+            "/simulation/episode_reset_ack",
+            "/slam/odom",
+            "/slam_confidence",
+        ],
+        condition=IfCondition(LaunchConfiguration("record_bag")),
+        output="log",
+    )
     roudi = ExecuteProcess(
         cmd=[
             FindExecutable(name="iox-roudi"),
@@ -444,6 +484,22 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument("headless", default_value="true"),
             DeclareLaunchArgument("use_rviz", default_value="false"),
+            DeclareLaunchArgument(
+                "record_bag",
+                default_value="false",
+                description=(
+                    "Record raw sensors, commands, reset handshake, SLAM and "
+                    "confidence for matched publication replay"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "confidence_loss_is_outcome",
+                default_value="false",
+                description=(
+                    "Keep expected controlled tracking/freshness loss as an "
+                    "experimental outcome instead of a driver failure"
+                ),
+            ),
             DeclareLaunchArgument(
                 "open_teleop_terminal", default_value="false"
             ),
@@ -559,6 +615,14 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("spawn_yaw", default_value="0.0"),
             DeclareLaunchArgument("simulation_steps", default_value="4000"),
             DeclareLaunchArgument(
+                "simulation_seed",
+                default_value="42",
+                description=(
+                    "Isaac Lab environment seed; publication blocks must pass "
+                    "the frozen paired block ID explicitly"
+                ),
+            ),
+            DeclareLaunchArgument(
                 "state_transplant_manifest",
                 default_value="",
             ),
@@ -611,6 +675,25 @@ def generate_launch_description() -> LaunchDescription:
                 "fastlio_time_offset_lidar_to_imu",
                 default_value="0.0",
                 description="Native LiDAR-to-IMU timestamp offset in seconds",
+            ),
+            DeclareLaunchArgument(
+                "point_density",
+                default_value="1.0",
+                description="Nominal deterministic LiDAR support fraction",
+            ),
+            DeclareLaunchArgument(
+                "point_density_profile",
+                default_value="constant",
+                choices=["constant", "gradual_v1", "gradual_v2"],
+                description=(
+                    "Shared sensor-order-preserving support schedule used by "
+                    "both native SLAM backends"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "point_density_min",
+                default_value="0.01",
+                description="Minimum support fraction during gradual profiles",
             ),
             DeclareLaunchArgument(
                 "enable_confidence",
@@ -673,6 +756,7 @@ def generate_launch_description() -> LaunchDescription:
             SetEnvironmentVariable("PYTHONPATH", project_python_path),
             prepare_output,
             roudi,
+            bag,
             TimerAction(
                 period=1.0,
                 actions=[

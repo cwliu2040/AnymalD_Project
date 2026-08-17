@@ -23,7 +23,7 @@ frozen_artifacts:
     checkpoint_sha256: 3bbaff6247fdb59808af42a59e2ec9477c047531a3e2aa6cd0df6208a796feee
   model48:
     policy: exported/anymal_d_locomotion_slam_confidence_phase_separated_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/policy.onnx
-    checkpoint: logs/rsl_rl/anymal_d_locomotion_slam_confidence_constrained_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/model_48.pt
+    checkpoint: checkpoints/anymal_d_locomotion_slam_confidence_sim_v1/model_48.pt
     checkpoint_sha256: 888bc682eda65e2c427eccd445d8b9cb1e787635b5da86e6fa8a85b83fda4fa0
     policy_sha256: c8225b05a2b8fd1a35fb919593a68326b0ddac3d955b69191708def5d071f4a5
     intent_blend_max: 0.79
@@ -32,17 +32,17 @@ frozen_artifacts:
     metadata: exported/proprioceptive_velocity_estimator/v1/clean_lateral_transition_candidate_15/velocity_estimator_metadata.json
     metadata_sha256: 041c9f8a85d220120f6ed5de41bb8e58f7f95a03f3a03c9121898af18c25a1ff
   arm_b_deterministic_supervisor:
-    status: provisional_regenerate_after_clean_commit
+    status: hash_locked_in_release_changeset
     policy: exported/anymal_d_locomotion_slam_confidence_publication_v1/arm_b_model1450_deterministic_supervisor/policy.onnx
     policy_sha256: 9f485d39aa02d65672082520edf68b49d9308b66d2e2ac382523691f4204ec8b
     metadata: exported/anymal_d_locomotion_slam_confidence_publication_v1/arm_b_model1450_deterministic_supervisor/policy_metadata.yaml
-    metadata_sha256: e67d09cbe00edf0e589b09dcdfd8f7d9dae36c18c648dbc1c5fd1548e9483cd4
+    metadata_sha256: bd22d7a3643b15c71ab756f9fdb62e2cc58e4bbc753a26baede6a33d1c531df5
   arm_d_intent_only:
-    status: provisional_regenerate_after_clean_commit
+    status: hash_locked_in_release_changeset
     policy: exported/anymal_d_locomotion_slam_confidence_publication_v1/arm_d_model48_intent_only/policy.onnx
     policy_sha256: 72c9e534a146c27d3ab99d005b042472b73598d1efb4ed7920dbaa772b045a0d
     metadata: exported/anymal_d_locomotion_slam_confidence_publication_v1/arm_d_model48_intent_only/policy_metadata.yaml
-    metadata_sha256: f02b1f331effd53263cffe76fe93f048e86d26f6b82c8618129e515081ee0fb9
+    metadata_sha256: 319201733cd3eea22a4d5217153252d18ef9284d34d1ba693130ad080fa82e8f
   confidence:
     fastlio2:
       calibration_id: native-v1-1e6cf8347be1
@@ -116,6 +116,7 @@ live_matrix:
       interpretation: controlled_support_loss_not_generic_lidar_degradation
   paired_block_ids: [43, 44, 45, 46, 47]
   simulation_seed_equals_paired_block_id: true
+  seed_launch_wiring_status: implemented_and_block43_live_smoke_passed
   repetitions_per_cell: 5
   policy_order: seeded_balanced_latin_square_within_backend_profile_condition
   expected_run_count: 320
@@ -125,8 +126,37 @@ replay_matrix:
   source: every_accepted_live_raw_sensor_bag
   backends: [fastlio2, liosam]
   repetitions_per_backend_bag: 2
+  reproducibility:
+    counts_must_match_exactly: true
+    trajectory_keys_and_finite_values_required: true
+    trajectory_numeric_differences_role: quantified_outcome_not_exclusion_gate
+    preferred_diagnostic_tolerance_only: true
+    trajectory_metric_absolute_tolerance: 1.0e-6
+    trajectory_metric_relative_tolerance: 1.0e-4
   policy_counterfactual_role: action_response_only_no_physics_or_slam_survival_claim
   replay_must_not_be_used_for_closed_loop_gait_causality: true
+
+sample_size_pilot_matrix:
+  dataset_role: excluded_pilot
+  formal_efficacy_use_allowed: false
+  purpose: variance_and_precision_planning_only
+  scene: assets/maps/factory/Factory_Layout.usd
+  initial_pose: {x_m: 0.0, y_m: -18.0, yaw_rad: 0.0}
+  simulation_steps: 4000
+  backends: [fastlio2, liosam]
+  policy_arms: [A, B, C, D]
+  profiles:
+    - lateral_right_1_5
+    - curve_1_5_left_1_0
+    - curve_1_5_right_1_0
+    - warehouse_mapping_stress
+  perception_conditions: [gradual_support_loss]
+  paired_block_ids: [143, 144, 145, 146, 147]
+  formal_block_ids_must_be_disjoint: [43, 44, 45, 46, 47]
+  simulation_seed_equals_paired_block_id: true
+  expected_run_count: 160
+  policy_order: seeded_balanced_latin_square_within_backend_profile_condition
+  all_runs_remain_excluded_after_sample_size_decision: true
 
 readiness_gates:
   - id: clean_identifiable_baseline
@@ -135,8 +165,13 @@ readiness_gates:
     requirement: protected_nested_dirty_hashes_recorded_and_excluded_from_headless_runtime
   - id: arm_artifact_identity
     requirement: all_four_arms_have_hash_locked_metadata_and_export_parity
+    status: passed_with_tracked_model48_checkpoint
   - id: common_estimator_identity
     requirement: every_arm_uses_estimator15_with_matching_metadata_sha256
+  - id: model48_estimator15_recovery_regression
+    requirement: five_profiles_use_distinct_seeds_and_pass_behavior_artifact_estimator_and_hard_termination_checks
+    status: passed_2560_environments_6_hard_terminated
+    evidence: docs/validation/slam_confidence_model48_estimator15_regression_gate.json
   - id: mechanism_sidecar
     requirement: offline_sidecar_reconstructs_action_and_logs_safe_scale_intent_raw_and_applied_gait_coordinates
   - id: intent_only_ablation
@@ -151,12 +186,25 @@ readiness_gates:
     requirement: all_required_topics_use_simulation_time_and_pass_monotonicity_rate_and_gap_checks
   - id: offline_usability_label
     requirement: future_horizon_ground_truth_label_is_generated_only_after_run_for_false_stop_analysis
+    status: passed_excluded_smoke_16_of_16_cells_4512_labels_10972_policy_ticks_matched
   - id: map_consistency_evaluator
     requirement: factory_reference_surface_metric_passes synthetic_split_and_no_split_validation
+    status: passed_synthetic_gate_and_two_backend_native_bag_execution
+    evidence: docs/validation/slam_confidence_map_consistency_synthetic.json
   - id: smoke_before_formal
     requirement: one_excluded_smoke_block_completes_all_arms_backends_and_conditions
+    status: passed_block43_lateral_right_1_5_16_of_16_excluded
+    evidence: docs/validation/slam_confidence_publication_excluded_smoke_block43.json
   - id: sample_size_justification
     requirement: simulation_based_power_or_precision_analysis_confirms_or_increases_five_paired_blocks_before_first_formal_run
+    status: disjoint_excluded_pilot_schedule_frozen_collection_pending
+  - id: run_level_statistics
+    requirement: every_frame_series_is_reduced_to_one_live_run_record_before_paired_cluster_bootstrap
+    status: implemented_and_16_cell_excluded_smoke_descriptive_analysis_passed_formal_claim_locked
+  - id: replay_measurement_chain
+    requirement: every_accepted_live_bag_replays_twice_through_both_backends_with_counts_schema_and_finite_metric_checks
+    status: one_source_two_backends_two_repetitions_excluded_smoke_passed
+    evidence: docs/validation/slam_confidence_publication_replay_excluded_smoke.json
 
 metric_definitions:
   safety:
@@ -225,6 +273,19 @@ statistics:
   survival_endpoint: restricted_mean_survival_time_with_run_level_censoring
   secondary_multiplicity: holm
   report_effect_sizes_even_when_interval_crosses_zero: true
+  sample_size_planning:
+    input_dataset_role: excluded_pilot
+    simulation_resamples: 10000
+    seed: 20260817
+    candidate_paired_block_counts: [5, 6, 8, 10, 12, 15, 20, 25, 30]
+    precision_halfwidth_targets:
+      stance_weighted_foot_slip_rms_mps: 0.02
+      roll_pitch_rate_rms_radps: 0.05
+      tracking_restricted_mean_survival_time_s: 0.50
+      log_normalized_progress_per_elapsed_second_ratio: 0.05
+    efficiency_noninferiority_ratio: 0.90
+    decision_must_precede_formal_collection: true
+    no_post_hoc_target_changes: true
   safety_efficiency_pareto:
     efficiency_value: normalized_progress_per_elapsed_second
     safety_axes:

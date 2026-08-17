@@ -97,3 +97,39 @@ def test_mechanism_sidecar_reconstructs_all_registered_arms() -> None:
     assert set(sidecar["records"][0]["arm_actions"]) == {"A", "B", "C", "D"}
     assert math.isclose(sidecar["records"][1]["safe_scale"], 0.5, abs_tol=1.0e-6)
     assert sidecar["records"][2]["structured_delta_l2"] == 0.0
+
+
+def test_mechanism_sidecar_validates_selected_publication_arm() -> None:
+    module = _load_module()
+    actor = _Actor().eval()
+    observations = torch.zeros((3, 51), dtype=torch.float32)
+    observations[:, 48] = 0.5
+    observations[:, 49] = 1.0
+    with torch.inference_mode():
+        mechanisms = module.reconstruct_mechanisms(actor, observations)
+    for arm in ("B", "C", "D"):
+        diagnostics = {
+            "schema_version": 2,
+            "records": [
+                {
+                    "clock_s": float(index),
+                    "observation": observation.tolist(),
+                    "raw_action": mechanisms[
+                        f"arm_{arm.lower()}_action"
+                    ][index].tolist(),
+                }
+                for index, observation in enumerate(observations)
+            ],
+        }
+        sidecar = module.build_sidecar(
+            diagnostics=diagnostics,
+            actor=actor,
+            actor_details={
+                "architecture": "frozen_model1450_aux_intent_structured_gait"
+            },
+            action_atol=1.0e-6,
+            executed_arm=arm,
+        )
+        assert sidecar["gate"]["passed"]
+        assert sidecar["gate"]["executed_arm"] == arm
+        assert sidecar["gate"]["logged_action_max_absolute_error"] == 0.0

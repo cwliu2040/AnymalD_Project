@@ -69,6 +69,7 @@ class StabilityBenchmarkNode(Node):
         self.declare_parameter("project_root", "")
         self.declare_parameter("readiness_timeout_s", 10.0)
         self.declare_parameter("require_slam_confidence", False)
+        self.declare_parameter("allow_expected_tracking_loss", False)
         self.declare_parameter("confidence_topic", "/slam_confidence")
         self.declare_parameter("expected_confidence_backend", "")
         self.declare_parameter("expected_calibration_id", "")
@@ -96,6 +97,9 @@ class StabilityBenchmarkNode(Node):
             raise ValueError("readiness_timeout_s must be positive")
         self._require_slam_confidence = bool(
             self.get_parameter("require_slam_confidence").value
+        )
+        self._allow_expected_tracking_loss = bool(
+            self.get_parameter("allow_expected_tracking_loss").value
         )
         self._expected_confidence_backend = str(
             self.get_parameter("expected_confidence_backend").value
@@ -282,7 +286,10 @@ class StabilityBenchmarkNode(Node):
                 confidence_failures.append("confidence timestamp violation")
             if self._confidence_unknown_reason_count:
                 confidence_failures.append("unknown confidence reason bit")
-            if self._confidence_freshness_invalid_count:
+            if (
+                self._confidence_freshness_invalid_count
+                and not self._allow_expected_tracking_loss
+            ):
                 confidence_failures.append("confidence freshness loss after TRACKING")
             if self._confidence_unexplained_invalid_count:
                 confidence_failures.append("unexplained confidence invalid after TRACKING")
@@ -298,6 +305,9 @@ class StabilityBenchmarkNode(Node):
             "odometry_count": self._odometry_count,
             "slam_confidence": {
                 "required": self._require_slam_confidence,
+                "expected_tracking_loss_is_outcome": (
+                    self._allow_expected_tracking_loss
+                ),
                 "message_count": self._confidence_count,
                 "tracking_valid_count": self._confidence_valid_count,
                 "invalid_after_tracking_count": (

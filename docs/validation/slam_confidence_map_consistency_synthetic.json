@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "kind": "map_consistency_synthetic_gate",
+  "no_split": {
+    "alignment_yaw_rad": -0.07770068731138094,
+    "alignment_translation_xyz_m": [
+      -0.16317216282513583,
+      0.1260333423006243,
+      0.0
+    ],
+    "reference_distance_p50_m": 0.004063994229609615,
+    "reference_distance_p95_m": 0.007084271839848126,
+    "off_reference_fraction": 0.0,
+    "duplicate_surface_fraction": 0.0,
+    "evaluated_point_count": 1303
+  },
+  "split": {
+    "alignment_yaw_rad": -0.07802396820543113,
+    "alignment_translation_xyz_m": [
+      -0.172353443892496,
+      0.1254185438002229,
+      0.0
+    ],
+    "reference_distance_p50_m": 0.006349093478984946,
+    "reference_distance_p95_m": 0.24904298654172852,
+    "off_reference_fraction": 0.23222506393861891,
+    "duplicate_surface_fraction": 0.23017902813299232,
+    "evaluated_point_count": 1955
+  },
+  "checks": {
+    "no_split_reference_p95_le_0_03m": true,
+    "no_split_duplicate_fraction_le_0_01": true,
+    "split_duplicate_fraction_ge_0_10": true,
+    "split_p95_ge_0_15m": true
+  },
+  "passed": true
+}

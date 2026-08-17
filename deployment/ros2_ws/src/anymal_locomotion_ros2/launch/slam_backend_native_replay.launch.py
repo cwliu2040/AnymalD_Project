@@ -86,6 +86,9 @@ def _backend_actions(context, *_) -> list[object]:
     enable_effect_diagnostics = LaunchConfiguration(
         "enable_effect_diagnostics"
     )
+    trajectory_thresholds_are_outcomes = LaunchConfiguration(
+        "trajectory_thresholds_are_outcomes"
+    )
     fastlio_blind = LaunchConfiguration("fastlio_blind")
     fastlio_point_filter_num = LaunchConfiguration(
         "fastlio_point_filter_num"
@@ -235,6 +238,9 @@ def _backend_actions(context, *_) -> list[object]:
                 "yaw_stress_mode": ParameterValue(
                     yaw_stress_mode, value_type=bool
                 ),
+                "trajectory_thresholds_are_outcomes": ParameterValue(
+                    trajectory_thresholds_are_outcomes, value_type=bool
+                ),
             }
         ],
         output="screen",
@@ -344,6 +350,9 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("yaw_stress_mode", default_value="false"),
             DeclareLaunchArgument(
                 "enable_effect_diagnostics", default_value="false"
+            ),
+            DeclareLaunchArgument(
+                "trajectory_thresholds_are_outcomes", default_value="false"
             ),
             DeclareLaunchArgument("fastlio_blind", default_value="0.5"),
             DeclareLaunchArgument(

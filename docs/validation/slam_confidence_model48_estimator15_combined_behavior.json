@@ -1,0 +1,227 @@
+{
+  "behavior_gate": {
+    "checks": {
+      "degraded_deceleration": true,
+      "degraded_target_tracking": true,
+      "degraded_yaw_tracking": true,
+      "hard_termination_rate": true,
+      "healthy_linear_tracking": true,
+      "healthy_speed_retained": true,
+      "healthy_yaw_tracking": true,
+      "invalid_mean_stop": true,
+      "invalid_tail_stop": true,
+      "invalid_yaw_stop": true,
+      "recovery_linear_tracking": true,
+      "recovery_speed_reacquired": true,
+      "recovery_yaw_tracking": true
+    },
+    "derived": {
+      "degraded_speed_ratio_to_healthy": 0.27235805101995314,
+      "hard_terminated_env_count": 0,
+      "hard_terminated_env_fraction": 0.0,
+      "hard_termination_count": 0,
+      "hard_termination_fraction": 0.0,
+      "timeout_count": 512
+    },
+    "passed": true,
+    "thresholds": {
+      "degraded_linear_rmse_max_mps": 0.5,
+      "degraded_speed_ratio_to_healthy_max": 0.65,
+      "degraded_yaw_mae_max_radps": 0.5,
+      "hard_termination_fraction_max": 0.01,
+      "healthy_linear_rmse_max_mps": 0.45,
+      "healthy_mean_planar_speed_min_mps": 1.1,
+      "healthy_yaw_mae_max_radps": 0.45,
+      "invalid_mean_abs_yaw_rate_max_radps": 0.2,
+      "invalid_mean_planar_speed_max_mps": 0.25,
+      "invalid_speed_above_0_50_fraction_max": 0.05,
+      "recovery_linear_rmse_max_mps": 0.45,
+      "recovery_mean_planar_speed_min_mps": 1.0,
+      "recovery_yaw_mae_max_radps": 0.55
+    }
+  },
+  "behavior_gate_profile": {
+    "command": {
+      "vx": 1.5,
+      "vy": 0.0,
+      "wz": 1.0
+    },
+    "cycle_s": 10.0,
+    "path": "/home/ros/anymal_locomotion/configs/slam_confidence_behavior_holdout_combined.yaml",
+    "profile_id": "slam-confidence-v2-holdout-combined",
+    "seed": 47,
+    "sha256": "f652eeba6d5534aede5013ae4171b462188d5a0b14a105d244080b62be9284f4"
+  },
+  "checkpoint": "/home/ros/anymal_locomotion/logs/rsl_rl/anymal_d_locomotion_slam_confidence_constrained_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/model_48.pt",
+  "num_envs": 512,
+  "states": {
+    "degraded": {
+      "linear_rmse": 0.16600936190627893,
+      "mean_absolute_yaw_rate": 0.5816765406727791,
+      "mean_planar_speed": 0.7726072643019937,
+      "samples": 140800,
+      "yaw_mae": 0.13615630094300618
+    },
+    "healthy": {
+      "linear_rmse": 0.38580942476164465,
+      "mean_absolute_yaw_rate": 0.9728359215049183,
+      "mean_planar_speed": 1.3459603386416155,
+      "samples": 217600,
+      "yaw_mae": 0.13663844888701157
+    },
+    "invalid": {
+      "linear_rmse": 0.14571790475345905,
+      "mean_absolute_yaw_rate": 0.0891239940126737,
+      "mean_planar_speed": 0.1338434793551763,
+      "samples": 153600,
+      "yaw_mae": 0.0891239940126737
+    }
+  },
+  "steps": 1000,
+  "termination_summary": {
+    "hard_terminated_env_count": 0,
+    "hard_terminated_env_fraction": 0.0,
+    "hard_termination_count": 0,
+    "hard_termination_phase_counts": {
+      "deceleration": 0,
+      "healthy": 0,
+      "invalid": 0,
+      "recovery": 0
+    },
+    "timeout_count": 512
+  },
+  "velocity_estimator": {
+    "axis_mae_mps": [
+      0.03433474042205089,
+      0.029982262831200274,
+      0.018268514452568586
+    ],
+    "axis_rmse_mps": [
+      0.0469428334186347,
+      0.037866163527816674,
+      0.02415127900440854
+    ],
+    "ground_truth_role": "offline_evaluator_only",
+    "metadata": "exported/proprioceptive_velocity_estimator/v1/clean_lateral_transition_candidate_15/velocity_estimator_metadata.json",
+    "samples": 502272,
+    "warmup_policy_steps": 19
+  },
+  "windows": {
+    "degraded_late": {
+      "action_rate_rms": 0.09513655154717929,
+      "action_rms": 0.4306217646281189,
+      "body_roll_pitch_rate_rms_radps": 0.25585857070912915,
+      "body_tilt_rms": 0.03078872324143918,
+      "gait_mode_counts": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "linear_rmse": 0.2205967808972006,
+      "mean_absolute_vertical_speed_mps": 0.04842460557818413,
+      "mean_absolute_yaw_rate": 0.302136025428772,
+      "mean_effective_command_scale": 1.0,
+      "mean_planar_speed": 0.404274620115757,
+      "mean_policy_gait_coordinates": [
+        0.0006013700210579032,
+        -0.05872719258069992,
+        0.017183521017432212,
+        0.19580889433622362
+      ],
+      "mean_policy_intent_blend": 0.7900000214576721,
+      "mean_stance_foot_slip_speed_mps": 0.1419583885961188,
+      "samples": 25600,
+      "speed_above_0_50_fraction": 0.21640625,
+      "stance_foot_samples": 74058,
+      "yaw_mae": 0.1721359348297119
+    },
+    "healthy": {
+      "action_rate_rms": 0.22928202768938882,
+      "action_rms": 0.6519051753795782,
+      "body_roll_pitch_rate_rms_radps": 0.4696771884434783,
+      "body_tilt_rms": 0.03489682028685315,
+      "gait_mode_counts": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "linear_rmse": 0.07754766518004626,
+      "mean_absolute_vertical_speed_mps": 0.07265602996572852,
+      "mean_absolute_yaw_rate": 1.0559188860654831,
+      "mean_effective_command_scale": 1.0,
+      "mean_planar_speed": 1.4843498057126998,
+      "mean_policy_gait_coordinates": [
+        0.1418807104974985,
+        -0.05912550766021013,
+        0.01942985395900905,
+        0.19147273123264313
+      ],
+      "mean_policy_intent_blend": 0.7900000214576721,
+      "mean_stance_foot_slip_speed_mps": 0.5039139218773868,
+      "samples": 102400,
+      "speed_above_0_50_fraction": 1.0,
+      "stance_foot_samples": 202934,
+      "yaw_mae": 0.08155215322971344
+    },
+    "invalid_settled": {
+      "action_rate_rms": 0.06751452475423554,
+      "action_rms": 0.42276368036248324,
+      "body_roll_pitch_rate_rms_radps": 0.1795745259670881,
+      "body_tilt_rms": 0.030755862490338973,
+      "gait_mode_counts": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "linear_rmse": 0.14091155169092695,
+      "mean_absolute_vertical_speed_mps": 0.02927439473569393,
+      "mean_absolute_yaw_rate": 0.08863272972404956,
+      "mean_effective_command_scale": 1.0,
+      "mean_planar_speed": 0.12459382817149162,
+      "mean_policy_gait_coordinates": [
+        0.14759949058294297,
+        -0.06342093862593173,
+        0.017450872510671615,
+        0.21313164845108987
+      ],
+      "mean_policy_intent_blend": 0.7900000214576721,
+      "mean_stance_foot_slip_speed_mps": 0.06263330121714178,
+      "samples": 51200,
+      "speed_above_0_50_fraction": 0.0,
+      "stance_foot_samples": 183571,
+      "yaw_mae": 0.08863272972404956
+    },
+    "recovery_settled": {
+      "action_rate_rms": 0.2035655682201471,
+      "action_rms": 0.6287148514928275,
+      "body_roll_pitch_rate_rms_radps": 0.40837641245679746,
+      "body_tilt_rms": 0.035041008675818074,
+      "gait_mode_counts": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "linear_rmse": 0.1713105115230263,
+      "mean_absolute_vertical_speed_mps": 0.06526429172605276,
+      "mean_absolute_yaw_rate": 0.9013524425029754,
+      "mean_effective_command_scale": 1.0,
+      "mean_planar_speed": 1.2218200218677522,
+      "mean_policy_gait_coordinates": [
+        0.14316545709967612,
+        -0.059668855555355546,
+        0.019181233048439026,
+        0.1934754282236099
+      ],
+      "mean_policy_intent_blend": 0.7900000214576721,
+      "mean_stance_foot_slip_speed_mps": 0.403413276466865,
+      "samples": 51200,
+      "speed_above_0_50_fraction": 0.99203125,
+      "stance_foot_samples": 105810,
+      "yaw_mae": 0.09791097097098828
+    }
+  }
+}

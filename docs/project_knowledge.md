@@ -19,8 +19,9 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   閉環驗證`）；benchmark base branch
   `benchmark/slam-liosam-fastlio2` 與目前實驗 branch 都以
   `fee8c9f 建立 SLAM backend 比較基線` 為共同基礎。
-- 本次交接後 `exp/slam-fastlio2` 的本機與遠端baseline均為
-  `7a5675a 修正 LIO-SAM 信心誤判並完成互動驗證`；其前一個commit為
+- `exp/slam-fastlio2` 的本機與遠端baseline均為
+  `9b015c7 建立 SLAM confidence 發表與正式化基礎`；其前一個commit為
+  `7a5675a 修正 LIO-SAM 信心誤判並完成互動驗證`，再前一個commit為
   `8392743 加入雙 SLAM backend 互動驗證入口`，再前一個parent為
   `0d38247 完成 confidence-aware PPO 與狀態估計候選`，再前一個commit為
   `fbee219 更新 SLAM confidence 對話交接狀態`，均已push。使用者確認
@@ -44,15 +45,13 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   C-v4至C-v10 confidence-conditioned PPO實作、estimator-closed-loop訓練接線、測試、
   驗證文件與interactive false-stop修正均已提交並push；C-v10模擬候選已通過固定behavior及
   gait-value gate、export parity與FAST/LIO完整五方向live matrix，但尚未取代正式policy。
-  本輪另建立publication data-collection protocol，但使用者決定先完善工程實作；尚未執行
-  publication formal runs、未建立B/D deployment artifacts，也未授權promotion。
-- 目前尚未提交的project-owned變更為：
-  `configs/slam_confidence_phase_separated_locomotion_matrix.yaml`、
-  `configs/stability_diagnostics.yaml`、
-  `configs/stability_diagnostics_confidence_aware.yaml`、
-  `scripts/validation/run_slam_confidence_locomotion_matrix.py`、
-  `source/anymal_locomotion/anymal_locomotion/stability_diagnostics.py`、兩個對應測試檔、
-  本文件，以及先前建立但暫緩執行的publication protocol YAML／說明文件。尚未commit或push。
+  Publication data contract、B/D artifacts與release skeleton已在`9b015c7`建立；目前仍未執行
+  disjoint pilot或publication formal runs，也未授權promotion。
+- 目前尚未提交的project-owned變更是第二批publication execution實作：A/B/C/D live matrix、
+  雙backend replay、offline usability／false-stop、trajectory、map consistency、run-level
+  statistics、cluster bootstrap、sample-size pilot，以及estimator15 foot-contact replay gate；
+  同批亦包含對應config、tests、validation evidence、五方向recovery regression evidence與
+  byte-identical curated model48 checkpoint。完成驗證後需另取得使用者明確同意才可commit／push。
   root `build/`、`install/`、`log/`
   與`lidar_type`是未追蹤runtime產物，不納入提交，其他 `logs/`／`outputs/` 實驗
   產物也不提交。
@@ -65,7 +64,8 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
 - Nested upstream LIO-SAM 位於
   `deployment/ros2_ws/src/lio_sam`，目前是 detached HEAD。
 - Nested LIO-SAM 的 `config/rviz2.rviz` 有對話開始前就存在的 dirty；
-  不可還原、stage 或提交。
+  不可還原、stage 或提交；目前檔案SHA為
+  `0c3a25d41df63d9fa711af98845f01d99856f27b3dc8ea05fc11fcddee82adc1`。
 - Nested FAST-LIO2 checkout 的 `FAST_LIO/src/laserMapping.cpp` 是既有 downstream
   visualization-only map publisher patch，`FAST_LIO/Log/*.txt` 是 runtime
   輸出；不可把 nested checkout 的 dirty stage 到本輪 root commit。
@@ -1355,15 +1355,17 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
   rollback，formal publication collection也尚未開始。
 - 新增`configs/slam_confidence_sim_release_v1.yaml`，固定branch-only／no-main-merge邊界、
   model1450 rollback、共同estimator15與confidence artifacts、A/B/C/D identity及promotion
-  gates。C checkpoint目前仍位於`logs/`，必須在clean commit前curate到`checkpoints/`；不得把
-  現況誤寫成已promotion。
+  gates。C checkpoint現已以相同SHA curate到tracked `checkpoints/`路徑，但不得把artifact
+  readiness誤寫成已promotion。
 - 新增B/D可執行artifact exporter。B是frozen model1450 backbone在deterministic safe command
   上的51-D control；D是model48 learned intent-only，structured gait delta精確為零。暫定輸出
   位於`exported/anymal_d_locomotion_slam_confidence_publication_v1/`，B/D ONNX SHA分別為
   `9f485d39...ec8b`與`72c9e534...a0d`；module→ONNX最大誤差分別`2.861e-6`與`5.007e-6`，
-  TorchScript誤差皆0，ROS external ONNX backend 51-D smoke亦通過。因export產生時root worktree
-  尚未clean，metadata明確列為provisional，正式收數前必須在release code commit後重產；新
-  export目錄符合`.gitignore`的`exported/*`，未來提交須明確force-add所需正式產物。
+  TorchScript誤差皆0，ROS external ONNX backend 51-D smoke亦通過。第一階段code／provisional
+  artifacts已提交並push為`9b015c7 建立 SLAM confidence 發表與正式化基礎`；其後已從clean
+  `9b015c7`重產B/D，ONNX SHA保持不變，metadata SHA更新為B
+  `bd22d7a3...1df5`、D `31920173...2e8f`。正式收數前仍須提交這批重產artifact與hash manifest；
+  export目錄符合`.gitignore`的`exported/*`，提交時須明確force-add。
 - 新增offline mechanism sidecar：由實際policy diagnostics observation與model48 checkpoint
   逐幀重建safe scale、intent blend、raw/applied stride、crouch、stance width、action smoothing、
   structured-delta L2及A/B/C/D actions，並以live ONNX raw action作一致性gate。實際LIO-SAM
@@ -1425,8 +1427,82 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
   `docs/validation/slam_confidence_publication_protocol.md`。Live matrix固定A/B/C/D四arms、
   兩backend、四條route、native／controlled-support-loss兩conditions與五個paired blocks；
   replay明確只作matched-input backend／量測可重現性，不能冒充closed-loop gait causality。
-  正式收數仍未授權；需先完成B/D hash-locked artifacts、mechanism sidecar、live gradual
-  challenge、false-stop label、map-consistency evaluator與完整excluded smoke block。
+  正式收數仍未授權；B/D hash-locked artifacts、mechanism sidecar、live gradual challenge與
+  完整excluded smoke block、false-stop offline label與map-consistency evaluator現已完成，
+  仍缺sample-size justification與其餘formal readiness gates。
+- 2026-08-17 publication執行鏈已補上共同`simulation_seed`、兩backend完全相同的
+  `point_density/profile/min`傳遞與raw sensor/command/reset/SLAM/confidence bag錄製。
+  `scripts/validation/run_slam_confidence_publication_matrix.py`會hash-lock A/B/C/D與
+  estimator15、產生固定320-cell balanced schedule，並把block 43..47直接作為Isaac Lab
+  seed；預設資料角色固定為`excluded_smoke`。`--formal`在protocol未授權、artifact SHA不符、
+  tracked worktree不乾淨或輸出不在`outputs/slam_confidence_publication_v1/`時
+  fail closed；執行時的clean HEAD直接寫入run manifest，避免在被hash的release文件中建立
+  不可能的self-referential commit hash。B/C/D mechanism sidecar也已能依實際executed arm逐sample重建action；A為48-D
+  confidence-unaware control，不偽造51-D mechanism sidecar。完整excluded smoke block已如下一項
+  完成。其後runner已把offline future-usability／false-stop與map-consistency設為每格必要
+  measurement-completeness gates；尚未實作run-level publication statistics。
+- 2026-08-17 block43 `lateral_right_1_5`完整excluded smoke已完成：兩backend × native／
+  gradual × A/B/C/D共16/16 cells通過，raw bags合計120,656 messages；B/C/D action sidecar
+  最大重建誤差`1.66893e-6`（`atol=1e-5`），D structured delta exact zero。受控loss在driver
+  中明確作為experimental outcome保留，不再誤判成infrastructure failure；identity、timestamp、
+  unknown reason與logical publish gap仍維持hard checks。機讀摘要為
+  `docs/validation/slam_confidence_publication_excluded_smoke_block43.json`。這只證明harness與
+  單一excluded block可用，不是正式effect-size、promotion或完整四route／五block證據。
+- 同一block43的16格raw bags已全數通過offline usability evaluator：4,512個labels，
+  10,972／10,972個policy records成功配對，1,497個known-label confidence-stop samples中
+  有3個false stops。GT只在run結束後形成future-horizon label；runtime policy與confidence
+  extractor均未讀GT。這些excluded數字只證明false-stop定義及資料鏈可執行，不可作正式
+  noninferiority結論。
+- 已新增map-consistency core與每格bag evaluator。它用相同raw scan samples、已凍結的
+  base-to-lidar平移`(0.20,0,0.35)`，分別由offline GT與canonical SLAM pose建立
+  route-observed Factory surfaces，再以單次SE(2)＋Z alignment計算reference-distance
+  p50/p95、off-reference與duplicate-surface fractions。合成no-split與0.25 m split-map四項
+  gate全過（`docs/validation/slam_confidence_map_consistency_synthetic.json`）；FAST-LIO2與
+  LIO-SAM各一個native arm C excluded bag亦端到端通過measurement-completeness gate。
+  該gate刻意不套efficacy threshold，不能把單次smoke值解讀成backend排名或promotion；
+  threshold／confidence interval必須由完整paired formal matrix決定。
+- Publication run-level資料鏈也已實作：每格將locomotion diagnostics、offline usability／
+  trajectory、map consistency與mechanism sidecar聚合為一個`accepted_live_run` record，
+  frame samples明確不作independent replicates。分析器對C–D／C–B／B–A輸出continuous
+  paired differences、binary risk differences、效率ratio及backend interaction，固定以
+  `(paired_block_id, profile)`做10,000次cluster bootstrap；正式claim需320個唯一run
+  identities精確匹配frozen schedule且所有run gates通過。既有16格excluded smoke已全部
+  backfill並完成descriptive analysis，但因只有block43且role為excluded，分析器固定拒絕
+  formal claim／complete support。sample-size justification仍未完成。
+- Publication replay runner已實作：每個accepted live raw bag以content SHA fingerprint，
+  分別進FAST-LIO2／LIO-SAM native backend各兩次；正式320 live runs會形成1,280 replay
+  cells。Replay永久標記不可作closed-loop gait causality。第一個excluded source smoke為
+  4/4通過：FAST兩次137 mapping samples且ATE同為`0.143664 m`；LIO兩次138 samples，
+  ATE `0.038180/0.044856 m`（差`0.006677 m`），yaw RMSE差`0.004102 deg`。因此counts、
+  schema、finite與timestamps屬hard gate，數值差異則完整量化為backend variability，不以
+  任意closeness threshold排除；FAST超過舊0.10 m qualification threshold亦保留為outcome。
+  機讀證據為`docs/validation/slam_confidence_publication_replay_excluded_smoke.json`，完整
+  replay matrix仍待formal live data後執行。
+- Sample-size gate已凍結disjoint pilot，不再允許用formal outcomes事後決定樣本數：pilot
+  blocks/seeds為`143..147`，formal為`43..47`，四routes×gradual×兩backend×A/B/C/D共
+  160格，role固定`excluded_pilot`且永不併入formal efficacy。Precision planner要求完整
+  160個唯一records與all gates passed，再以10,000次stratified simulation比較預註冊的
+  slip `0.02 m/s`、roll/pitch-rate `0.05 rad/s`、RMST `0.50 s`及log-efficiency ratio
+  `0.05` half-width目標，候選formal blocks為5到30，效率下界仍須`>=log(0.90)`。
+  Pilot schedule dry-run為160/160；目前尚未執行這160格，因此sample-size justification
+  與formal collection authorization仍不可通過。
+- model48 checkpoint已由ignored training log以相同SHA `888bc682...4fa0` curate到tracked
+  `checkpoints/anymal_d_locomotion_slam_confidence_sim_v1/model_48.pt`，publication protocol、
+  release manifest與mechanism sidecar的正式dependency均改用此路徑；export metadata保留的
+  原logs source path只作training provenance。這關閉「clean commit沒有model48 checkpoint」
+  的artifact缺口。
+- 新publication raw-bag contract加入`/foot_contacts`與`/locomotion/estimated_odom`，並新增
+  estimator15 offline replay parity：由同一ONNX、policy joint mapping與bag接收順序重建
+  IMU/joint/contact 20-step history，逐exact stamp對live estimator output，要求match比例
+  `>=0.95`與最大誤差`<=1e-5 m/s`，全程不讀GT。舊block43 bags缺少新增topics，故只能保留
+  為舊schema smoke；新的160-cell disjoint pilot每格必須通過此gate，才能關閉common estimator
+  foot-contact replay readiness。
+- model48＋estimator15的既有五方向Isaac Lab recovery behavior evidence已curate並以SHA鎖定；
+  forward／left／right／reverse／combined各為512 env、1000 steps且使用五個不同seed，所有
+  behavior checks通過。總計2560個環境中6個曾hard terminate，pooled fraction為`0.00234375`，
+  各profile亦低於凍結的1%上限。機讀gate為
+  `docs/validation/slam_confidence_model48_estimator15_regression_gate.json`。這關閉simulation
+  recovery regression gate，但不取代尚未執行的pilot、正式雙backend matrix或promotion審查。
 
 ### Proprioceptive estimator and gait-value A/B (2026-08-13)
 

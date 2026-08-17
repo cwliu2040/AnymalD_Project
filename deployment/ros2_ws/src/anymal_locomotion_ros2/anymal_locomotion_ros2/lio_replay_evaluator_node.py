@@ -62,6 +62,7 @@ class LioReplayEvaluatorNode(Node):
         self.declare_parameter("confidence_dataset_path", "")
         self.declare_parameter("capture_group", "")
         self.declare_parameter("deskew_mode", "native")
+        self.declare_parameter("trajectory_thresholds_are_outcomes", False)
 
         project_root = Path(
             str(self.get_parameter("project_root").value)
@@ -104,6 +105,9 @@ class LioReplayEvaluatorNode(Node):
             self.get_parameter("capture_group").value
         ).strip()
         self._deskew_mode = str(self.get_parameter("deskew_mode").value)
+        self._trajectory_thresholds_are_outcomes = bool(
+            self.get_parameter("trajectory_thresholds_are_outcomes").value
+        )
         if self._confidence_dataset_path is not None:
             if not self._confidence_dataset_path.is_relative_to(project_root):
                 raise ValueError("confidence dataset must remain inside project")
@@ -477,6 +481,7 @@ class LioReplayEvaluatorNode(Node):
             return
         self._finished = True
         failures: list[str] = []
+        trajectory_outcomes: list[str] = []
         metrics: dict[str, float | int] = {}
         try:
             metrics = evaluate_trajectory(
@@ -496,17 +501,22 @@ class LioReplayEvaluatorNode(Node):
                 0.10,
                 0.01 * float(metrics["path_length_m"]),
             )
+            threshold_failures: list[str] = []
             if float(metrics["translation_ate_rmse_m"]) > translation_limit:
-                failures.append(
+                threshold_failures.append(
                     "translation ATE RMSE exceeds "
                     f"{translation_limit:.3f} m"
                 )
             if float(metrics["yaw_rmse_deg"]) > 1.0:
-                failures.append("yaw RMSE exceeds 1 degree")
+                threshold_failures.append("yaw RMSE exceeds 1 degree")
             if float(metrics["translation_jump_residual_max_m"]) > 0.20:
-                failures.append("translation pose jump exceeds 0.20 m")
+                threshold_failures.append("translation pose jump exceeds 0.20 m")
             if float(metrics["yaw_jump_residual_max_deg"]) > 2.0:
-                failures.append("yaw pose jump exceeds 2 degrees")
+                threshold_failures.append("yaw pose jump exceeds 2 degrees")
+            if self._trajectory_thresholds_are_outcomes:
+                trajectory_outcomes.extend(threshold_failures)
+            else:
+                failures.extend(threshold_failures)
 
         yaw_stress: dict = {}
         if self._yaw_stress_mode:
@@ -620,6 +630,8 @@ class LioReplayEvaluatorNode(Node):
             "schema_version": 1,
             "status": "passed" if not failures else "failed",
             "failures": failures,
+            "trajectory_threshold_outcomes": trajectory_outcomes,
+            "trajectory_thresholds_are_outcomes": self._trajectory_thresholds_are_outcomes,
             "trajectory": metrics,
             "estimate_topic": self._estimate_topic,
             "ground_truth_sensor_offset_xyz": list(

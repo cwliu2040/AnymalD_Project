@@ -123,7 +123,7 @@ artifacts:
     sha256: 72c9e534a146c27d3ab99d005b042472b73598d1efb4ed7920dbaa772b045a0d
     size_bytes: 212285
 config_sha256: 7c48743b8850c95b281361adcd94926e7d8de797cdead0a158011e92e264089a
-project_git_commit: 7a5675af564460001ed5bb102b28712cc6e0a078
+project_git_commit: 9b015c7e40f532b22c5ae44634d27201cb46b738
 policy_extension:
   architecture: publication_arm_d_model48_intent_only
   confidence_offset: 48

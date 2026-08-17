@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "kind": "slam_confidence_publication_replay_excluded_smoke",
+  "dataset_role": "excluded_smoke",
+  "formal_efficacy_use_allowed": false,
+  "closed_loop_gait_causality_allowed": false,
+  "source": {
+    "backend": "fastlio2",
+    "profile": "lateral_right_1_5",
+    "condition": "native",
+    "paired_block_id": 43,
+    "arm": "C",
+    "bag_fingerprint_sha256": "d416668015c22ce69ce590f90e85ab02db18e3c4feda0621ea536f5e2e3a5d93"
+  },
+  "summary": {
+    "expected_replay_count": 4,
+    "passed_replay_count": 4,
+    "counts_and_schema_reproducibility_passed": 2,
+    "fastlio2_preferred_numeric_tolerance_passed": true,
+    "liosam_preferred_numeric_tolerance_passed": false,
+    "passed": true
+  },
+  "backends": {
+    "fastlio2": {
+      "mapping_odometry_count": [137, 137],
+      "translation_ate_rmse_m": [0.1436643111866537, 0.1436643111866537],
+      "yaw_rmse_deg": [0.20470777708179905, 0.20470777708179905],
+      "trajectory_threshold_outcomes": ["translation ATE RMSE exceeds 0.100 m"],
+      "maximum_ate_difference_m": 0.0,
+      "maximum_yaw_rmse_difference_deg": 0.0
+    },
+    "liosam": {
+      "mapping_odometry_count": [138, 138],
+      "translation_ate_rmse_m": [0.03817954977197365, 0.044856173951555174],
+      "yaw_rmse_deg": [0.11063785430386568, 0.1065363081803387],
+      "trajectory_threshold_outcomes": [],
+      "maximum_ate_difference_m": 0.006676624179581522,
+      "maximum_yaw_rmse_difference_deg": 0.004101546123526978
+    }
+  },
+  "interpretation": "Counts, schemas, finite metrics, and both repetitions passed. Numeric replay differences are quantified outcomes rather than exclusion gates. FAST-LIO2 ATE above the legacy 0.10 m qualification threshold is retained as an outcome. This excluded replay smoke is not closed-loop gait evidence and not a promotion result."
+}
