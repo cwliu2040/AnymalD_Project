@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "kind": "slam_confidence_challenge_calibration_summary",
+  "dataset_role": "excluded_calibration",
+  "git_commit": "9aded5ea065a651a33dc587ff16f8b0a1470005b",
+  "protocol_sha256": "cb857e0e3f9b956a89e4771b7acbe4c11751b2b082869da7932a3bd5d7c5f28c",
+  "release_sha256": "989848cb04e08d602e0aacbbafca13e170175155e312119ffbad9a743ff2ffdf",
+  "runtime_matrix_summary_sha256": "1e17983c93d081a6e0b6af467bf873a16eb502b26c7a7fefa5ac90c7457dd009",
+  "scheduled_cells": 40,
+  "collection_valid_cells": 40,
+  "support_fraction_candidates": [0.005, 0.01, 0.02, 0.05, 0.1],
+  "tracking_event_time_ranges_s": {
+    "fastlio2/curve_1_5_right_1_0": [3.499999922, 3.699999917],
+    "fastlio2/warehouse_mapping_stress": [3.499999922, 3.699999917],
+    "liosam/curve_1_5_right_1_0": [3.799999915, 3.899999913],
+    "liosam/warehouse_mapping_stress": [3.799999915, 3.899999913]
+  },
+  "maximum_absolute_c_minus_d_tracking_event_time_difference_s": 0.099999997,
+  "decision": {
+    "formal_condition_frozen": false,
+    "candidate_selected": false,
+    "reason": "support sweep changed event time by at most 0.2 s per backend and remained locked to the 1.5 s density ramp; it did not locate a marginal challenge with a usable policy reaction window",
+    "next_action": "run excluded v2 calibration with a 6.0 s ramp and higher support plateaus"
+  }
+}

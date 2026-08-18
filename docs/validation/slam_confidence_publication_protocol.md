@@ -347,9 +347,18 @@ Pilot raw collection來自clean commit `8a8ebc7`，160/160 cells完成。Disposi
 批bags backfill出160 unique scheduled-run records，28個policy/SLAM failures及5個invalid-map
 registrations保留為outcomes；estimator replay 160/160通過且最大速度誤差為`0.0 m/s`。
 機讀摘要為`docs/validation/slam_confidence_publication_pilot_v1_summary.json`。下一步先跑
-40-cell `excluded_calibration` coarse sweep，候選support fractions為0.005、0.01、0.02、0.05、
-0.10；兩backend、curve-right與warehouse、C/D、seed243。只有policy-independent selection
-rule通過並凍結新challenge後，才可重做最終sample-size pilot與考慮formal authorization。
+40-cell `excluded_calibration` coarse sweep已在commit `9aded5e`完成：40/40 collection-valid，
+但support 0.005至0.10只讓FAST tracking event由3.5移到3.7 s、LIO-SAM由3.8移到3.9 s，
+C–D最大差0.10 s，仍被1.5 s ramp鎖定，故不得凍結。機讀摘要為
+`docs/validation/slam_confidence_challenge_calibration_v1_summary.json`。
+
+Calibration v2在任何formal data前改用3.0 s healthy、6.0 s ramp-down、4.0 s low-support
+hold、3.0 s recovery，support candidates為0.35、0.45、0.55、0.65、0.75。兩backend adapter
+共用由launch/protocol顯式傳入的相同時序。`select_slam_confidence_challenge.py`只依完整資料
+gate、每個backend/profile的event/censoring bracket、至少1.0 s跨support event-time span、
+事件比例、phase-boundary距離及至少2.0 s反應窗選擇最低support；不使用C相對D的療效來挑
+challenge，避免selection bias。只有selector通過並凍結條件後，才可重做最終sample-size
+pilot與考慮formal authorization。
 
 正式mechanism reconstruction所需的model48 checkpoint已從training `logs/`來源以byte-for-byte
 相同SHA `888bc682...4fa0` curate至tracked

@@ -209,6 +209,10 @@ def generate_launch_description() -> LaunchDescription:
     point_density = LaunchConfiguration("point_density")
     point_density_profile = LaunchConfiguration("point_density_profile")
     point_density_min = LaunchConfiguration("point_density_min")
+    point_density_healthy_s = LaunchConfiguration("point_density_healthy_s")
+    point_density_ramp_down_s = LaunchConfiguration("point_density_ramp_down_s")
+    point_density_hold_s = LaunchConfiguration("point_density_hold_s")
+    point_density_ramp_up_s = LaunchConfiguration("point_density_ramp_up_s")
     enable_confidence = LaunchConfiguration("enable_confidence")
     slam_odom_topic = LaunchConfiguration("slam_odom_topic")
     policy_odometry_topic = LaunchConfiguration("policy_odometry_topic")
@@ -345,6 +349,10 @@ def generate_launch_description() -> LaunchDescription:
             "point_density": point_density,
             "point_density_profile": point_density_profile,
             "point_density_min": point_density_min,
+            "point_density_healthy_s": point_density_healthy_s,
+            "point_density_ramp_down_s": point_density_ramp_down_s,
+            "point_density_hold_s": point_density_hold_s,
+            "point_density_ramp_up_s": point_density_ramp_up_s,
             "enable_confidence": enable_confidence,
             "enable_visual_outputs": use_rviz,
         }.items(),
@@ -369,6 +377,10 @@ def generate_launch_description() -> LaunchDescription:
             "point_density": point_density,
             "point_density_profile": point_density_profile,
             "point_density_min": point_density_min,
+            "point_density_healthy_s": point_density_healthy_s,
+            "point_density_ramp_down_s": point_density_ramp_down_s,
+            "point_density_hold_s": point_density_hold_s,
+            "point_density_ramp_up_s": point_density_ramp_up_s,
         }.items(),
         condition=IfCondition(
             PythonExpression(["'", slam_backend, "' == 'liosam'"])
@@ -706,6 +718,10 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="0.01",
                 description="Minimum support fraction during gradual profiles",
             ),
+            DeclareLaunchArgument("point_density_healthy_s", default_value="3.0"),
+            DeclareLaunchArgument("point_density_ramp_down_s", default_value="1.5"),
+            DeclareLaunchArgument("point_density_hold_s", default_value="4.5"),
+            DeclareLaunchArgument("point_density_ramp_up_s", default_value="3.0"),
             DeclareLaunchArgument(
                 "enable_confidence",
                 default_value="false",

@@ -51,7 +51,10 @@ def test_challenge_calibration_schedule_is_small_balanced_and_disjoint() -> None
     assert {row["backend"] for row in rows} == {"fastlio2", "liosam"}
     assert {row["simulation_seed"] for row in rows} == {243}
     assert {row["minimum_support_fraction"] for row in rows} == {
-        0.005, 0.01, 0.02, 0.05, 0.10,
+        0.35, 0.45, 0.55, 0.65, 0.75,
+    }
+    assert {tuple(row["density_timeline_s"].values()) for row in rows} == {
+        (3.0, 6.0, 4.0, 3.0)
     }
     formal = set(protocol["live_matrix"]["paired_block_ids"])
     pilot = set(protocol["sample_size_pilot_matrix"]["paired_block_ids"])

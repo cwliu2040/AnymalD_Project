@@ -177,7 +177,7 @@ challenge_calibration_matrix:
   dataset_role: excluded_calibration
   formal_efficacy_use_allowed: false
   purpose: locate_policy_independent_marginal_tracking_support_before_formal_freeze
-  status: pending_clean_commit_execution
+  status: v1_support_sweep_rejected_ramp_locked_v2_pending
   formal_condition_frozen: false
   scene: assets/maps/factory/Factory_Layout.usd
   initial_pose: {x_m: 0.0, y_m: -18.0, yaw_rad: 0.0}
@@ -186,13 +186,21 @@ challenge_calibration_matrix:
   policy_arms: [C, D]
   profiles: [curve_1_5_right_1_0, warehouse_mapping_stress]
   paired_block_ids: [243]
-  support_fraction_candidates: [0.005, 0.01, 0.02, 0.05, 0.10]
+  timeline_s:
+    healthy: 3.0
+    ramp_down: 6.0
+    low_support_hold: 4.0
+    recovery: 3.0
+  support_fraction_candidates: [0.35, 0.45, 0.55, 0.65, 0.75]
   expected_run_count: 40
   selection_rule:
     policy_independent_schedule: true
     both_backends_required: true
     tracking_event_fraction_target: [0.20, 0.80]
     event_time_must_not_be_locked_to_ramp_boundary_s: 0.20
+    support_sweep_must_bracket_event_and_censoring: true
+    minimum_event_time_span_across_support_candidates_s: 1.0
+    minimum_policy_reaction_window_after_degradation_onset_s: 2.0
     choose: highest_degradation_that_meets_all_rules
     no_candidate_action: revise_challenge_mechanism_before_new_pilot
 

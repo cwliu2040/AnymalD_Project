@@ -20,7 +20,8 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   `benchmark/slam-liosam-fastlio2` 與目前實驗 branch 都以
   `fee8c9f 建立 SLAM backend 比較基線` 為共同基礎。
 - `exp/slam-fastlio2` 的本機與遠端baseline均為
-  `8a8ebc7 固定 estimator 時戳同步並完成雙後端驗證`；其前一個commit為
+  `9aded5e 修正論文失敗處置並建立挑戰校準`；其前一個commit為
+  `8a8ebc7 固定 estimator 時戳同步並完成雙後端驗證`；再前一個commit為
   `d1128fe 補齊論文收數與候選正式化驗證鏈`，再前一個commit為
   `9b015c7 建立 SLAM confidence 發表與正式化基礎`；其前一個commit為
   `7a5675a 修正 LIO-SAM 信心誤判並完成互動驗證`，再前一個commit為
@@ -50,10 +51,10 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   Publication data contract、B/D artifacts與release skeleton已在`9b015c7`建立；publication
   execution chain已在`d1128fe`與`8a8ebc7`提交。160-cell disjoint excluded pilot已完成，
   formal runs與promotion仍未授權。
-- 目前尚未提交的project-owned變更是pilot暴露的publication disposition修正：episode-reset
-  estimator replay、invalid-map outcome保留、scheduled-run experimental unit、backfill、
-  sample-size estimand amendment、challenge-calibration schedule、tests、protocol與validation
-  evidence。完成驗證後需另取得使用者明確同意才可commit／push。
+- 目前尚未提交的project-owned變更是challenge calibration v1診斷後的v2實作：可由protocol
+  固定的density healthy/ramp/hold/recovery時序、slow-ramp calibration schedule、無療效
+  selection bias的challenge selector、tests、protocol與validation evidence。完成驗證後需
+  另取得使用者明確同意才可commit／push。
   root `build/`、`install/`、`log/`
   與`lidar_type`是未追蹤runtime產物，不納入提交，其他 `logs/`／`outputs/` 實驗
   產物也不提交。
@@ -1547,6 +1548,15 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
   survival不支持；`minimum_support_fraction=0.001`把tracking事件鎖在density ramp，無法辨識
   gait→SLAM survival因果。正式矩陣維持鎖定，先跑40-cell excluded coarse calibration：
   FAST/LIO×curve-right/warehouse×C/D×support 0.005/0.01/0.02/0.05/0.10、seed243。
+- 上述40-cell v1 calibration已在clean commit `9aded5e`完成，40/40 collection-valid。Support
+  由0.005提高至0.10時，FAST tracking event只落在3.5–3.7 s、LIO-SAM只落在3.8–3.9 s，
+  同條件C–D最大差僅0.10 s；事件仍被1.5 s density ramp鎖定，因此沒有凍結候選。機讀摘要為
+  `docs/validation/slam_confidence_challenge_calibration_v1_summary.json`。
+- v2改用3.0 s healthy、6.0 s ramp-down、4.0 s low-support hold、3.0 s recovery，候選support
+  為0.35/0.45/0.55/0.65/0.75。Selector只依預先固定的雙backend coverage、event/censoring
+  bracket、跨support event-time span、phase-boundary距離與至少2.0 s policy reaction window
+  選條件，不依C/D療效差異挑選，避免selection bias。v2仍是excluded calibration；尚未commit、
+  執行或授權formal。
 - 原效率rate ratio因11/40個D denominators `<=0.001`且最大ratio約82而不適合作NI。
   Protocol v2在任何formal data前改為paired `normalized_progress` difference，margin `-0.10`、
   half-width `0.05`；目前provisional需要15 paired blocks。Challenge condition尚未凍結，

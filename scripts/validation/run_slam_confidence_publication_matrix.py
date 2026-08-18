@@ -232,6 +232,13 @@ def build_challenge_calibration_schedule(
     protocol: dict[str, Any],
 ) -> list[dict[str, Any]]:
     matrix = protocol["challenge_calibration_matrix"]
+    timeline = matrix["timeline_s"]
+    density_timeline_s = {
+        "healthy_s": float(timeline["healthy"]),
+        "ramp_down_s": float(timeline["ramp_down"]),
+        "hold_s": float(timeline["low_support_hold"]),
+        "ramp_up_s": float(timeline["recovery"]),
+    }
     rows: list[dict[str, Any]] = []
     stratum = 0
     for backend in matrix["backends"]:
@@ -249,6 +256,7 @@ def build_challenge_calibration_schedule(
                             "profile": str(profile),
                             "condition": f"gradual_support_{support_id}",
                             "minimum_support_fraction": support_value,
+                            "density_timeline_s": density_timeline_s,
                             "block_id": int(block_id),
                             "simulation_seed": int(block_id),
                             "arm": arm,
@@ -333,6 +341,20 @@ def _condition_arguments(
     return "gradual_v2", str(configured["minimum_support_fraction"])
 
 
+def _density_timeline(protocol: dict[str, Any], row: dict[str, Any]) -> dict[str, float]:
+    if "density_timeline_s" in row:
+        return {key: float(value) for key, value in row["density_timeline_s"].items()}
+    configured = protocol["live_matrix"]["perception_conditions"][
+        "gradual_support_loss"
+    ]["timeline_s"]
+    return {
+        "healthy_s": float(configured["healthy"]),
+        "ramp_down_s": float(configured["ramp_down"]),
+        "hold_s": float(configured["low_support_hold"]),
+        "ramp_up_s": float(configured["recovery"]),
+    }
+
+
 def execute_cell(
     row: dict[str, Any], protocol: dict[str, Any], release: dict[str, Any],
     artifacts: dict[str, dict[str, str]], output_root: Path, dataset_role: str,
@@ -343,6 +365,7 @@ def execute_cell(
     calibration = protocol["frozen_artifacts"]["confidence"][backend]["calibration_id"]
     route = route_contract(row["profile"])
     density_profile, density_min = _condition_arguments(protocol, row)
+    density_timeline = _density_timeline(protocol, row)
     run_dir = output_root / backend / row["profile"] / row["condition"] / f"block_{row['block_id']}" / f"arm_{arm_id}"
     command = (
         "ros2", "launch", "anymal_locomotion_ros2", "fastlio2_locomotion_benchmark.launch.py",
@@ -357,7 +380,12 @@ def execute_cell(
         f"profile:={row['profile']}", f"simulation_seed:={row['simulation_seed']}",
         f"simulation_steps:={int(protocol['live_matrix']['simulation_steps'])}",
         "point_density:=1.0", f"point_density_profile:={density_profile}",
-        f"point_density_min:={density_min}", f"policy_path:={artifacts[arm_id]['policy_path']}",
+        f"point_density_min:={density_min}",
+        f"point_density_healthy_s:={density_timeline['healthy_s']}",
+        f"point_density_ramp_down_s:={density_timeline['ramp_down_s']}",
+        f"point_density_hold_s:={density_timeline['hold_s']}",
+        f"point_density_ramp_up_s:={density_timeline['ramp_up_s']}",
+        f"policy_path:={artifacts[arm_id]['policy_path']}",
         f"confidence_loss_is_outcome:={'true' if row['condition'] != 'native' else 'false'}",
         f"metadata_path:={artifacts[arm_id]['metadata_path']}", f"output_dir:={run_dir}",
     )

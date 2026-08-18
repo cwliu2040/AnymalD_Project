@@ -39,6 +39,10 @@ def generate_launch_description() -> LaunchDescription:
     point_density = LaunchConfiguration("point_density")
     point_density_profile = LaunchConfiguration("point_density_profile")
     point_density_min = LaunchConfiguration("point_density_min")
+    point_density_healthy_s = LaunchConfiguration("point_density_healthy_s")
+    point_density_ramp_down_s = LaunchConfiguration("point_density_ramp_down_s")
+    point_density_hold_s = LaunchConfiguration("point_density_hold_s")
+    point_density_ramp_up_s = LaunchConfiguration("point_density_ramp_up_s")
     time_source = LaunchConfiguration("time_source")
     point_order = LaunchConfiguration("point_order")
     time_sync_en = LaunchConfiguration("time_sync_en")
@@ -71,6 +75,18 @@ def generate_launch_description() -> LaunchDescription:
                 "point_density_min": ParameterValue(
                     point_density_min,
                     value_type=float,
+                ),
+                "point_density_healthy_s": ParameterValue(
+                    point_density_healthy_s, value_type=float
+                ),
+                "point_density_ramp_down_s": ParameterValue(
+                    point_density_ramp_down_s, value_type=float
+                ),
+                "point_density_hold_s": ParameterValue(
+                    point_density_hold_s, value_type=float
+                ),
+                "point_density_ramp_up_s": ParameterValue(
+                    point_density_ramp_up_s, value_type=float
                 ),
             }
         ],
@@ -295,6 +311,10 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="constant",
             ),
             DeclareLaunchArgument("point_density_min", default_value="0.01"),
+            DeclareLaunchArgument("point_density_healthy_s", default_value="3.0"),
+            DeclareLaunchArgument("point_density_ramp_down_s", default_value="1.5"),
+            DeclareLaunchArgument("point_density_hold_s", default_value="4.5"),
+            DeclareLaunchArgument("point_density_ramp_up_s", default_value="3.0"),
             DeclareLaunchArgument(
                 "time_source",
                 default_value="sensor_order",

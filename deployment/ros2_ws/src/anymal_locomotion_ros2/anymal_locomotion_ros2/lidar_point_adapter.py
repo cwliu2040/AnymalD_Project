@@ -46,6 +46,10 @@ class LidarPointAdapter(Node):
         self.declare_parameter("point_density", 1.0)
         self.declare_parameter("point_density_profile", "constant")
         self.declare_parameter("point_density_min", 0.01)
+        self.declare_parameter("point_density_healthy_s", 3.0)
+        self.declare_parameter("point_density_ramp_down_s", 1.5)
+        self.declare_parameter("point_density_hold_s", 4.5)
+        self.declare_parameter("point_density_ramp_up_s", 3.0)
         self.declare_parameter("time_source", "sensor_order")
         self.declare_parameter("point_order", "destaggered")
 
@@ -72,6 +76,19 @@ class LidarPointAdapter(Node):
         )
         if not 0.0 < self._point_density_min <= self._point_density:
             raise ValueError("point_density_min must be in (0, point_density]")
+        self._point_density_phases = {
+            "healthy_s": float(self.get_parameter("point_density_healthy_s").value),
+            "ramp_down_s": float(self.get_parameter("point_density_ramp_down_s").value),
+            "hold_s": float(self.get_parameter("point_density_hold_s").value),
+            "ramp_up_s": float(self.get_parameter("point_density_ramp_up_s").value),
+        }
+        if self._point_density_profile == "gradual_v2":
+            gradual_density_ratio(
+                0.0,
+                nominal_ratio=self._point_density,
+                minimum_ratio=self._point_density_min,
+                **self._point_density_phases,
+            )
         self._first_stamp_ns: int | None = None
         self._time_source = str(
             self.get_parameter("time_source").value
@@ -167,7 +184,7 @@ class LidarPointAdapter(Node):
         density = self._point_density
         if self._point_density_profile in {"gradual_v1", "gradual_v2"}:
             phases = (
-                {"healthy_s": 3.0, "ramp_down_s": 1.5, "hold_s": 4.5, "ramp_up_s": 3.0}
+                self._point_density_phases
                 if self._point_density_profile == "gradual_v2"
                 else {}
             )
