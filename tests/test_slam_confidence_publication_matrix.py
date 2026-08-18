@@ -37,9 +37,19 @@ def test_sample_size_pilot_is_complete_and_seed_disjoint() -> None:
     protocol = module._load_yaml(ROOT / "configs/slam_confidence_publication_protocol.yaml")
     rows = module.build_pilot_schedule(protocol)
     assert len(rows) == 160
-    assert {row["simulation_seed"] for row in rows} == {143, 144, 145, 146, 147}
+    assert {row["simulation_seed"] for row in rows} == {343, 344, 345, 346, 347}
     assert not {row["simulation_seed"] for row in rows} & set(protocol["live_matrix"]["paired_block_ids"])
+    assert not {row["simulation_seed"] for row in rows} & set(
+        protocol["sample_size_pilot_matrix"]["prior_pilot_block_ids_must_be_disjoint"]
+    )
     assert {row["condition"] for row in rows} == {"gradual_support_loss"}
+    challenge = protocol["live_matrix"]["perception_conditions"]["gradual_support_loss"]
+    assert challenge["minimum_support_fraction"] == 0.20
+    assert challenge["timeline_s"] == {
+        "healthy": 3.0, "ramp_down": 6.0,
+        "low_support_hold": 4.0, "recovery": 3.0,
+    }
+    assert protocol["challenge_calibration_matrix"]["formal_condition_frozen"] is True
 
 
 def test_challenge_calibration_schedule_is_small_balanced_and_disjoint() -> None:

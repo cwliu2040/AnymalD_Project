@@ -123,10 +123,10 @@ live_matrix:
       lidar_modification: deterministic_sensor_order_preserving_ring_fov_density_loss
       timeline_s:
         healthy: 3.0
-        ramp_down: 1.5
-        low_support_hold: 4.5
+        ramp_down: 6.0
+        low_support_hold: 4.0
         recovery: 3.0
-      minimum_support_fraction: 0.001
+      minimum_support_fraction: 0.20
       after_recovery: full_support_until_profile_end
       interpretation: controlled_support_loss_not_generic_lidar_degradation
   paired_block_ids: [43, 44, 45, 46, 47]
@@ -166,8 +166,9 @@ sample_size_pilot_matrix:
     - curve_1_5_right_1_0
     - warehouse_mapping_stress
   perception_conditions: [gradual_support_loss]
-  paired_block_ids: [143, 144, 145, 146, 147]
+  paired_block_ids: [343, 344, 345, 346, 347]
   formal_block_ids_must_be_disjoint: [43, 44, 45, 46, 47]
+  prior_pilot_block_ids_must_be_disjoint: [143, 144, 145, 146, 147]
   simulation_seed_equals_paired_block_id: true
   expected_run_count: 160
   policy_order: seeded_balanced_latin_square_within_backend_profile_condition
@@ -177,8 +178,17 @@ challenge_calibration_matrix:
   dataset_role: excluded_calibration
   formal_efficacy_use_allowed: false
   purpose: locate_policy_independent_marginal_tracking_support_before_formal_freeze
-  status: v2_rejected_no_common_bracket_v3_pending
-  formal_condition_frozen: false
+  status: v3_passed_support_0p20_selected
+  formal_condition_frozen: true
+  selected_condition:
+    profile_anchor: curve_1_5_right_1_0
+    minimum_support_fraction: 0.20
+    timeline_s:
+      healthy: 3.0
+      ramp_down: 6.0
+      low_support_hold: 4.0
+      recovery: 3.0
+    selection_evidence: docs/validation/slam_confidence_challenge_calibration_v3_summary.json
   scene: assets/maps/factory/Factory_Layout.usd
   initial_pose: {x_m: 0.0, y_m: -18.0, yaw_rad: 0.0}
   simulation_steps: 4000

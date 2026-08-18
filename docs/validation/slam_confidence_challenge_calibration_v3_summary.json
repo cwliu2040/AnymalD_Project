@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "kind": "slam_confidence_challenge_calibration_summary",
+  "dataset_role": "excluded_calibration",
+  "git_commit": "59e6d2b2408d90d843efeb14dc0fb09312de0dbf",
+  "protocol_sha256": "a83bcb9b62afe69c46516d4909c06818df8b4240beba999f36e7b81d619f3d8d",
+  "release_sha256": "989848cb04e08d602e0aacbbafca13e170175155e312119ffbad9a743ff2ffdf",
+  "runtime_matrix_summary_sha256": "742c6173e574690731a476fc1e0f697b667b3bed8e379dc7e79d542bc653b16b",
+  "runtime_selection_sha256": "d5d713557f8a7c79b1da1351657022c3b88c139502f9d2a5e0bacdf461a157c3",
+  "scheduled_cells": 24,
+  "collection_valid_cells": 24,
+  "integrity_passed": true,
+  "timeline_s": {
+    "healthy": 3.0,
+    "ramp_down": 6.0,
+    "low_support_hold": 4.0,
+    "recovery": 3.0
+  },
+  "support_fraction_candidates": [0.05, 0.1, 0.2, 0.3, 0.35, 0.45],
+  "backend_sweep_checks": {
+    "fastlio2": {
+      "event_and_censoring_bracketed": true,
+      "restricted_event_time_span_s": 8.800000161
+    },
+    "liosam": {
+      "event_and_censoring_bracketed": true,
+      "restricted_event_time_span_s": 9.900000136
+    }
+  },
+  "selection": {
+    "minimum_support_fraction": 0.2,
+    "event_time_range_s": [7.59999983, 8.199999817],
+    "event_fraction_range": [0.474999989375, 0.5124999885625],
+    "minimum_policy_reaction_window_s": 4.59999983,
+    "all_backends_and_arms_observed_event": true,
+    "not_locked_to_phase_boundary": true,
+    "formal_condition_freeze_allowed": true
+  },
+  "decision": {
+    "formal_condition_frozen": true,
+    "formal_collection_authorized": false,
+    "next_action": "run a new disjoint sample-size pilot under the frozen support-0.20 challenge before deciding formal paired-block count"
+  }
+}

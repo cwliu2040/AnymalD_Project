@@ -1563,7 +1563,14 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
 - v3只以curve-right作calibration anchor，維持相同slow timeline，掃0.05/0.10/0.20/0.30/
   0.35/0.45，共24 cells。Selector修正為在完整event/censor bracket內選「仍讓兩backend
   event的最高support」，即最低必要退化，符合marginal challenge而非故意選最嚴苛條件。
-  v3尚未commit或執行；formal與promotion鎖仍關閉。
+  v3已在clean commit `59e6d2b`完成，24/24 collection-valid且selector通過。FAST與LIO-SAM
+  sweep都形成event/censoring bracket，選出的共同marginal support為0.20；兩backend C/D事件
+  落在7.6–8.2 s，距degradation onset至少4.6 s，未鎖在phase boundary。機讀摘要為
+  `docs/validation/slam_confidence_challenge_calibration_v3_summary.json`。
+- 論文gradual challenge已凍結為support 0.20及3.0/6.0/4.0/3.0 s timeline；這只關閉
+  challenge-definition gate，不授權formal collection或promotion。舊160-cell pilot使用0.001
+  challenge，其provisional 15-block結果已supersede；新的sample-size pilot使用disjoint seeds
+  343..347、兩backend×四routes×A/B/C/D，共160 cells，完成後才能決定正式block數。
 - 原效率rate ratio因11/40個D denominators `<=0.001`且最大ratio約82而不適合作NI。
   Protocol v2在任何formal data前改為paired `normalized_progress` difference，margin `-0.10`、
   half-width `0.05`；目前provisional需要15 paired blocks。Challenge condition尚未凍結，

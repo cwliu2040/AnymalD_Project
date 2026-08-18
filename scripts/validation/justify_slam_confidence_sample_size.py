@@ -39,6 +39,7 @@ def validate_pilot_records(records: list[dict[str, Any]], protocol: dict[str, An
     roles = {record.get("dataset_role") for record in records}
     pilot_blocks = {value[3] for value in observed_list}
     formal_blocks = set(protocol["live_matrix"]["paired_block_ids"])
+    prior_pilot_blocks = set(matrix.get("prior_pilot_block_ids_must_be_disjoint", []))
     checks = {
         "excluded_pilot_role_only": roles == {"excluded_pilot"},
         "expected_record_count": len(records) == int(matrix["expected_run_count"]),
@@ -46,6 +47,9 @@ def validate_pilot_records(records: list[dict[str, Any]], protocol: dict[str, An
         "exact_frozen_pilot_schedule": set(observed_list) == expected,
         "all_run_gates_passed": all(record.get("gate", {}).get("passed") for record in records),
         "pilot_blocks_disjoint_from_formal": not (pilot_blocks & formal_blocks),
+        "pilot_blocks_disjoint_from_prior_pilot": not (
+            pilot_blocks & prior_pilot_blocks
+        ),
     }
     return {"checks": checks, "passed": all(checks.values())}
 

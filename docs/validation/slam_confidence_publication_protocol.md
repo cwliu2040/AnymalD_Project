@@ -368,6 +368,17 @@ curve全數censored，LIO-SAM curve為0.35 event／0.45以上censored；warehous
 最高support，代表最低必要退化；不得以C–D efficacy挑條件。v2機讀摘要為
 `docs/validation/slam_confidence_challenge_calibration_v2_summary.json`。
 
+v3已在clean commit `59e6d2b`完成24/24 valid cells，兩backend sweep皆形成event/censoring
+bracket。預先提交的selector選出共同最高合格support `0.20`；C/D tracking event落在
+7.6–8.2 s，距3.0 s degradation onset至少4.6 s且未貼近phase boundary。正式gradual
+challenge因此凍結為support 0.20及3.0/6.0/4.0/3.0 s timeline，機讀證據為
+`docs/validation/slam_confidence_challenge_calibration_v3_summary.json`。
+
+這項freeze不授權formal collection。舊160-cell pilot使用support 0.001，其15-block provisional
+decision不得外推到新challenge。新sample-size pilot固定使用disjoint blocks/seeds 343..347、
+四routes、兩backend與A/B/C/D，共160 cells；完成完整data-integrity gates後重新估計precision，
+才可凍結formal block count。
+
 正式mechanism reconstruction所需的model48 checkpoint已從training `logs/`來源以byte-for-byte
 相同SHA `888bc682...4fa0` curate至tracked
 `checkpoints/anymal_d_locomotion_slam_confidence_sim_v1/model_48.pt`；protocol與release只依賴
