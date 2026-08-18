@@ -32,7 +32,7 @@ def _record(backend: str, support: float, arm: str, event_time: float, observed:
     }
 
 
-def test_selection_requires_bracket_and_selects_highest_degradation() -> None:
+def test_selection_requires_bracket_and_selects_least_degradation() -> None:
     module = _module()
     supports = [0.35, 0.45, 0.55]
     matrix = {
@@ -61,7 +61,7 @@ def test_selection_requires_bracket_and_selects_highest_degradation() -> None:
                 })
     result = module.evaluate_calibration(records, schedule, matrix)
     assert result["passed"] is True
-    assert result["selected_minimum_support_fraction"] == 0.35
+    assert result["selected_minimum_support_fraction"] == 0.45
 
 
 def test_selection_rejects_ramp_locked_sweep() -> None:

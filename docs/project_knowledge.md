@@ -51,10 +51,9 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   Publication data contract、B/D artifacts與release skeleton已在`9b015c7`建立；publication
   execution chain已在`d1128fe`與`8a8ebc7`提交。160-cell disjoint excluded pilot已完成，
   formal runs與promotion仍未授權。
-- 目前尚未提交的project-owned變更是challenge calibration v1診斷後的v2實作：可由protocol
-  固定的density healthy/ramp/hold/recovery時序、slow-ramp calibration schedule、無療效
-  selection bias的challenge selector、tests、protocol與validation evidence。完成驗證後需
-  另取得使用者明確同意才可commit／push。
+- 目前尚未提交的project-owned變更是challenge calibration v2診斷後的v3 schedule與
+  selector修正：curve-only lower-support bracket、最低必要退化選擇規則、tests、protocol與
+  validation evidence。完成驗證後需另取得使用者明確同意才可commit／push。
   root `build/`、`install/`、`log/`
   與`lidar_type`是未追蹤runtime產物，不納入提交，其他 `logs/`／`outputs/` 實驗
   產物也不提交。
@@ -1555,8 +1554,16 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
 - v2改用3.0 s healthy、6.0 s ramp-down、4.0 s low-support hold、3.0 s recovery，候選support
   為0.35/0.45/0.55/0.65/0.75。Selector只依預先固定的雙backend coverage、event/censoring
   bracket、跨support event-time span、phase-boundary距離與至少2.0 s policy reaction window
-  選條件，不依C/D療效差異挑選，避免selection bias。v2仍是excluded calibration；尚未commit、
-  執行或授權formal。
+  選條件，不依C/D療效差異挑選，避免selection bias。
+- v2已在clean commit `b9541d5`完成，40/40 collection-valid但selector正確拒絕：FAST curve
+  五個support均censored，LIO-SAM curve在0.35 event、0.45以上censored；warehouse兩backend
+  五個support均event，且多數發生在16 s degradation horizon後，混入長路線本身的tracking
+  failure，不適合作為sensor challenge calibration anchor。機讀摘要為
+  `docs/validation/slam_confidence_challenge_calibration_v2_summary.json`。
+- v3只以curve-right作calibration anchor，維持相同slow timeline，掃0.05/0.10/0.20/0.30/
+  0.35/0.45，共24 cells。Selector修正為在完整event/censor bracket內選「仍讓兩backend
+  event的最高support」，即最低必要退化，符合marginal challenge而非故意選最嚴苛條件。
+  v3尚未commit或執行；formal與promotion鎖仍關閉。
 - 原效率rate ratio因11/40個D denominators `<=0.001`且最大ratio約82而不適合作NI。
   Protocol v2在任何formal data前改為paired `normalized_progress` difference，margin `-0.10`、
   half-width `0.05`；目前provisional需要15 paired blocks。Challenge condition尚未凍結，

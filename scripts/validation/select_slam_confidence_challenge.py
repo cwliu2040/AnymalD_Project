@@ -133,7 +133,10 @@ def evaluate_calibration(
     qualified = [
         row["minimum_support_fraction"] for row in support_results if row["passed"]
     ]
-    selected = min(qualified) if qualified and sweep_passed else None
+    # A marginal challenge uses the least degradation that still produces an
+    # event in every backend.  Selecting a lower support would make the test
+    # unnecessarily severe and could hide rather than identify policy value.
+    selected = max(qualified) if qualified and sweep_passed else None
     passed = all(integrity_checks.values()) and selected is not None
     return {
         "schema_version": 1,

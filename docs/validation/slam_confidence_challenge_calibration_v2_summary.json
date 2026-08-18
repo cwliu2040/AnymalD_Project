@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "kind": "slam_confidence_challenge_calibration_summary",
+  "dataset_role": "excluded_calibration",
+  "git_commit": "b9541d5f73a3c0c0ea3651ce7ba28e553cb04573",
+  "protocol_sha256": "92f460c1250b94123ad7ee5e3131062f82e7fca3af88d63dff47d4e120c74bca",
+  "release_sha256": "989848cb04e08d602e0aacbbafca13e170175155e312119ffbad9a743ff2ffdf",
+  "runtime_matrix_summary_sha256": "1f7cf69a68e5781e62cbfe4a957b71d0750fbaeafa9fd095718e5c41c8758fe4",
+  "runtime_selection_sha256": "f13c206f6e76b32a56416f4b08bf40af5cf63670504f322a3cb473a082c86b01",
+  "scheduled_cells": 40,
+  "collection_valid_cells": 40,
+  "timeline_s": {
+    "healthy": 3.0,
+    "ramp_down": 6.0,
+    "low_support_hold": 4.0,
+    "recovery": 3.0
+  },
+  "support_fraction_candidates": [0.35, 0.45, 0.55, 0.65, 0.75],
+  "diagnosis": {
+    "fastlio2_curve": "all candidates censored; lower support is required to bracket the event",
+    "liosam_curve": "0.35 produced events while 0.45 and above were censored",
+    "fastlio2_warehouse": "all candidates produced events, including events after the degradation horizon",
+    "liosam_warehouse": "all candidates produced events, including events after the degradation horizon"
+  },
+  "decision": {
+    "formal_condition_frozen": false,
+    "candidate_selected": false,
+    "reason": "no common marginal event/censoring bracket existed across both backends; the long warehouse route also mixed post-recovery route failures into challenge calibration",
+    "next_action": "use curve_1_5_right_1_0 as the calibration anchor and sweep support 0.05 through 0.45"
+  }
+}

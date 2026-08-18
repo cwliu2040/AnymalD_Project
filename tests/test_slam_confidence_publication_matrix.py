@@ -46,12 +46,12 @@ def test_challenge_calibration_schedule_is_small_balanced_and_disjoint() -> None
     module = _module()
     protocol = module._load_yaml(ROOT / "configs/slam_confidence_publication_protocol.yaml")
     rows = module.build_challenge_calibration_schedule(protocol)
-    assert len(rows) == 40
+    assert len(rows) == 24
     assert {row["arm"] for row in rows} == {"C", "D"}
     assert {row["backend"] for row in rows} == {"fastlio2", "liosam"}
     assert {row["simulation_seed"] for row in rows} == {243}
     assert {row["minimum_support_fraction"] for row in rows} == {
-        0.35, 0.45, 0.55, 0.65, 0.75,
+        0.05, 0.10, 0.20, 0.30, 0.35, 0.45,
     }
     assert {tuple(row["density_timeline_s"].values()) for row in rows} == {
         (3.0, 6.0, 4.0, 3.0)

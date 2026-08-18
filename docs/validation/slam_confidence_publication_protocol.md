@@ -356,9 +356,17 @@ Calibration v2在任何formal data前改用3.0 s healthy、6.0 s ramp-down、4.0
 hold、3.0 s recovery，support candidates為0.35、0.45、0.55、0.65、0.75。兩backend adapter
 共用由launch/protocol顯式傳入的相同時序。`select_slam_confidence_challenge.py`只依完整資料
 gate、每個backend/profile的event/censoring bracket、至少1.0 s跨support event-time span、
-事件比例、phase-boundary距離及至少2.0 s反應窗選擇最低support；不使用C相對D的療效來挑
+事件比例、phase-boundary距離及至少2.0 s反應窗選擇最高合格support；不使用C相對D的療效來挑
 challenge，避免selection bias。只有selector通過並凍結條件後，才可重做最終sample-size
 pilot與考慮formal authorization。
+
+v2已在clean commit `b9541d5`完成40/40 valid cells，但未找到雙backend共同bracket：FAST
+curve全數censored，LIO-SAM curve為0.35 event／0.45以上censored；warehouse兩backend則
+全數event，且高support事件多發生在16 s degradation horizon之後，會混入長路線自身失敗。
+因此v3 calibration anchor只保留curve-right，沿用相同slow timeline並掃support 0.05、0.10、
+0.20、0.30、0.35、0.45，共24 cells。選擇規則在完整bracket中取仍使兩backend event的
+最高support，代表最低必要退化；不得以C–D efficacy挑條件。v2機讀摘要為
+`docs/validation/slam_confidence_challenge_calibration_v2_summary.json`。
 
 正式mechanism reconstruction所需的model48 checkpoint已從training `logs/`來源以byte-for-byte
 相同SHA `888bc682...4fa0` curate至tracked
