@@ -20,7 +20,10 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   `benchmark/slam-liosam-fastlio2` 與目前實驗 branch 都以
   `fee8c9f 建立 SLAM backend 比較基線` 為共同基礎。
 - `exp/slam-fastlio2` 的本機與遠端baseline均為
-  `9aded5e 修正論文失敗處置並建立挑戰校準`；其前一個commit為
+  `82d4524 凍結雙後端邊界挑戰與新試驗規格`；其前一個commit為
+  `59e6d2b 收斂雙後端邊界挑戰校準`，再前一個commit為
+  `b9541d5 建立慢速退化挑戰與校準選擇器`，再前一個commit為
+  `9aded5e 修正論文失敗處置並建立挑戰校準`；再前一個commit為
   `8a8ebc7 固定 estimator 時戳同步並完成雙後端驗證`；再前一個commit為
   `d1128fe 補齊論文收數與候選正式化驗證鏈`，再前一個commit為
   `9b015c7 建立 SLAM confidence 發表與正式化基礎`；其前一個commit為
@@ -51,9 +54,10 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   Publication data contract、B/D artifacts與release skeleton已在`9b015c7`建立；publication
   execution chain已在`d1128fe`與`8a8ebc7`提交。160-cell disjoint excluded pilot已完成，
   formal runs與promotion仍未授權。
-- 目前尚未提交的project-owned變更是challenge calibration v2診斷後的v3 schedule與
-  selector修正：curve-only lower-support bracket、最低必要退化選擇規則、tests、protocol與
-  validation evidence。完成驗證後需另取得使用者明確同意才可commit／push。
+- 目前尚未提交的project-owned變更是新challenge sample-size pilot後的formal design：
+  while-stable continuous stability estimand、25-block/800-cell gradual-only schedule、
+  sample-size tooling、tests、protocol、release與validation evidence。完成驗證後需另取得
+  使用者明確同意才可commit／push。
   root `build/`、`install/`、`log/`
   與`lidar_type`是未追蹤runtime產物，不納入提交，其他 `logs/`／`outputs/` 實驗
   產物也不提交。
@@ -1435,7 +1439,8 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
 - 2026-08-17 publication執行鏈已補上共同`simulation_seed`、兩backend完全相同的
   `point_density/profile/min`傳遞與raw sensor/command/reset/SLAM/confidence bag錄製。
   `scripts/validation/run_slam_confidence_publication_matrix.py`會hash-lock A/B/C/D與
-  estimator15、產生固定320-cell balanced schedule，並把block 43..47直接作為Isaac Lab
+  estimator15；formal schedule現已依新pilot凍結為800-cell balanced schedule，並把block
+  443..467直接作為Isaac Lab
   seed；預設資料角色固定為`excluded_smoke`。`--formal`在protocol未授權、artifact SHA不符、
   tracked worktree不乾淨或輸出不在`outputs/slam_confidence_publication_v1/`時
   fail closed；執行時的clean HEAD直接寫入run manifest，避免在被hash的release文件中建立
@@ -1472,7 +1477,7 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
   backfill並完成descriptive analysis，但因只有block43且role為excluded，分析器固定拒絕
   formal claim／complete support。sample-size justification仍未完成。
 - Publication replay runner已實作：每個accepted live raw bag以content SHA fingerprint，
-  分別進FAST-LIO2／LIO-SAM native backend各兩次；正式320 live runs會形成1,280 replay
+  分別進FAST-LIO2／LIO-SAM native backend各兩次；正式800 live runs會形成3,200 replay
   cells。Replay永久標記不可作closed-loop gait causality。第一個excluded source smoke為
   4/4通過：FAST兩次137 mapping samples且ATE同為`0.143664 m`；LIO兩次138 samples，
   ATE `0.038180/0.044856 m`（差`0.006677 m`），yaw RMSE差`0.004102 deg`。因此counts、
@@ -1569,11 +1574,20 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
   `docs/validation/slam_confidence_challenge_calibration_v3_summary.json`。
 - 論文gradual challenge已凍結為support 0.20及3.0/6.0/4.0/3.0 s timeline；這只關閉
   challenge-definition gate，不授權formal collection或promotion。舊160-cell pilot使用0.001
-  challenge，其provisional 15-block結果已supersede；新的sample-size pilot使用disjoint seeds
-  343..347、兩backend×四routes×A/B/C/D，共160 cells，完成後才能決定正式block數。
+  challenge，其provisional 15-block結果已supersede。新pilot使用disjoint seeds343..347，
+  兩backend×四routes×A/B/C/D共160/160 data-integrity passed，36個policy/SLAM failures保留。
+- Full-run roll/pitch-rate RMS因少數terminal impacts達1–4 rad/s而重複計入binary fall outcome，
+  使30 blocks half-width仍為0.107。Formal前透明改為首次instability前的while-stable RMS，fall/
+  base-contact binary endpoints不變；backfill 160/160通過。C−D learned-gait需25 blocks，C−B
+  learned-total需15，正式統一凍結25 blocks、seeds443..467、gradual-only 800 cells。B−A為
+  decomposition control而非confirmatory precision driver。機讀摘要為
+  `docs/validation/slam_confidence_publication_pilot_v2_summary.json`。
+- 新pilot descriptive C−D支援mechanism、while-stable body-rate下降、tracking survival正方向與
+  efficiency NI；stance slip RMS差為`+0.00158 m/s`，方向不支持下降。因此論文因果鏈聚焦
+  body-motion branch，不得宣稱foot-slip reduction。Formal collection與promotion仍未授權。
 - 原效率rate ratio因11/40個D denominators `<=0.001`且最大ratio約82而不適合作NI。
   Protocol v2在任何formal data前改為paired `normalized_progress` difference，margin `-0.10`、
-  half-width `0.05`；目前provisional需要15 paired blocks。Challenge condition尚未凍結，
+  half-width `0.05`；新challenge precision plan已納入25-block formal schedule。
   `formal_collection_authorized=false`，正式model1450與rollback均不變。
 
 ### Proprioceptive estimator and gait-value A/B (2026-08-13)

@@ -23,8 +23,9 @@ def test_frozen_protocol_generates_complete_balanced_schedule() -> None:
     module = _module()
     protocol = module._load_yaml(ROOT / "configs/slam_confidence_publication_protocol.yaml")
     rows = module.build_schedule(protocol)
-    assert len(rows) == 320
-    assert {row["simulation_seed"] for row in rows} == {43, 44, 45, 46, 47}
+    assert len(rows) == 800
+    assert {row["simulation_seed"] for row in rows} == set(range(443, 468))
+    assert {row["condition"] for row in rows} == {"gradual_support_loss"}
     strata = {}
     for row in rows:
         key = (row["backend"], row["profile"], row["condition"], row["block_id"])
@@ -108,13 +109,13 @@ def test_selection_preserves_registered_cell_identity() -> None:
     protocol = module._load_yaml(ROOT / "configs/slam_confidence_publication_protocol.yaml")
     args = argparse.Namespace(
         backend=["liosam"], profile=["lateral_right_1_5"],
-        condition=["gradual_support_loss"], arm=["D"], block=[43],
+        condition=["gradual_support_loss"], arm=["D"], block=[443],
     )
     selected = module.select_schedule(module.build_schedule(protocol), args)
     assert selected == [{
         "backend": "liosam", "profile": "lateral_right_1_5",
-        "condition": "gradual_support_loss", "block_id": 43,
-        "simulation_seed": 43, "arm": "D", "arm_order": 0,
+        "condition": "gradual_support_loss", "block_id": 443,
+        "simulation_seed": 443, "arm": "D", "arm_order": 3,
     }]
 
 

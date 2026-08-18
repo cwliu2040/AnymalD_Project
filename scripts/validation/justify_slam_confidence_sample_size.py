@@ -54,8 +54,10 @@ def validate_pilot_records(records: list[dict[str, Any]], protocol: dict[str, An
     return {"checks": checks, "passed": all(checks.values())}
 
 
-def _cluster_effects(records: list[dict[str, Any]], metric: str) -> dict[str, list[float]]:
-    pairs = paired_values(records, treatment="C", control="D", metric=metric)
+def _cluster_effects(
+    records: list[dict[str, Any]], metric: str, *, treatment: str = "C", control: str = "D",
+) -> dict[str, list[float]]:
+    pairs = paired_values(records, treatment=treatment, control=control, metric=metric)
     grouped: dict[tuple[str, int], list[float]] = defaultdict(list)
     for pair in pairs:
         identity = pair["pair"]
@@ -65,6 +67,52 @@ def _cluster_effects(records: list[dict[str, Any]], metric: str) -> dict[str, li
     for (profile, _block), effects in sorted(grouped.items()):
         by_profile[profile].append(float(sum(effects) / len(effects)))
     return dict(by_profile)
+
+
+def _plan_contrast(
+    records: list[dict[str, Any]], planning: dict[str, Any], *,
+    treatment: str, control: str, seed_offset: int,
+) -> dict[str, Any]:
+    candidates = planning["candidate_paired_block_counts"]
+    resamples = int(planning["simulation_resamples"])
+    seed = int(planning["seed"]) + seed_offset
+    targets = planning["precision_halfwidth_targets"]
+    metrics: dict[str, Any] = {}
+    for index, metric in enumerate((
+        "stance_weighted_foot_slip_rms_mps",
+        "while_stable_roll_pitch_rate_rms_radps",
+        "tracking_restricted_mean_survival_time_s",
+    )):
+        metrics[metric] = first_precision_qualified_block_count(
+            _cluster_effects(
+                records, metric, treatment=treatment, control=control
+            ),
+            candidates=candidates, halfwidth_target=float(targets[metric]),
+            resamples=resamples, seed=seed + index * 100,
+        )
+    metrics["normalized_progress_difference"] = first_precision_qualified_block_count(
+        _cluster_effects(
+            records, "normalized_progress", treatment=treatment, control=control
+        ),
+        candidates=candidates,
+        halfwidth_target=float(targets["normalized_progress_difference"]),
+        resamples=resamples, seed=seed + 400,
+        lower_bound=float(
+            planning["efficiency_noninferiority_normalized_progress_difference"]
+        ),
+    )
+    for index, metric in enumerate(
+        ("fall", "base_contact", "foot_slip_event", "completion")
+    ):
+        metrics[f"{metric}_risk_difference"] = first_precision_qualified_block_count(
+            _cluster_effects(
+                records, metric, treatment=treatment, control=control
+            ),
+            candidates=candidates,
+            halfwidth_target=float(targets["binary_risk_difference"]),
+            resamples=resamples, seed=seed + 500 + index * 100,
+        )
+    return metrics
 
 
 def _parse_args() -> argparse.Namespace:
@@ -95,34 +143,18 @@ def main() -> int:
         print(json.dumps(report, indent=2))
         return 1
     planning = protocol["statistics"]["sample_size_planning"]
-    candidates = planning["candidate_paired_block_counts"]
-    resamples, seed = int(planning["simulation_resamples"]), int(planning["seed"])
-    targets = planning["precision_halfwidth_targets"]
-    metrics = {}
-    for index, metric in enumerate(
-        ("stance_weighted_foot_slip_rms_mps", "roll_pitch_rate_rms_radps", "tracking_restricted_mean_survival_time_s")
-    ):
-        metrics[metric] = first_precision_qualified_block_count(
-            _cluster_effects(records, metric), candidates=candidates,
-            halfwidth_target=float(targets[metric]), resamples=resamples, seed=seed + index * 100,
+    contrast_precision = {
+        str(spec["id"]): _plan_contrast(
+            records, planning,
+            treatment=str(spec["treatment"]), control=str(spec["control"]),
+            seed_offset=index * 1000,
         )
-    metrics["normalized_progress_difference"] = first_precision_qualified_block_count(
-        _cluster_effects(records, "normalized_progress"), candidates=candidates,
-        halfwidth_target=float(targets["normalized_progress_difference"]),
-        resamples=resamples, seed=seed + 400,
-        lower_bound=float(
-            planning["efficiency_noninferiority_normalized_progress_difference"]
-        ),
-    )
-    for index, metric in enumerate(
-        ("fall", "base_contact", "foot_slip_event", "completion")
-    ):
-        metrics[f"{metric}_risk_difference"] = first_precision_qualified_block_count(
-            _cluster_effects(records, metric), candidates=candidates,
-            halfwidth_target=float(targets["binary_risk_difference"]),
-            resamples=resamples, seed=seed + 500 + index * 100,
-        )
-    selected_values = [value["selected_paired_block_count"] for value in metrics.values()]
+        for index, spec in enumerate(planning["contrasts"])
+    }
+    selected_values = [
+        value["selected_paired_block_count"]
+        for metrics in contrast_precision.values() for value in metrics.values()
+    ]
     passed = all(value is not None for value in selected_values)
     selected = max(selected_values) if passed else None
     challenge_frozen = bool(
@@ -130,14 +162,24 @@ def main() -> int:
             "formal_condition_frozen", False
         )
     )
+    formal_authorized = bool(protocol.get("formal_collection_authorized", False))
     report = {
         "schema_version": 1, "kind": "slam_confidence_sample_size_justification",
         "pilot_completeness": completeness, "planning": planning,
-        "endpoint_precision": metrics, "selected_formal_paired_block_count": selected,
+        "contrast_endpoint_precision": contrast_precision,
+        "endpoint_precision": contrast_precision["learned_gait"],
+        "selected_formal_paired_block_count": selected,
         "protocol_current_formal_paired_block_count": len(protocol["live_matrix"]["paired_block_ids"]),
-        "protocol_revision_required": bool(selected and selected != len(protocol["live_matrix"]["paired_block_ids"])),
+        "protocol_revision_required": (
+            selected is None
+            or selected != len(protocol["live_matrix"]["paired_block_ids"])
+        ),
         "challenge_condition_frozen": challenge_frozen,
-        "formal_collection_may_start": passed and challenge_frozen,
+        "sample_size_and_challenge_ready": passed and challenge_frozen,
+        "formal_collection_authorized": formal_authorized,
+        "formal_collection_may_start": (
+            passed and challenge_frozen and formal_authorized
+        ),
         "passed": passed,
     }
     output.parent.mkdir(parents=True, exist_ok=True)

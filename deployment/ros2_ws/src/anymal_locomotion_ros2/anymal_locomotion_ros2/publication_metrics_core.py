@@ -71,6 +71,24 @@ def summarize_locomotion(samples: Sequence[dict[str, Any]]) -> dict[str, Any]:
     action_rate = np.linalg.norm(np.diff(actions, axis=0), axis=1) / dt
     base_contact = np.asarray([float(value["base_contact_force_n"]) for value in ordered])
     heights = np.asarray([float(value["base_height_m"]) for value in ordered])
+    first_instability_index = next(
+        (
+            index
+            for index, value in enumerate(ordered)
+            if bool(value.get("terminated"))
+            or bool(value.get("truncated"))
+            or heights[index] < 0.45
+            or max(abs(roll[index]), abs(pitch[index])) >= 0.2617993877991494
+            or base_contact[index] > 0.0
+        ),
+        None,
+    )
+    stable_sample_count = (
+        first_instability_index
+        if first_instability_index is not None
+        else len(ordered)
+    )
+    while_stable_rate = roll_pitch_rate[: max(0, stable_sample_count - 1)]
     stance_speeds: list[float] = []
     slip_event = False
     consecutive_by_foot: dict[str, int] = {}
@@ -110,6 +128,16 @@ def summarize_locomotion(samples: Sequence[dict[str, Any]]) -> dict[str, Any]:
         "body_tilt_p95_rad": float(np.quantile(tilt, 0.95)),
         "roll_pitch_rate_rms_radps": _rms(roll_pitch_rate),
         "roll_pitch_rate_p95_radps": float(np.quantile(roll_pitch_rate, 0.95)),
+        "while_stable_roll_pitch_rate_rms_radps": _rms(while_stable_rate),
+        "while_stable_roll_pitch_rate_p95_radps": (
+            float(np.quantile(while_stable_rate, 0.95))
+            if while_stable_rate.size else None
+        ),
+        "while_stable_sample_count": stable_sample_count,
+        "first_instability_time_s": (
+            float(times[first_instability_index] - times[0])
+            if first_instability_index is not None else None
+        ),
         "action_rate_rms_per_s": _rms(action_rate),
         "action_rate_p95_per_s": float(np.quantile(action_rate, 0.95)),
         "reference_route_length_m": route_length,

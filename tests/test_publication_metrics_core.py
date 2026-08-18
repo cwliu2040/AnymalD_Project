@@ -35,6 +35,7 @@ def test_run_metrics_reduce_frames_to_one_experimental_unit() -> None:
     assert metrics["moving_speed_mps"] == pytest.approx(0.9)
     assert metrics["normalized_progress"] == pytest.approx(0.9, rel=0.02)
     assert metrics["roll_pitch_rate_rms_radps"] == pytest.approx(0.5)
+    assert metrics["while_stable_roll_pitch_rate_rms_radps"] == pytest.approx(0.5)
     assert metrics["action_rate_rms_per_s"] == pytest.approx(math.sqrt(12) * 0.5)
 
 
@@ -43,6 +44,19 @@ def test_two_consecutive_stance_slip_ticks_create_event() -> None:
     samples[1]["feet"]["LF"]["tangential_speed_mps"] = 0.7
     samples[2]["feet"]["LF"]["tangential_speed_mps"] = 0.8
     assert summarize_locomotion(samples)["foot_slip_event"]
+
+
+def test_while_stable_rate_excludes_terminal_impact() -> None:
+    samples = [_sample(index) for index in range(6)]
+    samples[4]["roll_rad"] = 1.0
+    samples[4]["base_height_m"] = 0.40
+    samples[4]["terminated"] = True
+    samples[5]["roll_rad"] = 2.0
+    metrics = summarize_locomotion(samples)
+    assert metrics["roll_pitch_rate_rms_radps"] > 10.0
+    assert metrics["while_stable_roll_pitch_rate_rms_radps"] == pytest.approx(0.5)
+    assert metrics["while_stable_sample_count"] == 4
+    assert metrics["first_instability_time_s"] == pytest.approx(0.08)
 
 
 def test_mechanism_reports_degraded_nonzero_fraction() -> None:

@@ -95,7 +95,7 @@ def main() -> int:
             )
             for metric in (
                 "stance_weighted_foot_slip_rms_mps",
-                "roll_pitch_rate_rms_radps",
+                "while_stable_roll_pitch_rate_rms_radps",
                 "tracking_restricted_mean_survival_time_s",
                 "normalized_progress",
                 "normalized_progress_per_elapsed_second",
@@ -119,7 +119,7 @@ def main() -> int:
         )
         for metric in (
             "stance_weighted_foot_slip_rms_mps",
-            "roll_pitch_rate_rms_radps",
+            "while_stable_roll_pitch_rate_rms_radps",
             "tracking_restricted_mean_survival_time_s",
             "normalized_progress",
             "normalized_progress_per_elapsed_second",
@@ -141,7 +141,9 @@ def main() -> int:
             for record in gradual if record["identity"]["arm"] == "C"
         ),
         "slip_direction_supported": learned["stance_weighted_foot_slip_rms_mps"]["mean_difference"] < 0.0,
-        "roll_pitch_rate_direction_supported": learned["roll_pitch_rate_rms_radps"]["mean_difference"] < 0.0,
+        "roll_pitch_rate_direction_supported": learned[
+            "while_stable_roll_pitch_rate_rms_radps"
+        ]["mean_difference"] < 0.0,
         "survival_direction_supported": learned["tracking_restricted_mean_survival_time_s"]["mean_difference"] > 0.0,
         "efficiency_noninferiority_95pct_lower_ge_margin": (
             efficiency_lower >= efficiency_margin

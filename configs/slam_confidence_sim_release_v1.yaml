@@ -110,21 +110,21 @@ promotion_gates:
     requirement: two_backends_five_profiles_three_independent_blocks
     status: ten_of_ten_single_block_smoke_passed
   - id: controlled_degradation_recovery_matrix
-    status: marginal_challenge_support_0p20_frozen_new_disjoint_pilot_pending
+    status: marginal_challenge_support_0p20_frozen_160_cell_disjoint_pilot_passed_formal_pending
   - id: recovery_v040_regression_suite
     status: model48_estimator15_five_profile_2560_environment_regression_passed
     evidence: docs/validation/slam_confidence_model48_estimator15_regression_gate.json
   - id: efficiency_and_false_stop_noninferiority
-    status: bounded_progress_difference_estimand_provisional_15_blocks_new_challenge_pilot_pending
+    status: bounded_progress_difference_estimand_25_block_formal_precision_plan_passed
   - id: map_consistency_measurement
     status: invalid_registration_retained_as_outcome_160_cell_backfill_passed
   - id: publication_matrix_and_statistics
-    status: excluded_pilot_160_scheduled_records_backfilled_descriptive_analysis_complete_formal_pending
+    status: new_challenge_excluded_pilot_160_records_backfilled_25_block_formal_schedule_pending
   - id: publication_replay_matrix
     status: one_source_two_backends_two_repetitions_excluded_smoke_passed_full_matrix_pending
   - id: sample_size_justification
-    status: old_challenge_provisional_15_blocks_superseded_new_disjoint_pilot_pending
-    evidence: docs/validation/slam_confidence_challenge_calibration_v3_summary.json
+    status: learned_gait_confirmatory_and_learned_total_key_secondary_precision_passed_25_blocks
+    evidence: docs/validation/slam_confidence_publication_pilot_v2_summary.json
 
 promotion_rule:
   all_gates_must_pass: true

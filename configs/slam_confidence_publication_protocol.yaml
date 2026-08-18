@@ -1,6 +1,6 @@
 schema_version: 2
 protocol_id: slam-confidence-publication-v2
-status: excluded_pilot_complete_challenge_recalibration_required
+status: frozen_challenge_pilot_complete_25_block_formal_spec_pending_authorization
 date: 2026-08-18
 formal_collection_authorized: false
 
@@ -18,13 +18,24 @@ amendments_before_formal_collection:
     noninferiority_margin: -0.10
     precision_halfwidth_target: 0.05
     interpretation: at_most_ten_percentage_points_less_route_progress
+  - id: continuous_stability_estimand
+    reason: terminal_impacts_made_full_run_roll_pitch_rate_duplicate_binary_fall_outcomes
+    old_estimand: full_run_roll_pitch_rate_rms_radps
+    new_estimand: while_stable_roll_pitch_rate_rms_radps_before_first_instability
+    terminal_events_remain_in_binary_endpoints: true
+    precision_halfwidth_target: 0.05
+  - id: contrast_hierarchy
+    reason: learned_gait_ablation_is_the_identifying_contrast_for_the_paper_claim
+    confirmatory: C_vs_D
+    key_secondary: C_vs_B
+    decomposition_control: B_vs_A
 
 scope:
   claim: confidence_conditioned_learned_gait_adaptation_with_safety_structure
   causal_chain:
     - confidence_decreases
     - gait_changes
-    - body_motion_and_foot_slip_decrease
+    - while_stable_body_motion_decreases_and_foot_slip_is_reported
     - slam_tracking_survival_increases
     - task_efficiency_is_retained
   replay_is_closed_loop_evidence: false
@@ -129,12 +140,13 @@ live_matrix:
       minimum_support_fraction: 0.20
       after_recovery: full_support_until_profile_end
       interpretation: controlled_support_loss_not_generic_lidar_degradation
-  paired_block_ids: [43, 44, 45, 46, 47]
+  formal_conditions: [gradual_support_loss]
+  paired_block_ids: [443, 444, 445, 446, 447, 448, 449, 450, 451, 452, 453, 454, 455, 456, 457, 458, 459, 460, 461, 462, 463, 464, 465, 466, 467]
   simulation_seed_equals_paired_block_id: true
   seed_launch_wiring_status: implemented_and_block43_live_smoke_passed
-  repetitions_per_cell: 5
+  repetitions_per_cell: 25
   policy_order: seeded_balanced_latin_square_within_backend_profile_condition
-  expected_run_count: 320
+  expected_run_count: 800
 
 replay_matrix:
   purpose: matched_input_backend_and_measurement_reproducibility
@@ -167,7 +179,7 @@ sample_size_pilot_matrix:
     - warehouse_mapping_stress
   perception_conditions: [gradual_support_loss]
   paired_block_ids: [343, 344, 345, 346, 347]
-  formal_block_ids_must_be_disjoint: [43, 44, 45, 46, 47]
+  formal_block_ids_must_be_disjoint: [443, 444, 445, 446, 447, 448, 449, 450, 451, 452, 453, 454, 455, 456, 457, 458, 459, 460, 461, 462, 463, 464, 465, 466, 467]
   prior_pilot_block_ids_must_be_disjoint: [143, 144, 145, 146, 147]
   simulation_seed_equals_paired_block_id: true
   expected_run_count: 160
@@ -303,9 +315,9 @@ metric_definitions:
     - structured_delta_l2
 
 primary_contrasts:
-  - {id: learned_total_value, treatment: C, control: B}
-  - {id: learned_gait_value, treatment: C, control: D}
-  - {id: deterministic_supervisor_value, treatment: B, control: A}
+  - {id: learned_gait_value, treatment: C, control: D, role: confirmatory}
+  - {id: learned_total_value, treatment: C, control: B, role: key_secondary}
+  - {id: deterministic_supervisor_value, treatment: B, control: A, role: decomposition_control}
   - {id: backend_interaction, factor: backend, contrasts: [C_vs_B, C_vs_D]}
 
 confirmatory_endpoints:
@@ -313,7 +325,7 @@ confirmatory_endpoints:
   learned_gait_contrast: C_vs_D
   endpoints:
     - stance_weighted_foot_slip_rms_mps
-    - roll_pitch_rate_rms_radps
+    - while_stable_roll_pitch_rate_rms_radps
     - tracking_restricted_mean_survival_time_s
     - normalized_progress
   evidence_rule:
@@ -337,12 +349,15 @@ statistics:
   report_effect_sizes_even_when_interval_crosses_zero: true
   sample_size_planning:
     input_dataset_role: excluded_pilot
+    contrasts:
+      - {id: learned_gait, treatment: C, control: D}
+      - {id: learned_total, treatment: C, control: B}
     simulation_resamples: 10000
     seed: 20260817
     candidate_paired_block_counts: [5, 6, 8, 10, 12, 15, 20, 25, 30]
     precision_halfwidth_targets:
       stance_weighted_foot_slip_rms_mps: 0.02
-      roll_pitch_rate_rms_radps: 0.05
+      while_stable_roll_pitch_rate_rms_radps: 0.05
       tracking_restricted_mean_survival_time_s: 0.50
       normalized_progress_difference: 0.05
       binary_risk_difference: 0.10
@@ -354,7 +369,7 @@ statistics:
     safety_axes:
       - hard_failure_risk
       - stance_weighted_foot_slip_rms_mps
-      - roll_pitch_rate_rms_radps
+      - while_stable_roll_pitch_rate_rms_radps
     dominated_points_must_be_shown: true
 
 run_disposition:

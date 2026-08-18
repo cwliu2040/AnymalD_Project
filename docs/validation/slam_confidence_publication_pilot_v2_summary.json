@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "kind": "slam_confidence_publication_pilot_summary",
+  "dataset_role": "excluded_pilot",
+  "git_commit": "82d4524655b23674aa2e8f9178d0496a6546883c",
+  "protocol_sha256": "e56c466288037f1fd30109536c102d3cebf4e6fdca547fed67dd35e895432c8b",
+  "release_sha256": "3c8b822a3613ef08b023b39776578a534b3d16bc7cee065edb46c1e3dd8477c8",
+  "runtime_matrix_summary_sha256": "e6c1bb348aa1a0b88b2fec3916d85c9db1ee34dfbb5a971eae20982cca36ef63",
+  "runtime_backfill_sha256": "0529e4a2c992b4e3f2ef52f524e2890b2762c46d028926c1c15b63dbe187f31a",
+  "runtime_sample_size_report_sha256": "fb547535cc0cf746c498492ce05ff7caba7e3b87a841803a4d1fe24f7a432c84",
+  "runtime_descriptive_analysis_sha256": "c2238ca9edaf1db39bacb038228e42f91d40acf975450aa06a6a5bd94dc64b39",
+  "scheduled_cells": 160,
+  "collection_valid_cells": 160,
+  "passed_data_integrity_cells": 160,
+  "policy_or_slam_failure_outcomes_retained": 36,
+  "challenge": {
+    "minimum_support_fraction": 0.2,
+    "timeline_s": [3.0, 6.0, 4.0, 3.0]
+  },
+  "continuous_stability_amendment": {
+    "old_estimand": "full_run_roll_pitch_rate_rms_radps",
+    "problem": "terminal impacts duplicated binary fall outcomes and made the 0.05 precision target unattainable within 30 blocks",
+    "new_estimand": "while_stable_roll_pitch_rate_rms_radps_before_first_instability",
+    "terminal_events_retained_as_binary_outcomes": true
+  },
+  "sample_size": {
+    "learned_gait_C_vs_D_blocks": 25,
+    "learned_total_C_vs_B_blocks": 15,
+    "selected_formal_paired_block_count": 25,
+    "formal_block_ids": [443, 444, 445, 446, 447, 448, 449, 450, 451, 452, 453, 454, 455, 456, 457, 458, 459, 460, 461, 462, 463, 464, 465, 466, 467],
+    "formal_live_cell_count": 800,
+    "formal_collection_authorized": false
+  },
+  "excluded_descriptive_C_minus_D": {
+    "stance_weighted_foot_slip_rms_mps_mean_difference": 0.001577609606036351,
+    "while_stable_roll_pitch_rate_rms_radps_mean_difference": -0.0059700335832179735,
+    "tracking_restricted_mean_survival_time_s_mean_difference": 0.3924999912250001,
+    "normalized_progress_mean_difference": 0.016674275142326278,
+    "mechanism_direction_supported": true,
+    "foot_slip_direction_supported": false,
+    "while_stable_body_rate_direction_supported": true,
+    "tracking_survival_direction_supported": true,
+    "efficiency_noninferiority_supported": true
+  },
+  "interpretation": "The excluded pilot supports the body-motion branch of the causal chain but does not support claiming reduced foot-slip RMS. Formal efficacy claims remain unauthorized."
+}

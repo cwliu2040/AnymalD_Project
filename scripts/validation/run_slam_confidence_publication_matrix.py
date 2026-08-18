@@ -182,7 +182,9 @@ def build_schedule(protocol: dict[str, Any]) -> list[dict[str, Any]]:
     stratum = 0
     for backend in matrix["backends"]:
         for profile in matrix["profiles"]:
-            for condition in matrix["perception_conditions"]:
+            for condition in matrix.get(
+                "formal_conditions", matrix["perception_conditions"]
+            ):
                 for block_index, block_id in enumerate(matrix["paired_block_ids"]):
                     for order, arm in enumerate(balanced_arm_order(block_index, stratum)):
                         rows.append(

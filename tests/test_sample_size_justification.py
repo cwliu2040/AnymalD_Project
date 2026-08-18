@@ -62,3 +62,4 @@ def test_efficiency_planning_uses_bounded_progress_difference() -> None:
     assert 'metrics["normalized_progress_difference"]' in source
     assert 'metric="normalized_progress"' not in source  # positional helper call
     assert "log_efficiency_ratio" not in source
+    assert "while_stable_roll_pitch_rate_rms_radps" in source

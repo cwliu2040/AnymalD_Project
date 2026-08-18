@@ -23,7 +23,7 @@ seed 與 duration 下，confidence-conditioned model48 是否能在保留任務�
 ```text
 confidence 下降
   -> intent / structured gait 改變
-  -> roll/pitch motion、action rate、foot slip 降低
+  -> while-stable roll/pitch motion 降低，foot slip完整報告
   -> SLAM tracking survival 提高
   -> progress 與 completion efficiency 仍可接受
 ```
@@ -113,21 +113,20 @@ profile結束後的額外idle只供flush，不計入progress或moving-speed。
 confidence calibration 時已定義的 fault family，但 formal source runs 必須是新
 capture，不得重用 training/calibration/holdout bags。
 
-五個 paired block IDs／simulation seeds 固定為 `43..47`。Locomotion launch與matrix
+二十五個 paired block IDs／simulation seeds 固定為 `443..467`。Locomotion launch與matrix
 runner現已把block ID明確傳入Isaac Lab `--seed`並寫入manifest；但完整excluded smoke
 尚未證明reset後初始state與command trace逐run相等，所以正式收數仍未開放。每個
-`backend × profile × perception condition` block 內，以由 block ID 決定的
-balanced Latin square 排列 A/B/C/D，避免總讓某 policy 先跑。每 cell 五次，
+`backend × profile × gradual-support-loss` block 內，以由 block ID 決定的
+balanced Latin square 排列 A/B/C/D，避免總讓某 policy 先跑。每 cell二十五次，
 總 live runs 為：
 
 ```text
-2 backends × 4 profiles × 2 conditions × 4 policy arms × 5 blocks = 320
+2 backends × 4 profiles × 1 gradual condition × 4 policy arms × 25 blocks = 800
 ```
 
-五個blocks是formal design的最低數量，不預設它一定足以估計低發生率fall risk。
-第一個formal run前必須只用既有歷史資料做simulation-based power／CI-width分析；若
-精度不足，只能在看新formal outcome前升版並增加所有cells的paired blocks，不能只替
-某個arm加樣本。
+25 blocks來自新challenge下、與formal disjoint的160-cell pilot精度規劃；不得在看formal
+outcome後更改。Native healthy path已有exact policy parity與工程驗證，不進confirmatory
+efficacy population；正式live matrix只收gradual condition。
 
 每個 paired block 必須相同：
 
@@ -170,7 +169,9 @@ backend trial。
 - Foot slip event：normal force ≥50 N、tangential speed ≥0.6 m/s，連續兩個
   50 Hz ticks；另報 stance-weighted slip RMS/integral，不能只報二元事件。
 - Tilt：`sqrt(roll^2 + pitch^2)` 的 RMS、p95、max。
-- Roll/pitch rate：`sqrt(wx^2 + wy^2)` 的 RMS、p95、max。
+- Roll/pitch rate：全程`RMS/p95`作descriptive；confirmatory continuous estimand為首次
+  instability前的while-stable `RMS/p95`。Fall/base contact仍完整保留為binary endpoints，
+  不把terminal impact同時重複計入連續gait-smoothness estimand。
 - Action rate：`||a(t)-a(t-1)||/dt` 的 RMS 與 p95。
 
 ### Efficiency
@@ -230,15 +231,17 @@ survivorship bias。
 - Tracking survival：restricted mean survival time difference；run-end與安全停止
   使用明確 censoring。
 - Bootstrap 10,000次，以 paired block/profile 為 cluster。
-- 四個 primary contrasts 預先報告；secondary metrics 使用 Holm correction。
+- C−D learned-gait ablation是confirmatory；C−B learned-total是key secondary；B−A只作
+  deterministic-supervisor decomposition control。Secondary metrics使用Holm correction。
 - 不論 CI 是否跨零，都報 raw distributions、effect size 與 CI，不只報 p-value。
 
 Confirmatory population 是 controlled gradual-support-loss live runs，主要 learned-gait
-contrast是C−D。預先指定的四個endpoints為 stance-weighted slip RMS、roll/pitch-rate
-RMS、tracking restricted mean survival time與normalized progress/time。因果鏈只有在
-degradation期間applied gait coordinates非零，C−D的slip與rate方向為負、tracking
-RMST方向為正，且efficiency ratio的95% CI下界不低於0.90時，才可稱為完整支持；
-否則逐段報告哪些link有證據、哪些沒有。不得看完結果後更換endpoint或margin。
+contrast是C−D。預先指定的四個endpoints為 stance-weighted slip RMS、while-stable
+roll/pitch-rate RMS、tracking restricted mean survival time與normalized progress。
+因果鏈以body-motion branch作識別：degradation期間applied gait coordinates非零、C−D
+while-stable rate方向為負、tracking RMST方向為正，且normalized-progress difference的95%
+CI下界不低於`-0.10`。Foot slip仍完整報effect/CI，但excluded pilot方向未下降，正式論文
+不得預先宣稱slip reduction。
 
 Safety-efficiency Pareto 不用任意加權的單一safety composite。以相同efficiency axis
 （normalized progress／elapsed simulation time）分別對hard-failure risk、stance-weighted
@@ -312,13 +315,13 @@ SLAM結果、map metric與mechanism sidecar聚合成單一`scheduled_live_run` r
 明載不得作independent replicates。`analyze_slam_confidence_publication.py`只接受完整配對，
 輸出C–D、C–B、B–A的continuous difference、binary risk difference、C–D efficiency
 ratio與backend interaction，95% interval固定以`(paired_block_id, profile)` cluster bootstrap
-10,000次。正式claim還要求320個唯一identity逐格精確等於frozen schedule且所有run gates
+10,000次。正式claim還要求800個唯一identity逐格精確等於frozen schedule且所有run gates
 通過。block43的16格已完成schema backfill與descriptive analysis，但因dataset role為
 `excluded_smoke`且只有一個block，分析器固定輸出`formal_claim_allowed=false`與
 `complete_support=false`。
 
 Replay runner會對每個collection-valid scheduled live bag計算content fingerprint，再送入FAST-LIO2與
-LIO-SAM native backend各兩次；完整formal live matrix因此對應1,280格replay。Replay
+LIO-SAM native backend各兩次；完整formal live matrix因此對應3,200格replay。Replay
 manifest固定`closed_loop_gait_causality_allowed=false`，只支援matched-input backend與
 measurement variability，不能取代live gait causality。Infrastructure gate要求topic/count
 schema一致、metrics finite、timestamps與backend evaluator通過；兩次數值差異完整保存，
@@ -329,7 +332,7 @@ schema一致、metrics finite、timestamps與backend evaluator通過；兩次數
 `ATE>0.10 m`只記為outcome。LIO-SAM兩次皆138 samples，ATE為`0.038180/0.044856 m`，
 差`0.006677 m`；yaw RMSE差`0.004102 deg`。機讀證據為
 `docs/validation/slam_confidence_publication_replay_excluded_smoke.json`。這證明runner與
-outcome/infrastructure分離可用，不是完整1,280格replay或backend優劣結論。
+outcome/infrastructure分離可用，不是完整3,200格replay或backend優劣結論。
 
 Sample-size decision不得使用formal outcomes或與formal相同的seeds。已完成160格
 `excluded_pilot`：blocks/seeds `143..147`、四routes、gradual-support-loss、兩backend、
@@ -374,10 +377,12 @@ bracket。預先提交的selector選出共同最高合格support `0.20`；C/D tr
 challenge因此凍結為support 0.20及3.0/6.0/4.0/3.0 s timeline，機讀證據為
 `docs/validation/slam_confidence_challenge_calibration_v3_summary.json`。
 
-這項freeze不授權formal collection。舊160-cell pilot使用support 0.001，其15-block provisional
-decision不得外推到新challenge。新sample-size pilot固定使用disjoint blocks/seeds 343..347、
-四routes、兩backend與A/B/C/D，共160 cells；完成完整data-integrity gates後重新估計precision，
-才可凍結formal block count。
+這項freeze不授權formal collection。新sample-size pilot已用disjoint blocks/seeds 343..347、
+四routes、兩backend與A/B/C/D完成160/160 data-integrity gates。Full-run roll/pitch RMS被
+terminal impacts污染，因此在任何formal data前改為while-stable estimand；fall/base-contact
+binary outcomes不變。C−D需要25 blocks、C−B需要15，正式統一凍結25 blocks與seeds
+443..467，共800 live cells。Pilot機讀摘要為
+`docs/validation/slam_confidence_publication_pilot_v2_summary.json`；formal authorization仍為false。
 
 正式mechanism reconstruction所需的model48 checkpoint已從training `logs/`來源以byte-for-byte
 相同SHA `888bc682...4fa0` curate至tracked
@@ -418,7 +423,7 @@ debug runs。Derived tables必須保留 source run IDs，圖表可由 run-level 
 
 目前可執行入口為
 `scripts/validation/run_slam_confidence_publication_matrix.py`。它會先驗證四個arm與
-estimator15的SHA、產生320-cell balanced schedule，並固定block ID等於simulation seed。
+estimator15的SHA、產生800-cell balanced schedule，並固定block ID等於simulation seed。
 預設輸出永久標為`excluded_smoke`；只有顯式`--formal`、protocol已授權、所有artifact SHA
 通過且tracked worktree乾淨時才允許正式收數；實際clean HEAD會寫入每次manifest。正式輸出亦
 強制位於`outputs/slam_confidence_publication_v1/`；每個live run開啟raw sensor bag，供後續
