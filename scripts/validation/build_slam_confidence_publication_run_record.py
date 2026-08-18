@@ -33,7 +33,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--block", type=int, required=True)
     parser.add_argument("--arm", choices=("A", "B", "C", "D"), required=True)
     parser.add_argument(
-        "--dataset-role", choices=("formal", "excluded_smoke", "excluded_pilot"), required=True,
+        "--dataset-role",
+        choices=("formal", "excluded_smoke", "excluded_pilot", "excluded_calibration"),
+        required=True,
     )
     return parser.parse_args()
 
@@ -46,6 +48,7 @@ def main() -> int:
     trace = _load(run_dir / "locomotion_diagnostics.json")
     offline = _load(run_dir / "offline_usability.json")
     map_result = _load(run_dir / "map_consistency.json")
+    stability = _load(run_dir / "stability_gate.json")
     mechanism = _load(run_dir / "mechanism_sidecar.json", required=False)
     locomotion = summarize_locomotion(trace["samples"])
     false_stop = offline["false_stop"]
@@ -53,7 +56,7 @@ def main() -> int:
         "schema_version": 1,
         "kind": "slam_confidence_publication_run_record",
         "dataset_role": args.dataset_role,
-        "experimental_unit": "accepted_live_run",
+        "experimental_unit": "scheduled_live_run",
         "identity": {
             "backend": args.backend, "profile": args.profile, "condition": args.condition,
             "paired_block_id": args.block, "arm": args.arm,
@@ -67,13 +70,28 @@ def main() -> int:
             "tracking_event_observed": offline["tracking"]["event_observed"],
             "tracking_valid_fraction": offline["tracking"]["tracking_valid_fraction"],
             "translation_ate_rmse_m": offline["trajectory"]["translation_ate_rmse_m"],
+            "map_registration_valid": bool(
+                map_result.get("outcome", {}).get("map_registration_valid", True)
+            ),
             "map_reference_distance_p50_m": map_result["metrics"]["reference_distance_p50_m"],
             "map_reference_distance_p95_m": map_result["metrics"]["reference_distance_p95_m"],
             "map_duplicate_surface_fraction": map_result["metrics"]["duplicate_surface_fraction"],
         },
         "mechanism": summarize_mechanism(mechanism.get("records", [])),
+        "outcomes": {
+            "stability_gate_passed": bool(stability["gate"]["passed"]),
+            "stability_failures": list(stability["gate"].get("failures", [])),
+            "map_registration_valid": bool(
+                map_result.get("outcome", {}).get("map_registration_valid", True)
+            ),
+            "map_registration_failure_reason": map_result.get("outcome", {}).get(
+                "map_registration_failure_reason"
+            ),
+        },
         "gate": {
             "passed": bool(offline["gate"]["passed"] and map_result["gate"]["passed"]),
+            "role": "data_integrity_only",
+            "policy_or_slam_failure_retained_as_outcome": True,
             "frame_samples_are_independent_replicates": False,
         },
     }

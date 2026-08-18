@@ -45,3 +45,20 @@ def test_smoke_role_cannot_justify_sample_size() -> None:
     result = MODULE.validate_pilot_records(records, protocol)
     assert not result["passed"]
     assert not result["checks"]["excluded_pilot_role_only"]
+
+
+def test_efficiency_planning_uses_bounded_progress_difference() -> None:
+    protocol = yaml.safe_load(
+        (ROOT / "configs/slam_confidence_publication_protocol.yaml").read_text()
+    )
+    planning = protocol["statistics"]["sample_size_planning"]
+    assert planning["precision_halfwidth_targets"][
+        "normalized_progress_difference"
+    ] == 0.05
+    assert planning[
+        "efficiency_noninferiority_normalized_progress_difference"
+    ] == -0.10
+    source = SCRIPT.read_text()
+    assert 'metrics["normalized_progress_difference"]' in source
+    assert 'metric="normalized_progress"' not in source  # positional helper call
+    assert "log_efficiency_ratio" not in source

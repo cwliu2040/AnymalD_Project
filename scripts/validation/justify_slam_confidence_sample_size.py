@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -18,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT / "deployment/ros2_ws/src/anymal_locomotion_ros2"))
 
 from anymal_locomotion_ros2.publication_statistics_core import paired_values
-from anymal_locomotion_ros2.sample_size_core import first_precision_qualified_block_count, log_ratio
+from anymal_locomotion_ros2.sample_size_core import first_precision_qualified_block_count
 
 
 def validate_pilot_records(records: list[dict[str, Any]], protocol: dict[str, Any]) -> dict[str, Any]:
@@ -51,12 +50,12 @@ def validate_pilot_records(records: list[dict[str, Any]], protocol: dict[str, An
     return {"checks": checks, "passed": all(checks.values())}
 
 
-def _cluster_effects(records: list[dict[str, Any]], metric: str, *, ratio: bool = False) -> dict[str, list[float]]:
+def _cluster_effects(records: list[dict[str, Any]], metric: str) -> dict[str, list[float]]:
     pairs = paired_values(records, treatment="C", control="D", metric=metric)
     grouped: dict[tuple[str, int], list[float]] = defaultdict(list)
     for pair in pairs:
         identity = pair["pair"]
-        effect = log_ratio(pair["treatment"], pair["control"]) if ratio else pair["difference"]
+        effect = pair["difference"]
         grouped[(identity["profile"], int(identity["paired_block_id"]))].append(effect)
     by_profile: dict[str, list[float]] = defaultdict(list)
     for (profile, _block), effects in sorted(grouped.items()):
@@ -103,23 +102,38 @@ def main() -> int:
             _cluster_effects(records, metric), candidates=candidates,
             halfwidth_target=float(targets[metric]), resamples=resamples, seed=seed + index * 100,
         )
-    efficiency_metric = "normalized_progress_per_elapsed_second"
-    metrics["log_efficiency_ratio"] = first_precision_qualified_block_count(
-        _cluster_effects(records, efficiency_metric, ratio=True), candidates=candidates,
-        halfwidth_target=float(targets["log_normalized_progress_per_elapsed_second_ratio"]),
+    metrics["normalized_progress_difference"] = first_precision_qualified_block_count(
+        _cluster_effects(records, "normalized_progress"), candidates=candidates,
+        halfwidth_target=float(targets["normalized_progress_difference"]),
         resamples=resamples, seed=seed + 400,
-        lower_bound=math.log(float(planning["efficiency_noninferiority_ratio"])),
+        lower_bound=float(
+            planning["efficiency_noninferiority_normalized_progress_difference"]
+        ),
     )
+    for index, metric in enumerate(
+        ("fall", "base_contact", "foot_slip_event", "completion")
+    ):
+        metrics[f"{metric}_risk_difference"] = first_precision_qualified_block_count(
+            _cluster_effects(records, metric), candidates=candidates,
+            halfwidth_target=float(targets["binary_risk_difference"]),
+            resamples=resamples, seed=seed + 500 + index * 100,
+        )
     selected_values = [value["selected_paired_block_count"] for value in metrics.values()]
     passed = all(value is not None for value in selected_values)
     selected = max(selected_values) if passed else None
+    challenge_frozen = bool(
+        protocol.get("challenge_calibration_matrix", {}).get(
+            "formal_condition_frozen", False
+        )
+    )
     report = {
         "schema_version": 1, "kind": "slam_confidence_sample_size_justification",
         "pilot_completeness": completeness, "planning": planning,
         "endpoint_precision": metrics, "selected_formal_paired_block_count": selected,
         "protocol_current_formal_paired_block_count": len(protocol["live_matrix"]["paired_block_ids"]),
         "protocol_revision_required": bool(selected and selected != len(protocol["live_matrix"]["paired_block_ids"])),
-        "formal_collection_may_start": passed,
+        "challenge_condition_frozen": challenge_frozen,
+        "formal_collection_may_start": passed and challenge_frozen,
         "passed": passed,
     }
     output.parent.mkdir(parents=True, exist_ok=True)

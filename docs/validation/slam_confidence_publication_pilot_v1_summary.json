@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "kind": "slam_confidence_publication_excluded_pilot_summary",
+  "date": "2026-08-18",
+  "dataset_role": "excluded_pilot",
+  "formal_efficacy_use_allowed": false,
+  "raw_collection": {
+    "git_commit": "8a8ebc7906271a94da3cef8fce204f2954b843ca",
+    "protocol_sha256": "23eb86cdc0166e5c662cfc649e00d4a68dee930a392f15883e0f16c3435c9a2a",
+    "release_sha256": "df738cd33cf4c383f6e730dd4b34048ae89e0f16c7f11a1972b675d42ce75351",
+    "scheduled_cells": 160,
+    "completed_cells": 160,
+    "original_engineering_passed_cells": 132,
+    "original_engineering_failed_cells": 28,
+    "run_manifest_sha256": "9a141e5e7a9f5b5e9dc1f812ecc3bf5cc18e24df091149af51e9207a816cef43",
+    "matrix_summary_sha256": "962303b04329886577d31704dcfc8a7bdf44ee73da40819af8c8003703797ea8"
+  },
+  "derived_backfill": {
+    "source_attempt_manifests_preserved": true,
+    "collection_valid_cells": 160,
+    "collection_invalid_cells": 0,
+    "unique_run_records": 160,
+    "policy_or_slam_failure_outcomes_retained": 28,
+    "invalid_map_registration_outcomes_retained": 5,
+    "estimator_replay_passed_cells": 160,
+    "estimator_replay_maximum_absolute_velocity_error_mps": 0.0,
+    "summary_sha256": "c86de0cac641a8b31f5474073ac706d4aa7a8368795f702430b343fe7fc4e762"
+  },
+  "provisional_sample_size": {
+    "efficiency_estimand": "paired_normalized_progress_difference",
+    "noninferiority_margin": -0.1,
+    "precision_halfwidth_target": 0.05,
+    "selected_paired_block_count": 15,
+    "protocol_revision_required": true,
+    "formal_collection_may_start": false,
+    "reason": "challenge_condition_not_frozen",
+    "report_sha256": "bb5e29a17f7b2bd3e7ef9f5332450b4d3a51e661d96f8e10c28282b768c63b44"
+  },
+  "descriptive_directions": {
+    "mechanism_supported": true,
+    "slip_direction_supported": true,
+    "roll_pitch_rate_direction_supported": true,
+    "tracking_survival_direction_supported": false,
+    "efficiency_noninferiority_supported": true,
+    "complete_support": false,
+    "analysis_sha256": "ee87849f56c81d181d7759c4a4a93aed720dbec9af797c5dc722a9b62e08ddd7"
+  },
+  "challenge_diagnosis": {
+    "fastlio2_tracking_event_time_s_range": [3.5, 3.6],
+    "liosam_tracking_event_time_s_range": [3.5, 3.8],
+    "interpretation": "minimum_support_fraction_0.001_locks_failure_to_the_programmed_density_ramp_and_masks_gait_to_slam_survival_causality",
+    "next_gate": "excluded_marginal_tracking_challenge_calibration"
+  },
+  "promotion_allowed": false,
+  "formal_default_remains": "recovery-v0.4.0-model1450"
+}

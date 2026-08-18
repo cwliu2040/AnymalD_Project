@@ -143,7 +143,7 @@ teleport 或 command 調整把它消除。若 profile 因 policy failure未完�
 
 ## 5. Replay matrix 與證據邊界
 
-每個 accepted live run 都保存 raw `/lidar/points_raw`、`/imu/data`、GT `/odom`
+每個 scheduled live run 都保存 raw `/lidar/points_raw`、`/imu/data`、GT `/odom`
 及 contract 所需 topics。每份 raw bag 以隔離 ROS domain 分別由 FAST-LIO2 與
 LIO-SAM replay 兩次。
 
@@ -219,7 +219,9 @@ path，也不更換既有 model48 ONNX。若無法通過 parity，formal collect
 
 ## 7. 統計分析
 
-Experimental unit 是 accepted live run。主要報 paired effect size 與95% CI，
+Experimental unit 是 scheduled live run。主要報 paired effect size 與95% CI；policy safety
+failure與SLAM registration failure保留為outcome，只有data-integrity failure可排除，避免
+survivorship bias。
 不把 frame、foot 或 point 當獨立 repetitions。
 
 - 二元 outcome：paired risk difference 與 cluster bootstrap CI。
@@ -306,7 +308,7 @@ native arm C bags亦已完成端到端執行；該次數值只作pipeline smoke�
 efficacy threshold，正式比較須由完整paired matrix的分布與confidence interval決定。
 
 每格現另由`build_slam_confidence_publication_run_record.py`把locomotion frames、offline
-SLAM結果、map metric與mechanism sidecar聚合成單一`accepted_live_run` record；原始frames
+SLAM結果、map metric與mechanism sidecar聚合成單一`scheduled_live_run` record；原始frames
 明載不得作independent replicates。`analyze_slam_confidence_publication.py`只接受完整配對，
 輸出C–D、C–B、B–A的continuous difference、binary risk difference、C–D efficiency
 ratio與backend interaction，95% interval固定以`(paired_block_id, profile)` cluster bootstrap
@@ -315,7 +317,7 @@ ratio與backend interaction，95% interval固定以`(paired_block_id, profile)` 
 `excluded_smoke`且只有一個block，分析器固定輸出`formal_claim_allowed=false`與
 `complete_support=false`。
 
-Replay runner會對每個accepted live bag計算content fingerprint，再送入FAST-LIO2與
+Replay runner會對每個collection-valid scheduled live bag計算content fingerprint，再送入FAST-LIO2與
 LIO-SAM native backend各兩次；完整formal live matrix因此對應1,280格replay。Replay
 manifest固定`closed_loop_gait_causality_allowed=false`，只支援matched-input backend與
 measurement variability，不能取代live gait causality。Infrastructure gate要求topic/count
@@ -329,17 +331,25 @@ schema一致、metrics finite、timestamps與backend evaluator通過；兩次數
 `docs/validation/slam_confidence_publication_replay_excluded_smoke.json`。這證明runner與
 outcome/infrastructure分離可用，不是完整1,280格replay或backend優劣結論。
 
-Sample-size decision不得使用formal outcomes或與formal相同的seeds。已另凍結160格
+Sample-size decision不得使用formal outcomes或與formal相同的seeds。已完成160格
 `excluded_pilot`：blocks/seeds `143..147`、四routes、gradual-support-loss、兩backend、
 A/B/C/D；與formal `43..47`完全分離，且pilot永遠不得進formal efficacy dataset。
 `justify_slam_confidence_sample_size.py`要求160個唯一run records精確匹配pilot schedule、
 全部gates通過且role正確，才會用C–D paired effects做10,000次stratified simulation。
-預先固定的95% half-width目標為slip `0.02 m/s`、roll/pitch rate `0.05 rad/s`、RMST
-`0.50 s`與log-efficiency ratio `0.05`；candidate blocks為
-`5,6,8,10,12,15,20,25,30`，efficiency另要求模擬下界不低於`log(0.90)`。若選出的數目
-不是目前五個formal blocks，必須在任何formal run前升版並對稱更新完整matrix；若30仍
-無法通過，formal collection維持鎖定。Pilot schedule dry-run已確認160格，但尚未收數，
-所以sample-size readiness仍是pending。
+原先的log-efficiency ratio在pilot中因control progress接近零而出現最高約82倍ratio，屬
+不可識別estimand。這是在任何formal data前發現，protocol v2透明修訂為paired
+`normalized_progress` difference，NI margin `-0.10`、95% half-width `0.05`，並補上binary
+risk-difference precision。Candidate blocks仍為`5,6,8,10,12,15,20,25,30`，provisional
+選出15 blocks；但formal仍鎖定，因原support minimum 0.001使tracking event鎖在density
+ramp，無法辨識gait對SLAM survival的因果效果。
+
+Pilot raw collection來自clean commit `8a8ebc7`，160/160 cells完成。Disposition修正後從同一
+批bags backfill出160 unique scheduled-run records，28個policy/SLAM failures及5個invalid-map
+registrations保留為outcomes；estimator replay 160/160通過且最大速度誤差為`0.0 m/s`。
+機讀摘要為`docs/validation/slam_confidence_publication_pilot_v1_summary.json`。下一步先跑
+40-cell `excluded_calibration` coarse sweep，候選support fractions為0.005、0.01、0.02、0.05、
+0.10；兩backend、curve-right與warehouse、C/D、seed243。只有policy-independent selection
+rule通過並凍結新challenge後，才可重做最終sample-size pilot與考慮formal authorization。
 
 正式mechanism reconstruction所需的model48 checkpoint已從training `logs/`來源以byte-for-byte
 相同SHA `888bc682...4fa0` curate至tracked

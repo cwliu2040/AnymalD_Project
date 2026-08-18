@@ -42,6 +42,22 @@ def test_sample_size_pilot_is_complete_and_seed_disjoint() -> None:
     assert {row["condition"] for row in rows} == {"gradual_support_loss"}
 
 
+def test_challenge_calibration_schedule_is_small_balanced_and_disjoint() -> None:
+    module = _module()
+    protocol = module._load_yaml(ROOT / "configs/slam_confidence_publication_protocol.yaml")
+    rows = module.build_challenge_calibration_schedule(protocol)
+    assert len(rows) == 40
+    assert {row["arm"] for row in rows} == {"C", "D"}
+    assert {row["backend"] for row in rows} == {"fastlio2", "liosam"}
+    assert {row["simulation_seed"] for row in rows} == {243}
+    assert {row["minimum_support_fraction"] for row in rows} == {
+        0.005, 0.01, 0.02, 0.05, 0.10,
+    }
+    formal = set(protocol["live_matrix"]["paired_block_ids"])
+    pilot = set(protocol["sample_size_pilot_matrix"]["paired_block_ids"])
+    assert not {243} & (formal | pilot)
+
+
 def test_artifact_validator_locks_all_arms_and_estimator() -> None:
     module = _module()
     release = module._load_yaml(ROOT / "configs/slam_confidence_sim_release_v1.yaml")

@@ -1,6 +1,6 @@
 # Current project knowledge
 
-更新日期：2026-08-17
+更新日期：2026-08-18
 
 這份文件保存跨對話補充知識，讓 Work locally 模式的新對話在直接閱讀
 repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產物、近期
@@ -20,6 +20,8 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   `benchmark/slam-liosam-fastlio2` 與目前實驗 branch 都以
   `fee8c9f 建立 SLAM backend 比較基線` 為共同基礎。
 - `exp/slam-fastlio2` 的本機與遠端baseline均為
+  `8a8ebc7 固定 estimator 時戳同步並完成雙後端驗證`；其前一個commit為
+  `d1128fe 補齊論文收數與候選正式化驗證鏈`，再前一個commit為
   `9b015c7 建立 SLAM confidence 發表與正式化基礎`；其前一個commit為
   `7a5675a 修正 LIO-SAM 信心誤判並完成互動驗證`，再前一個commit為
   `8392743 加入雙 SLAM backend 互動驗證入口`，再前一個parent為
@@ -45,13 +47,13 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   C-v4至C-v10 confidence-conditioned PPO實作、estimator-closed-loop訓練接線、測試、
   驗證文件與interactive false-stop修正均已提交並push；C-v10模擬候選已通過固定behavior及
   gait-value gate、export parity與FAST/LIO完整五方向live matrix，但尚未取代正式policy。
-  Publication data contract、B/D artifacts與release skeleton已在`9b015c7`建立；目前仍未執行
-  disjoint pilot或publication formal runs，也未授權promotion。
-- 目前尚未提交的project-owned變更是第二批publication execution實作：A/B/C/D live matrix、
-  雙backend replay、offline usability／false-stop、trajectory、map consistency、run-level
-  statistics、cluster bootstrap、sample-size pilot，以及estimator15 foot-contact replay gate；
-  同批亦包含對應config、tests、validation evidence、五方向recovery regression evidence與
-  byte-identical curated model48 checkpoint。完成驗證後需另取得使用者明確同意才可commit／push。
+  Publication data contract、B/D artifacts與release skeleton已在`9b015c7`建立；publication
+  execution chain已在`d1128fe`與`8a8ebc7`提交。160-cell disjoint excluded pilot已完成，
+  formal runs與promotion仍未授權。
+- 目前尚未提交的project-owned變更是pilot暴露的publication disposition修正：episode-reset
+  estimator replay、invalid-map outcome保留、scheduled-run experimental unit、backfill、
+  sample-size estimand amendment、challenge-calibration schedule、tests、protocol與validation
+  evidence。完成驗證後需另取得使用者明確同意才可commit／push。
   root `build/`、`install/`、`log/`
   與`lidar_type`是未追蹤runtime產物，不納入提交，其他 `logs/`／`outputs/` 實驗
   產物也不提交。
@@ -1478,14 +1480,20 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
   任意closeness threshold排除；FAST超過舊0.10 m qualification threshold亦保留為outcome。
   機讀證據為`docs/validation/slam_confidence_publication_replay_excluded_smoke.json`，完整
   replay matrix仍待formal live data後執行。
-- Sample-size gate已凍結disjoint pilot，不再允許用formal outcomes事後決定樣本數：pilot
+- Sample-size gate使用與formal分離的disjoint pilot，不允許用formal outcomes事後決定樣本數：pilot
   blocks/seeds為`143..147`，formal為`43..47`，四routes×gradual×兩backend×A/B/C/D共
   160格，role固定`excluded_pilot`且永不併入formal efficacy。Precision planner要求完整
-  160個唯一records與all gates passed，再以10,000次stratified simulation比較預註冊的
-  slip `0.02 m/s`、roll/pitch-rate `0.05 rad/s`、RMST `0.50 s`及log-efficiency ratio
-  `0.05` half-width目標，候選formal blocks為5到30，效率下界仍須`>=log(0.90)`。
-  Pilot schedule dry-run為160/160；目前尚未執行這160格，因此sample-size justification
-  與formal collection authorization仍不可通過。
+  160個唯一records與data-integrity gates通過，再以10,000次stratified simulation估計精度。
+  2026-08-18已完成160/160 raw cells；原runner把policy/SLAM outcomes錯當collection failure，
+  顯示132 pass/28 fail。修正survivorship disposition並從原bags backfill後，160/160 records
+  collection-valid、28個policy/SLAM failures完整保留、5個invalid maps保留，estimator replay
+  160/160通過且最大誤差`0.0 m/s`。
+  Pilot也證明原log-efficiency ratio在control progress接近零時不識別；protocol v2在formal前
+  透明修訂為paired normalized-progress difference，NI margin `-0.10`、half-width `0.05`，
+  provisional選出15 blocks。這不授權formal，因`minimum_support_fraction=0.001`使FAST/LIO
+  tracking event分別鎖在約3.5–3.6/3.5–3.8 s，C–D survival方向未成立；必須先完成
+  marginal-tracking challenge calibration。機讀摘要為
+  `docs/validation/slam_confidence_publication_pilot_v1_summary.json`。
 - model48 checkpoint已由ignored training log以相同SHA `888bc682...4fa0` curate到tracked
   `checkpoints/anymal_d_locomotion_slam_confidence_sim_v1/model_48.pt`，publication protocol、
   release manifest與mechanism sidecar的正式dependency均改用此路徑；export metadata保留的
@@ -1519,7 +1527,30 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
   outputs全部exact-stamp match，最大速度誤差皆為`0.0 m/s`，stability、mechanism（A不要求）、
   offline usability、map measurement與run record亦全過。機讀證據為
   `docs/validation/slam_confidence_estimator15_stamp_sync_qualification.json`。前兩次失敗cell只作
-  qualification/debug且永不納入pilot；完整160-cell pilot仍須在修正的clean commit後逐格通過。
+  qualification/debug且永不納入pilot；其後完整160-cell pilot的結果與新診斷記於下一節。
+
+### Publication excluded pilot and challenge diagnosis (2026-08-18)
+
+- Clean commit `8a8ebc7`已完成兩backend×四routes×blocks/seeds 143..147×A/B/C/D的
+  160-cell `excluded_pilot` raw collection。所有raw bags與原始`cell.json`保留；不得納入
+  formal efficacy或用重跑替換真實失敗。
+- 原runner summary為132 pass/28 fail。Failure audit確認其中多數是應保留的foot-slip／
+  termination outcome；另有episode reset未被estimator replay重現，以及ICP無足夠inliers時
+  map evaluator拋例外而缺record的實作缺口。修正後以policy發出的
+  `/simulation/episode_reset_ack`重置replay estimator與synchronizer，未改exact stamp、
+  `0.025 s` tolerance或`1e-5 m/s`誤差門檻。
+- Derived backfill不覆寫原attempt manifest，結果160/160 collection-valid、160 unique records、
+  estimator replay全通過且最大誤差`0.0 m/s`；28個policy/SLAM failures與5個invalid-map
+  registrations均保留為binary outcomes。Experimental unit改為`scheduled_live_run`，只以
+  data integrity決定是否收錄，避免survivorship bias。
+- Pilot descriptive C–D方向為mechanism、slip、roll/pitch-rate與efficiency NI支持，tracking
+  survival不支持；`minimum_support_fraction=0.001`把tracking事件鎖在density ramp，無法辨識
+  gait→SLAM survival因果。正式矩陣維持鎖定，先跑40-cell excluded coarse calibration：
+  FAST/LIO×curve-right/warehouse×C/D×support 0.005/0.01/0.02/0.05/0.10、seed243。
+- 原效率rate ratio因11/40個D denominators `<=0.001`且最大ratio約82而不適合作NI。
+  Protocol v2在任何formal data前改為paired `normalized_progress` difference，margin `-0.10`、
+  half-width `0.05`；目前provisional需要15 paired blocks。Challenge condition尚未凍結，
+  `formal_collection_authorized=false`，正式model1450與rollback均不變。
 
 ### Proprioceptive estimator and gait-value A/B (2026-08-13)
 

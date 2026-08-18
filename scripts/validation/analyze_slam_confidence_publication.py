@@ -18,7 +18,6 @@ sys.path.insert(0, str(PROJECT_ROOT / "deployment/ros2_ws/src/anymal_locomotion_
 from anymal_locomotion_ros2.publication_statistics_core import (
     backend_interaction,
     paired_contrast,
-    paired_ratio,
 )
 
 
@@ -98,6 +97,7 @@ def main() -> int:
                 "stance_weighted_foot_slip_rms_mps",
                 "roll_pitch_rate_rms_radps",
                 "tracking_restricted_mean_survival_time_s",
+                "normalized_progress",
                 "normalized_progress_per_elapsed_second",
             )
         }
@@ -121,15 +121,20 @@ def main() -> int:
             "stance_weighted_foot_slip_rms_mps",
             "roll_pitch_rate_rms_radps",
             "tracking_restricted_mean_survival_time_s",
+            "normalized_progress",
             "normalized_progress_per_elapsed_second",
         )
     }
-    efficiency = paired_ratio(
-        gradual, treatment="C", control="D",
-        metric="normalized_progress_per_elapsed_second", resamples=resamples,
-    )
     learned = contrasts["learned_gait"]
-    efficiency_lower = efficiency["mean_ratio_95pct_cluster_bootstrap"]["lower"]
+    efficiency = learned["normalized_progress"]
+    efficiency_lower = efficiency[
+        "mean_difference_95pct_cluster_bootstrap"
+    ]["lower"]
+    efficiency_margin = float(
+        protocol["statistics"]["sample_size_planning"][
+            "efficiency_noninferiority_normalized_progress_difference"
+        ]
+    )
     conclusion = {
         "mechanism_supported": all(
             record["mechanism"].get("applied_stride_attenuation_degraded_nonzero_fraction", 0.0) > 0.0
@@ -138,7 +143,9 @@ def main() -> int:
         "slip_direction_supported": learned["stance_weighted_foot_slip_rms_mps"]["mean_difference"] < 0.0,
         "roll_pitch_rate_direction_supported": learned["roll_pitch_rate_rms_radps"]["mean_difference"] < 0.0,
         "survival_direction_supported": learned["tracking_restricted_mean_survival_time_s"]["mean_difference"] > 0.0,
-        "efficiency_noninferiority_95pct_lower_ge_0_90": efficiency_lower >= 0.90,
+        "efficiency_noninferiority_95pct_lower_ge_margin": (
+            efficiency_lower >= efficiency_margin
+        ),
     }
     completeness = validate_formal_completeness(records, protocol, roles)
     cluster_counts = [
@@ -154,12 +161,15 @@ def main() -> int:
         "formal_completeness": completeness,
         "cluster_inference_valid": inference_valid,
         "run_record_count": len(records),
-        "experimental_unit": "accepted_live_run",
+        "experimental_unit": "scheduled_live_run",
         "frame_samples_are_independent_replicates": False,
         "contrasts": contrasts,
         "binary_risk_difference_contrasts": binary_contrasts,
         "backend_interactions": interactions,
-        "learned_gait_efficiency_ratio": efficiency,
+        "learned_gait_efficiency_difference": {
+            **efficiency,
+            "noninferiority_margin": efficiency_margin,
+        },
         "evidence_rule": conclusion,
         "complete_support": inference_valid and all(conclusion.values()),
     }

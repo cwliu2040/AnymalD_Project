@@ -25,6 +25,38 @@ from anymal_locomotion_ros2.map_consistency_core import (
 )
 
 
+MAP_METRIC_NAMES = (
+    "alignment_yaw_rad", "alignment_translation_xyz_m",
+    "reference_distance_p50_m", "reference_distance_p95_m",
+    "off_reference_fraction", "duplicate_surface_fraction",
+    "evaluated_point_count",
+)
+
+
+def score_map_outcome(
+    estimated: np.ndarray, reference: np.ndarray, *, maximum_points: int,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    try:
+        result = evaluate_map_consistency(
+            estimated, reference, maximum_points=maximum_points
+        )
+    except ValueError as exc:
+        return (
+            {name: None for name in MAP_METRIC_NAMES},
+            {
+                "map_registration_valid": False,
+                "map_registration_failure_reason": str(exc),
+            },
+        )
+    return (
+        asdict(result),
+        {
+            "map_registration_valid": True,
+            "map_registration_failure_reason": None,
+        },
+    )
+
+
 def _stamp_ns(stamp: Any) -> int:
     return int(stamp.sec) * 1_000_000_000 + int(stamp.nanosec)
 
@@ -120,9 +152,25 @@ def main() -> int:
     scans, truth, estimates = _read_bag(bag_dir, args.points_per_scan)
     reference = build_observed_surface(scans, truth, points_per_scan=args.points_per_scan)
     estimated = build_observed_surface(scans, estimates, points_per_scan=args.points_per_scan)
-    result = evaluate_map_consistency(estimated, reference, maximum_points=args.maximum_points)
+    data_integrity_failures = []
+    if len(scans) < 10:
+        data_integrity_failures.append("insufficient_raw_scans")
+    if len(reference) < 500:
+        data_integrity_failures.append("insufficient_reference_surface")
+    metrics = {name: None for name in MAP_METRIC_NAMES}
+    outcome = {
+        "map_registration_valid": False,
+        "map_registration_failure_reason": "input_data_integrity_failure",
+    }
+    if not data_integrity_failures:
+        # A SLAM estimate that cannot support ICP is an experimental outcome,
+        # not missing data. Keep the scheduled run and expose a binary
+        # registration failure instead of dropping its record.
+        metrics, outcome = score_map_outcome(
+            estimated, reference, maximum_points=args.maximum_points
+        )
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "kind": "slam_confidence_publication_map_consistency",
         "ground_truth_role": "offline_reference_surface_only",
         "surface_contract": {
@@ -133,11 +181,14 @@ def main() -> int:
             "reference_surface_point_count": len(reference),
             "estimated_surface_point_count": len(estimated),
         },
-        "metrics": asdict(result),
+        "outcome": outcome,
+        "metrics": metrics,
         "gate": {
-            "passed": len(scans) >= 10 and result.evaluated_point_count >= 500,
-            "role": "measurement_completeness_only",
+            "passed": not data_integrity_failures,
+            "failures": data_integrity_failures,
+            "role": "input_data_integrity_only",
             "efficacy_threshold_applied": False,
+            "invalid_registration_retained_as_outcome": True,
         },
     }
     output.parent.mkdir(parents=True, exist_ok=True)

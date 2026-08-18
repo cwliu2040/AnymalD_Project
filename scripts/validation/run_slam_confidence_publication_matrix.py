@@ -158,6 +158,17 @@ def validate_artifacts(release: dict[str, Any]) -> dict[str, dict[str, str]]:
     return resolved
 
 
+def stability_artifact_data_valid(document: dict[str, Any]) -> bool:
+    """Separate trace integrity from an observed safety failure."""
+    summary = document.get("summary", {})
+    hard = summary.get("hard_failures", {})
+    return bool(
+        int(summary.get("sample_count", 0)) >= 2
+        and int(hard.get("non_finite_sample_count", 1)) == 0
+        and isinstance(document.get("gate", {}).get("failures", []), list)
+    )
+
+
 def balanced_arm_order(block_index: int, stratum_index: int) -> tuple[str, ...]:
     """Deterministic balanced Latin-square order, reversed on odd strata."""
     base = ARM_IDS if stratum_index % 2 == 0 else tuple(reversed(ARM_IDS))
@@ -214,6 +225,40 @@ def build_pilot_schedule(protocol: dict[str, Any]) -> list[dict[str, Any]]:
                 stratum += 1
     if len(rows) != int(matrix["expected_run_count"]):
         raise ValueError("generated pilot schedule does not match expected_run_count")
+    return rows
+
+
+def build_challenge_calibration_schedule(
+    protocol: dict[str, Any],
+) -> list[dict[str, Any]]:
+    matrix = protocol["challenge_calibration_matrix"]
+    rows: list[dict[str, Any]] = []
+    stratum = 0
+    for backend in matrix["backends"]:
+        for profile in matrix["profiles"]:
+            for support in matrix["support_fraction_candidates"]:
+                support_value = float(support)
+                support_id = f"{support_value:.3f}".replace(".", "p")
+                arms = tuple(str(value) for value in matrix["policy_arms"])
+                if stratum % 2:
+                    arms = tuple(reversed(arms))
+                for block_id in matrix["paired_block_ids"]:
+                    for order, arm in enumerate(arms):
+                        rows.append({
+                            "backend": str(backend),
+                            "profile": str(profile),
+                            "condition": f"gradual_support_{support_id}",
+                            "minimum_support_fraction": support_value,
+                            "block_id": int(block_id),
+                            "simulation_seed": int(block_id),
+                            "arm": arm,
+                            "arm_order": order,
+                        })
+                stratum += 1
+    if len(rows) != int(matrix["expected_run_count"]):
+        raise ValueError(
+            "generated challenge calibration schedule does not match expected_run_count"
+        )
     return rows
 
 
@@ -276,7 +321,12 @@ def _write_json(path: Path, value: dict[str, Any]) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def _condition_arguments(protocol: dict[str, Any], condition: str) -> tuple[str, str]:
+def _condition_arguments(
+    protocol: dict[str, Any], row: dict[str, Any]
+) -> tuple[str, str]:
+    if "minimum_support_fraction" in row:
+        return "gradual_v2", str(float(row["minimum_support_fraction"]))
+    condition = str(row["condition"])
     if condition == "native":
         return "constant", "1.0"
     configured = protocol["live_matrix"]["perception_conditions"][condition]
@@ -292,7 +342,7 @@ def execute_cell(
     backend = row["backend"]
     calibration = protocol["frozen_artifacts"]["confidence"][backend]["calibration_id"]
     route = route_contract(row["profile"])
-    density_profile, density_min = _condition_arguments(protocol, row["condition"])
+    density_profile, density_min = _condition_arguments(protocol, row)
     run_dir = output_root / backend / row["profile"] / row["condition"] / f"block_{row['block_id']}" / f"arm_{arm_id}"
     command = (
         "ros2", "launch", "anymal_locomotion_ros2", "fastlio2_locomotion_benchmark.launch.py",
@@ -347,10 +397,12 @@ def execute_cell(
             cwd=PROJECT_ROOT, env=environment, check=False,
         )
         stability_returncode = stability.returncode
-    stability_gate = (
-        json.loads(stability_path.read_text(encoding="utf-8")).get("gate", {})
+    stability_document = (
+        json.loads(stability_path.read_text(encoding="utf-8"))
         if stability_path.is_file() else {}
     )
+    stability_gate = stability_document.get("gate", {})
+    stability_data_valid = stability_artifact_data_valid(stability_document)
     mechanism_returncode = None
     mechanism_gate: dict[str, Any] = {"passed": True, "required": False}
     mechanism_path = run_dir / "mechanism_sidecar.json"
@@ -422,6 +474,7 @@ def execute_cell(
     map_path = run_dir / "map_consistency.json"
     map_returncode = None
     map_gate: dict[str, Any] = {"passed": False}
+    map_outcome: dict[str, Any] = {"map_registration_valid": False}
     if bag_gate.get("passed"):
         map_evaluation = subprocess.run(
             (
@@ -433,7 +486,11 @@ def execute_cell(
         )
         map_returncode = map_evaluation.returncode
         if map_path.is_file():
-            map_gate = json.loads(map_path.read_text(encoding="utf-8")).get("gate", {})
+            map_document = json.loads(map_path.read_text(encoding="utf-8"))
+            map_gate = map_document.get("gate", {})
+            map_outcome = map_document.get(
+                "outcome", {"map_registration_valid": True}
+            )
     run_record_path = run_dir / "publication_run_record.json"
     run_record_returncode = None
     run_record_gate: dict[str, Any] = {"passed": False}
@@ -452,9 +509,9 @@ def execute_cell(
         run_record_returncode = run_record.returncode
         if run_record_path.is_file():
             run_record_gate = json.loads(run_record_path.read_text(encoding="utf-8")).get("gate", {})
-    cell_passed = bool(
+    collection_valid = bool(
         completed.returncode == 0 and driver.get("passed") and diagnostics_ok
-        and stability_returncode == 0 and stability_gate.get("passed")
+        and stability_returncode in (0, 1) and stability_data_valid
         and (mechanism_returncode in (None, 0)) and mechanism_gate.get("passed")
         and bag_gate.get("passed")
         and estimator_replay_returncode == 0 and estimator_replay_gate.get("passed")
@@ -469,6 +526,8 @@ def execute_cell(
         "command": list(command), "launch_returncode": completed.returncode,
         "driver_passed": bool(driver.get("passed")), "diagnostics_passed": diagnostics_ok,
         "stability_returncode": stability_returncode, "stability_gate": stability_gate,
+        "stability_data_integrity_passed": stability_data_valid,
+        "stability_outcome_passed": bool(stability_gate.get("passed")),
         "mechanism_returncode": mechanism_returncode, "mechanism_gate": mechanism_gate,
         "raw_bag_gate": bag_gate,
         "velocity_estimator_replay_returncode": estimator_replay_returncode,
@@ -477,9 +536,15 @@ def execute_cell(
         "offline_usability_gate": offline_gate,
         "map_consistency_returncode": map_returncode,
         "map_consistency_gate": map_gate,
+        "map_outcome": map_outcome,
         "publication_run_record_returncode": run_record_returncode,
         "publication_run_record_gate": run_record_gate,
-        "passed": cell_passed,
+        "collection_valid": collection_valid,
+        "policy_or_slam_failure_retained_as_outcome": bool(
+            not stability_gate.get("passed")
+            or not map_outcome.get("map_registration_valid", False)
+        ),
+        "passed": collection_valid,
     }
     _write_json(run_dir / "cell.json", cell)
     return cell
@@ -499,6 +564,7 @@ def _parse_args() -> argparse.Namespace:
     role = parser.add_mutually_exclusive_group()
     role.add_argument("--formal", action="store_true")
     role.add_argument("--pilot", action="store_true")
+    role.add_argument("--challenge-calibration", action="store_true")
     parser.add_argument("--domain-id", type=int, default=1)
     return parser.parse_args()
 
@@ -510,7 +576,10 @@ def main() -> int:
     output_root = _project_path(args.output_root, must_exist=False)
     protocol, release = _load_yaml(protocol_path), _load_yaml(release_path)
     artifacts = validate_artifacts(release)
-    schedule = build_pilot_schedule(protocol) if args.pilot else build_schedule(protocol)
+    if args.challenge_calibration:
+        schedule = build_challenge_calibration_schedule(protocol)
+    else:
+        schedule = build_pilot_schedule(protocol) if args.pilot else build_schedule(protocol)
     selected = select_schedule(schedule, args)
     if not 0 <= args.domain_id <= 232:
         raise ValueError("ROS domain ID must be in [0, 232]")
@@ -520,10 +589,19 @@ def main() -> int:
         raise ValueError("formal output must be under outputs/slam_confidence_publication_v1")
     if args.pilot and output_root == DEFAULT_OUTPUT.resolve():
         raise ValueError("pilot collection requires an explicit, dedicated output root")
-    dataset_role = "formal" if args.formal else ("excluded_pilot" if args.pilot else "excluded_smoke")
+    if args.challenge_calibration and output_root == DEFAULT_OUTPUT.resolve():
+        raise ValueError(
+            "challenge calibration requires an explicit, dedicated output root"
+        )
+    dataset_role = (
+        "formal" if args.formal else
+        "excluded_pilot" if args.pilot else
+        "excluded_calibration" if args.challenge_calibration else
+        "excluded_smoke"
+    )
     if args.formal:
         head = validate_formal_authorization(protocol, release)
-    elif args.pilot and args.execute:
+    elif (args.pilot or args.challenge_calibration) and args.execute:
         head = validate_clean_execution_baseline()
     else:
         head = _git_output("rev-parse", "HEAD")
@@ -531,7 +609,9 @@ def main() -> int:
         "schema_version": 1, "protocol_id": protocol["protocol_id"],
         "protocol_sha256": _sha256(protocol_path), "release_sha256": _sha256(release_path),
         "git_commit": head, "dataset_role": dataset_role,
-        "formal": args.formal, "pilot": args.pilot, "ros_domain_id": args.domain_id,
+        "formal": args.formal, "pilot": args.pilot,
+        "challenge_calibration": args.challenge_calibration,
+        "ros_domain_id": args.domain_id,
         "full_schedule_count": len(schedule),
         "selected_count": len(selected),
         "route_contracts": {

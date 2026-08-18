@@ -104,26 +104,27 @@ promotion_gates:
   - id: mechanism_sidecar
     status: two_backends_B_C_D_native_and_gradual_excluded_smoke_passed
   - id: common_estimator_replay_with_foot_contacts
-    status: dual_backend_all_four_arms_excluded_smoke_exact_zero_passed_pilot_all_cells_pending
-    evidence: docs/validation/slam_confidence_estimator15_stamp_sync_qualification.json
+    status: excluded_pilot_160_of_160_exact_zero_error_passed_with_episode_reset_ack
+    evidence: docs/validation/slam_confidence_publication_pilot_v1_summary.json
   - id: engineering_native_matrix
     requirement: two_backends_five_profiles_three_independent_blocks
     status: ten_of_ten_single_block_smoke_passed
   - id: controlled_degradation_recovery_matrix
-    status: excluded_smoke_two_backends_four_arms_passed_formal_matrix_pending
+    status: excluded_pilot_complete_original_challenge_timeline_locked_recalibration_pending
   - id: recovery_v040_regression_suite
     status: model48_estimator15_five_profile_2560_environment_regression_passed
     evidence: docs/validation/slam_confidence_model48_estimator15_regression_gate.json
   - id: efficiency_and_false_stop_noninferiority
-    status: offline_evaluator_passed_excluded_smoke_formal_noninferiority_pending
+    status: bounded_progress_difference_estimand_provisional_15_blocks_challenge_pending
   - id: map_consistency_measurement
-    status: synthetic_gate_and_two_backend_native_bag_execution_passed_formal_statistics_pending
+    status: invalid_registration_retained_as_outcome_160_cell_backfill_passed
   - id: publication_matrix_and_statistics
-    status: run_record_and_cluster_bootstrap_implemented_excluded_smoke_passed_formal_matrix_pending
+    status: excluded_pilot_160_scheduled_records_backfilled_descriptive_analysis_complete_formal_pending
   - id: publication_replay_matrix
     status: one_source_two_backends_two_repetitions_excluded_smoke_passed_full_matrix_pending
   - id: sample_size_justification
-    status: disjoint_160_cell_excluded_pilot_and_simulation_precision_analyzer_frozen_collection_pending
+    status: provisional_15_paired_blocks_selected_formal_locked_until_challenge_calibration
+    evidence: docs/validation/slam_confidence_publication_pilot_v1_summary.json
 
 promotion_rule:
   all_gates_must_pass: true

@@ -86,7 +86,11 @@ def replay_bag(
         rosbag2_py.ConverterOptions("", ""),
     )
     types = {item.name: item.type for item in reader.get_all_topics_and_types()}
-    required = {"/imu/data", "/joint_states", "/foot_contacts", "/locomotion/estimated_odom"}
+    reset_ack_topic = "/simulation/episode_reset_ack"
+    required = {
+        "/imu/data", "/joint_states", "/foot_contacts",
+        "/locomotion/estimated_odom", reset_ack_topic,
+    }
     missing = sorted(required - set(types))
     if missing:
         raise ValueError(f"bag lacks estimator replay topics: {missing}")
@@ -124,6 +128,14 @@ def replay_bag(
             continue
         message = deserialize_message(data, message_types[topic])
         counts[topic] += 1
+        if topic == reset_ack_topic:
+            # The acknowledgement is emitted by policy_node only after its
+            # estimator and input synchronizer have been reset.  Replaying
+            # this marker preserves runtime episode-boundary semantics while
+            # retaining rosbag serialization order across all input topics.
+            runtime.reset()
+            synchronizer.reset()
+            continue
         stamp_ns = _stamp_ns(message)
         if topic == "/imu/data":
             if message.header.frame_id != "base_link":
@@ -220,6 +232,7 @@ def main() -> int:
             "method": "source_stamp_nearest_after_per_topic_watermark",
             "tolerance_s": args.sync_tolerance_s,
             "cross_topic_callback_order_independent": True,
+            "episode_boundary": "policy_episode_reset_ack",
         },
         "topic_counts": counts,
         "parity": parity,
