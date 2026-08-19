@@ -1,8 +1,8 @@
 schema_version: 2
 protocol_id: slam-confidence-publication-v2
-status: frozen_challenge_pilot_complete_25_block_formal_spec_pending_authorization
+status: frozen_challenge_pilot_complete_25_block_formal_collection_authorized
 date: 2026-08-18
-formal_collection_authorized: false
+formal_collection_authorized: true
 
 amendments_before_formal_collection:
   - id: retain_scheduled_failures

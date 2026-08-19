@@ -1,6 +1,6 @@
 # Current project knowledge
 
-更新日期：2026-08-18
+更新日期：2026-08-19
 
 這份文件保存跨對話補充知識，讓 Work locally 模式的新對話在直接閱讀
 repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產物、近期
@@ -20,7 +20,8 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   `benchmark/slam-liosam-fastlio2` 與目前實驗 branch 都以
   `fee8c9f 建立 SLAM backend 比較基線` 為共同基礎。
 - `exp/slam-fastlio2` 的本機與遠端baseline均為
-  `82d4524 凍結雙後端邊界挑戰與新試驗規格`；其前一個commit為
+  `bc88e75 凍結正式樣本數與穩定性估計量`；其前一個commit為
+  `82d4524 凍結雙後端邊界挑戰與新試驗規格`，再前一個commit為
   `59e6d2b 收斂雙後端邊界挑戰校準`，再前一個commit為
   `b9541d5 建立慢速退化挑戰與校準選擇器`，再前一個commit為
   `9aded5e 修正論文失敗處置並建立挑戰校準`；再前一個commit為
@@ -52,12 +53,14 @@ repository 的程式、設定與其他 `docs/` 時，也能知道目前正式產
   驗證文件與interactive false-stop修正均已提交並push；C-v10模擬候選已通過固定behavior及
   gait-value gate、export parity與FAST/LIO完整五方向live matrix，但尚未取代正式policy。
   Publication data contract、B/D artifacts與release skeleton已在`9b015c7`建立；publication
-  execution chain已在`d1128fe`與`8a8ebc7`提交。160-cell disjoint excluded pilot已完成，
-  formal runs與promotion仍未授權。
-- 目前尚未提交的project-owned變更是新challenge sample-size pilot後的formal design：
-  while-stable continuous stability estimand、25-block/800-cell gradual-only schedule、
-  sample-size tooling、tests、protocol、release與validation evidence。完成驗證後需另取得
-  使用者明確同意才可commit／push。
+  execution chain已在`d1128fe`與`8a8ebc7`提交。160-cell disjoint excluded pilot、
+  while-stable estimand與25-block/800-cell gradual-only正式規格已在`bc88e75`提交並push。
+- 使用者已於2026-08-18明確授權開始formal collection，但不等於授權promotion或切換default；
+  `configs/slam_confidence_publication_protocol.yaml`的`formal_collection_authorized`已在工作樹
+  改為`true`，目前尚未commit／push，800-cell formal runs亦尚未開始。Formal runner要求乾淨且
+  可追溯的Git baseline，因此下一個對話須先整理此單一tracked變更並取得新的明確commit授權。
+  現有runner可用Ctrl-C中斷但不會自動跳過已完成cells；若直接按block分批，每block為32 cells、
+  約50–60分鐘，中斷最多重跑當前block。較完整的resume／merge能力尚未實作。
   root `build/`、`install/`、`log/`
   與`lidar_type`是未追蹤runtime產物，不納入提交，其他 `logs/`／`outputs/` 實驗
   產物也不提交。
@@ -1572,8 +1575,7 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
   sweep都形成event/censoring bracket，選出的共同marginal support為0.20；兩backend C/D事件
   落在7.6–8.2 s，距degradation onset至少4.6 s，未鎖在phase boundary。機讀摘要為
   `docs/validation/slam_confidence_challenge_calibration_v3_summary.json`。
-- 論文gradual challenge已凍結為support 0.20及3.0/6.0/4.0/3.0 s timeline；這只關閉
-  challenge-definition gate，不授權formal collection或promotion。舊160-cell pilot使用0.001
+- 論文gradual challenge已凍結為support 0.20及3.0/6.0/4.0/3.0 s timeline。舊160-cell pilot使用0.001
   challenge，其provisional 15-block結果已supersede。新pilot使用disjoint seeds343..347，
   兩backend×四routes×A/B/C/D共160/160 data-integrity passed，36個policy/SLAM failures保留。
 - Full-run roll/pitch-rate RMS因少數terminal impacts達1–4 rad/s而重複計入binary fall outcome，
@@ -1584,11 +1586,12 @@ GroundPlane open-loop prehistory 在 t=25 前失敗，不能當有效 counterfac
   `docs/validation/slam_confidence_publication_pilot_v2_summary.json`。
 - 新pilot descriptive C−D支援mechanism、while-stable body-rate下降、tracking survival正方向與
   efficiency NI；stance slip RMS差為`+0.00158 m/s`，方向不支持下降。因此論文因果鏈聚焦
-  body-motion branch，不得宣稱foot-slip reduction。Formal collection與promotion仍未授權。
+  body-motion branch，不得宣稱foot-slip reduction。Formal collection已由使用者授權但尚未開始；
+  promotion仍未授權。
 - 原效率rate ratio因11/40個D denominators `<=0.001`且最大ratio約82而不適合作NI。
   Protocol v2在任何formal data前改為paired `normalized_progress` difference，margin `-0.10`、
   half-width `0.05`；新challenge precision plan已納入25-block formal schedule。
-  `formal_collection_authorized=false`，正式model1450與rollback均不變。
+  工作樹已預備`formal_collection_authorized=true`但尚未commit；正式model1450與rollback均不變。
 
 ### Proprioceptive estimator and gait-value A/B (2026-08-13)
 
