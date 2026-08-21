@@ -47,3 +47,19 @@ def test_excluded_role_can_never_be_formally_complete() -> None:
     )
     assert not result["passed"]
     assert not result["checks"]["formal_role_only"]
+
+
+def test_formal_completeness_uses_only_frozen_formal_conditions() -> None:
+    protocol = _protocol()
+    protocol["live_matrix"]["perception_conditions"] = {
+        "native": {}, "gradual_support_loss": {},
+    }
+    protocol["live_matrix"]["formal_conditions"] = ["gradual_support_loss"]
+    records = [_record("A"), _record("B")]
+    for record in records:
+        record["identity"]["condition"] = "gradual_support_loss"
+
+    result = MODULE.validate_formal_completeness(records, protocol, {"formal"})
+
+    assert result["passed"]
+    assert result["checks"]["exact_frozen_schedule"]

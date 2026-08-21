@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "kind": "slam_action_risk_intervention_arm_export",
+  "arm": "smooth",
+  "alpha": 0.1,
+  "passed": true,
+  "checks": {
+    "module_vs_torchscript": {
+      "max_absolute_error": 0.0,
+      "mean_absolute_error": 0.0,
+      "allclose_atol_1e-5": true
+    },
+    "module_vs_onnx": {
+      "max_absolute_error": 4.291534423828125e-06,
+      "mean_absolute_error": 3.7704751321143704e-07,
+      "allclose_atol_1e-5": true
+    },
+    "invalid_exact_arm_B": true,
+    "zero_exact_arm_B": true,
+    "residual_within_limit": true
+  },
+  "artifacts": {
+    "policy": {
+      "path": "/home/ros/anymal_locomotion/exported/slam_action_risk_intervention_pilot_v1/smooth/policy.onnx",
+      "sha256": "33fa8e6deffafc7bb6d9dc56c7278b11720c97582123f7fe9fc5c9c44832cd07"
+    },
+    "torchscript": {
+      "path": "/home/ros/anymal_locomotion/exported/slam_action_risk_intervention_pilot_v1/smooth/policy.pt",
+      "sha256": "221c275c840418208fc059f0c52cc37a6264ced394e7539fc21083209d26ed14"
+    },
+    "metadata": {
+      "path": "/home/ros/anymal_locomotion/exported/slam_action_risk_intervention_pilot_v1/smooth/policy_metadata.yaml",
+      "sha256": "a5cd794903394356dd425ac368a4646c0c1f1de57124bccf4f564651508ca694"
+    }
+  }
+}

@@ -42,11 +42,14 @@ def validate_formal_completeness(
     records: list[dict[str, Any]], protocol: dict[str, Any], roles: set[str],
 ) -> dict[str, Any]:
     matrix = protocol["live_matrix"]
+    formal_conditions = matrix.get(
+        "formal_conditions", matrix["perception_conditions"]
+    )
     expected = {
         (backend, profile, condition, int(block), arm)
         for backend in matrix["backends"]
         for profile in matrix["profiles"]
-        for condition in matrix["perception_conditions"]
+        for condition in formal_conditions
         for block in matrix["paired_block_ids"]
         for arm in matrix["policy_arms"]
     }
