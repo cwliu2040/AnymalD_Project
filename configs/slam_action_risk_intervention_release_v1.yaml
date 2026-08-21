@@ -46,5 +46,5 @@ boundaries:
   training_artifact: false
   formal_policy_replaced: false
   default_switch_authorized: false
-  live_execution_authorized: false
-  authorized_stages: []
+  live_execution_authorized: true
+  authorized_stages: [wiring_smoke]
