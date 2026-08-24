@@ -19,6 +19,7 @@ from rclpy.qos import (
 
 from anymal_locomotion_interfaces.msg import SlamConfidence
 
+from anymal_locomotion_ros2.command_scale_pulse_core import CommandScalePulse
 from anymal_locomotion_ros2.lio_benchmark_core import get_motion_profile
 
 
@@ -73,6 +74,13 @@ class StabilityBenchmarkNode(Node):
         self.declare_parameter("confidence_topic", "/slam_confidence")
         self.declare_parameter("expected_confidence_backend", "")
         self.declare_parameter("expected_calibration_id", "")
+        self.declare_parameter("command_scale_pulse_enabled", False)
+        self.declare_parameter("command_scale_pulse_start_s", 7.25)
+        self.declare_parameter("command_scale_pulse_duration_s", 0.75)
+        self.declare_parameter("command_scale_pulse_scale", 1.0)
+        self.declare_parameter("command_scale_pulse_scale_x", -1.0)
+        self.declare_parameter("command_scale_pulse_scale_y", -1.0)
+        self.declare_parameter("command_scale_pulse_scale_z", -1.0)
 
         self._profile = get_motion_profile(
             str(self.get_parameter("profile").value)
@@ -107,6 +115,28 @@ class StabilityBenchmarkNode(Node):
         self._expected_calibration_id = str(
             self.get_parameter("expected_calibration_id").value
         )
+        component_scales = tuple(
+            float(self.get_parameter(f"command_scale_pulse_scale_{axis}").value)
+            for axis in ("x", "y", "z")
+        )
+        component_scale_flags = tuple(value > 0.0 for value in component_scales)
+        if any(component_scale_flags) and not all(component_scale_flags):
+            raise ValueError(
+                "command pulse component scales must set all of x/y/z or none"
+            )
+        self._command_pulse = CommandScalePulse(
+            enabled=bool(self.get_parameter("command_scale_pulse_enabled").value),
+            start_s=float(self.get_parameter("command_scale_pulse_start_s").value),
+            duration_s=float(self.get_parameter("command_scale_pulse_duration_s").value),
+            scale=float(self.get_parameter("command_scale_pulse_scale").value),
+            scales_xyz=(
+                component_scales
+                if all(component_scale_flags)
+                else None
+            ),
+        )
+        if self._command_pulse.enabled and self._command_pulse.end_s >= self._profile.duration_s:
+            raise ValueError("command pulse must end before the motion profile finishes")
 
         self._first_sim_time_s: float | None = None
         self._start_time_s: float | None = None
@@ -128,6 +158,7 @@ class StabilityBenchmarkNode(Node):
         self._confidence_max_evaluation_gap_s = 0.0
         self._finished = False
         self.exit_code = 1
+        self._pulse_publish_count = 0
 
         self._command_publisher = self.create_publisher(Twist, "/cmd_vel", 10)
         self.create_subscription(
@@ -263,7 +294,13 @@ class StabilityBenchmarkNode(Node):
 
         elapsed_s = now_s - self._start_time_s
         if self._profile.should_publish_command(elapsed_s):
-            self._publish_command(self._profile.command_at(elapsed_s))
+            if self._command_pulse.active_at(elapsed_s):
+                self._pulse_publish_count += 1
+            self._publish_command(
+                self._command_pulse.apply(
+                    self._profile.command_at(elapsed_s), elapsed_s,
+                )
+            )
         if elapsed_s >= self._profile.duration_s:
             self._finish()
 
@@ -302,6 +339,11 @@ class StabilityBenchmarkNode(Node):
             "profile": self._profile.name,
             "target": list(self._profile.target),
             "duration_s": self._profile.duration_s,
+            "profile_start_clock_s": self._start_time_s,
+            "command_scale_pulse": {
+                **self._command_pulse.as_dict(),
+                "publish_count": self._pulse_publish_count,
+            },
             "odometry_count": self._odometry_count,
             "slam_confidence": {
                 "required": self._require_slam_confidence,

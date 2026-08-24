@@ -1,0 +1,145 @@
+schema_version: 1.2.0
+robot:
+  name: ANYmal-D
+  reference: official_isaac_sim_5_1_usd
+  usd_uri: https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1/Isaac/IsaacLab/Robots/ANYbotics/ANYmal-D/anymal_d.usd
+  custom_usd_integrated: false
+joint_order:
+- LF_HAA
+- LH_HAA
+- RF_HAA
+- RH_HAA
+- LF_HFE
+- LF_KFE
+- LH_HFE
+- LH_KFE
+- RF_HFE
+- RF_KFE
+- RH_HFE
+- RH_KFE
+observation:
+  dimension: 51
+  concatenation_order: preserved
+  terms:
+  - name: base_linear_velocity
+    offset: 0
+    dimension: 3
+    frame: base
+  - name: base_angular_velocity
+    offset: 3
+    dimension: 3
+    frame: base
+  - name: projected_gravity
+    offset: 6
+    dimension: 3
+    frame: base
+  - name: velocity_command
+    offset: 9
+    dimension: 3
+    frame: base
+    components:
+    - vx
+    - vy
+    - wz
+  - name: relative_joint_position
+    offset: 12
+    dimension: 12
+    order: canonical_joint_order
+  - name: relative_joint_velocity
+    offset: 24
+    dimension: 12
+    order: canonical_joint_order
+  - name: previous_action
+    offset: 36
+    dimension: 12
+    order: canonical_joint_order
+  - name: slam_confidence
+    offset: 48
+    dimension: 3
+    components:
+    - confidence
+    - tracking_valid
+    - normalized_age
+action:
+  dimension: 12
+  type: joint_position
+  order: canonical_joint_order
+  scale: 0.5
+  offset: default_joint_position
+  control_period_s: 0.02
+  default_joint_positions:
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.4
+  - -0.8
+  - -0.4
+  - 0.8
+  - 0.4
+  - -0.8
+  - -0.4
+  - 0.8
+command:
+  semantics: direct_body_velocity
+  components:
+  - vx
+  - vy
+  - wz
+  ros_source: geometry_msgs/msg/Twist
+  limits:
+    vx:
+    - -2.0
+    - 3.0
+    vy:
+    - -1.5
+    - 1.5
+    wz:
+    - -2.0
+    - 2.0
+frames:
+  base_linear_velocity: base
+  base_angular_velocity: base
+  projected_gravity: base
+  velocity_command: base
+  ros_convention: REP-103
+normalization:
+  actor_observation: false
+  critic_observation: false
+versions:
+  isaac_sim: 5.1.0
+  isaac_lab: v2.3.2
+  isaac_lab_commit: 37ddf626871758333d6ed89cf64ad702aef127d0
+checkpoint:
+  path: checkpoints/anymal_d_locomotion_slam_confidence_sim_v1/model_48.pt
+  sha256: 888bc682eda65e2c427eccd445d8b9cb1e787635b5da86e6fa8a85b83fda4fa0
+artifacts:
+  torchscript:
+    path: policy.pt
+    sha256: 1833f005eeaa306a70c075314791530b8319933ab102d495e12da13d6499641a
+  onnx:
+    path: policy.onnx
+    sha256: 812552ca433be5cca394f9177c4e9125cf08dccf83351516ca6ff73011e483f8
+config_sha256: 7c48743b8850c95b281361adcd94926e7d8de797cdead0a158011e92e264089a
+project_git_commit: 9b015c7e40f532b22c5ae44634d27201cb46b738
+policy_extension:
+  architecture: frozen_arm_B_fixed_uniform_command_scale
+  dataset_role: excluded_causal_development
+  treatment_arm: scale_025
+  assigned_command_scale: 0.25
+  command_offsets:
+  - 9
+  - 10
+  - 11
+  apply_uniformly_to_xyz: true
+  invalid_or_stale_command: exact_zero
+  stale_condition: normalized_age_gt_1_or_tracking_valid_lt_0_5
+  base_policy:
+    path: exported/anymal_d_locomotion_slam_confidence_publication_v1/arm_b_model1450_deterministic_supervisor/policy.onnx
+    sha256: 9f485d39aa02d65672082520edf68b49d9308b66d2e2ac382523691f4204ec8b
+  export_worktree_base_commit: 0f6ebb6328b744c53e06558963bf3978daceb66c
+  runtime_ground_truth_inputs: false
+  runtime_future_label_inputs: false
+  resolved_agent_config:
+    path: resolved_agent.yaml
+    sha256: 45bbd223aceade79fb2282e34158383aa57a8883bfdbde30a98963b50143ef6b

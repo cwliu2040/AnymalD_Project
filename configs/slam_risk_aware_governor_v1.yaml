@@ -1,0 +1,36 @@
+schema_version: 1
+governor_id: slam-risk-aware-governor-v1-phase1
+status: interface_skeleton_only_no_model_no_live_authorization
+
+architecture:
+  formal_locomotion_policy: model1450
+  normal_valid_path: risk_aware_scale_replaces_arm_B_continuous_throttle
+  prediction_missing_or_invalid_path: exact_arm_B_continuous_scale
+  slam_invalid_or_stale_path: exact_zero_hard_stop
+  physical_robot_use_authorized: false
+
+arm_B_parity:
+  confidence_floor: 0.2
+  confidence_span: 0.8
+  formula: tracking_valid * clip((confidence - 0.2) / 0.8, 0, 1)
+
+freshness:
+  maximum_confidence_age_s: 0.50
+  maximum_receipt_age_s: 0.15
+
+risk_interface:
+  horizon_s: 0.5
+  selected_scale_range: [0.0, 1.0]
+  predicted_unusable_probability_range: [0.0, 1.0]
+  development_default_maximum_probability: 0.10
+  threshold_must_be_refrozen_before_live: true
+  ground_truth_runtime_input: false
+  future_label_runtime_input: false
+
+boundaries:
+  confidence_estimator_refit_allowed: false
+  model1450_replacement_allowed: false
+  ppo_training_allowed: false
+  live_execution_authorized: false
+  candidate_risk_model_present: false
+  default_switch_authorized: false

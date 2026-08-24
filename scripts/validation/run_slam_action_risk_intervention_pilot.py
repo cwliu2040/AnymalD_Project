@@ -86,17 +86,44 @@ def _git(*args: str) -> str:
     return subprocess.run(("git", *args), cwd=PROJECT_ROOT, check=True, text=True, stdout=subprocess.PIPE).stdout.strip()
 
 
-def require_clean_baseline() -> str:
-    if _git("branch", "--show-current") != "exp/slam-fastlio2":
+def capture_execution_baseline() -> dict:
+    branch = _git("branch", "--show-current")
+    if branch != "exp/slam-fastlio2":
         raise ValueError("execution is restricted to exp/slam-fastlio2")
-    if _git("status", "--porcelain", "--untracked-files=no"):
-        raise ValueError("execution requires a clean tracked worktree")
-    untracked = _git("ls-files", "--others", "--exclude-standard").splitlines()
+    changed = set(_git("diff", "--name-only", "--").splitlines())
+    changed.update(_git("diff", "--cached", "--name-only", "--").splitlines())
+    untracked = set(
+        _git("ls-files", "--others", "--exclude-standard").splitlines()
+    )
     excluded = ("build/", "install/", "log/", "logs/", "outputs/")
-    owned = [path for path in untracked if path != "lidar_type" and not path.startswith(excluded)]
-    if owned:
-        raise ValueError(f"execution has project-owned untracked files: {owned[:5]}")
-    return _git("rev-parse", "HEAD")
+    owned = sorted(
+        path for path in changed | untracked
+        if path and path != "lidar_type" and not path.startswith(excluded)
+    )
+    files = []
+    for relative in owned:
+        path = (PROJECT_ROOT / relative).resolve()
+        if not path.is_relative_to(PROJECT_ROOT):
+            raise ValueError(f"dirty path escapes project: {relative}")
+        if path.is_file():
+            files.append({
+                "path": relative, "exists": True,
+                "sha256": _sha256(path), "size_bytes": path.stat().st_size,
+            })
+        elif not path.exists():
+            files.append({
+                "path": relative, "exists": False,
+                "sha256": None, "size_bytes": None,
+            })
+        else:
+            raise ValueError(f"dirty project path is not a regular file: {relative}")
+    return {
+        "git_commit": _git("rev-parse", "HEAD"),
+        "git_branch": branch,
+        "project_owned_dirty": bool(files),
+        "dirty_files": files,
+        "reproduction_rule": "git_commit_plus_exact_dirty_file_sha256",
+    }
 
 
 def require_execution_authorization(release: dict, stage: str) -> None:
@@ -110,6 +137,8 @@ def require_execution_authorization(release: dict, stage: str) -> None:
 
 def require_stage_prerequisite(
     output_root: Path, protocol: dict, stage: str,
+    protocol_path: Path = PROTOCOL_PATH,
+    release: dict | None = None,
 ) -> None:
     prerequisite = {
         "pilot": ("wiring_smoke", "WIRING_PASS"),
@@ -118,6 +147,35 @@ def require_stage_prerequisite(
     if prerequisite is None:
         return
     prerequisite_stage, required_decision = prerequisite
+    reused = (release or {}).get("prerequisites", {}).get(prerequisite_stage)
+    if stage == "pilot" and isinstance(reused, dict):
+        root = (PROJECT_ROOT / reused["output_path"]).resolve()
+        reused_protocol_path = (PROJECT_ROOT / reused["protocol_path"]).resolve()
+        manifest_path = root / "run_manifest.json"
+        if any(not path.is_relative_to(PROJECT_ROOT) for path in (
+            root, reused_protocol_path, manifest_path,
+        )):
+            raise ValueError("reused prerequisite escapes the project")
+        if not root.is_dir() or not reused_protocol_path.is_file() or not manifest_path.is_file():
+            raise ValueError("reused wiring prerequisite evidence is missing")
+        if _sha256(reused_protocol_path) != reused["protocol_sha256"]:
+            raise ValueError("reused wiring protocol SHA-256 mismatch")
+        if _sha256(manifest_path) != reused["manifest_sha256"]:
+            raise ValueError("reused wiring manifest SHA-256 mismatch")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest.get("protocol_sha256") != reused["protocol_sha256"]:
+            raise ValueError("reused wiring manifest protocol mismatch")
+        analyzer = _analyzer_module()
+        reused_protocol = _load_yaml(reused_protocol_path)
+        decision = analyzer.analyze_records(
+            analyzer.load_records(root), reused_protocol, prerequisite_stage,
+        )["decision"]["status"]
+        expected = reused.get("required_decision", required_decision)
+        if decision != expected:
+            raise ValueError(
+                f"{stage} requires reused {prerequisite_stage}={expected}; got {decision}"
+            )
+        return
     root = output_root / prerequisite_stage
     manifest_path = root / "run_manifest.json"
     if not manifest_path.is_file():
@@ -125,7 +183,7 @@ def require_stage_prerequisite(
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if manifest.get("stage") != prerequisite_stage:
         raise ValueError("prerequisite manifest stage mismatch")
-    if manifest.get("protocol_sha256") != _sha256(PROTOCOL_PATH):
+    if manifest.get("protocol_sha256") != _sha256(protocol_path):
         raise ValueError("prerequisite used a different protocol")
     analyzer = _analyzer_module()
     decision = analyzer.analyze_records(
@@ -147,14 +205,88 @@ def require_fresh_stage_output(stage_root: Path) -> None:
         raise ValueError("stage output already contains cell artifacts")
 
 
-def execute_schedule(schedule: list[dict], executor) -> list[dict]:
+def _repeated_simulation_safety_harm(
+    results: list[dict], protocol: dict,
+) -> bool:
+    simulation = protocol.get("decision_gate", {}).get(
+        "safety_stop", {},
+    ).get("simulation")
+    if not isinstance(simulation, dict):
+        return False
+    minimum = int(
+        simulation["route_fail_minimum_distinct_blocks_same_backend_profile"]
+    )
+    by_pair: dict[tuple[str, str, int], dict[str, bool]] = {}
+    for result in results:
+        if not all(key in result for key in ("backend", "profile", "block_id", "arm")):
+            continue
+        key = (result["backend"], result["profile"], int(result["block_id"]))
+        by_pair.setdefault(key, {})[result["arm"]] = bool(
+            result.get("simulation_safety_event", False)
+        )
+    excess: dict[tuple[str, str], set[int]] = {}
+    for (backend, profile, block), arms in by_pair.items():
+        if set(arms) != {"smooth", "zero", "antismooth"}:
+            continue
+        if arms["smooth"] and not arms["zero"]:
+            excess.setdefault((backend, profile), set()).add(block)
+    return any(len(blocks) >= minimum for blocks in excess.values())
+
+
+def execute_schedule(
+    schedule: list[dict], executor, protocol: dict | None = None,
+) -> list[dict]:
     results = []
     for row in schedule:
         result = executor(row)
         results.append(result)
         if result["stop_required"]:
             break
+        if protocol is not None and _repeated_simulation_safety_harm(results, protocol):
+            result["stop_required"] = True
+            result["passed"] = False
+            result.setdefault("stop_reasons", []).append(
+                "repeated_paired_smooth_specific_safety_harm"
+            )
+            result["stop_reasons"] = sorted(set(result["stop_reasons"]))
+            break
     return results
+
+
+def cell_stop_reasons(record: dict, row: dict, protocol: dict) -> list[str]:
+    reasons = []
+    if not record.get("gate", {}).get("passed", False):
+        reasons.append("data_integrity_or_wiring_failure")
+    intervention = record.get("intervention", {})
+    maximum_residual = intervention.get("maximum_realized_residual")
+    if intervention.get("passed") is not True:
+        reasons.append("intervention_trace_failure")
+    if maximum_residual is None or not math.isfinite(float(maximum_residual)):
+        reasons.append("nonfinite_intervention_residual")
+    elif float(maximum_residual) > (
+        float(protocol["intervention"]["raw_action_linf_limit"])
+        + float(intervention.get("atol", 0.0))
+    ):
+        reasons.append("intervention_linf_violation")
+    metrics = record.get("metrics", {})
+    required_metrics = (
+        "action_rate_rms_per_s", "while_stable_roll_pitch_rate_rms_radps",
+        "tracking_restricted_mean_survival_time_s",
+        "valid_requested_usable_next_horizon_failure_fraction", "moving_speed_mps",
+    )
+    if any(
+        metrics.get(name) is None or not math.isfinite(float(metrics[name]))
+        for name in required_metrics
+    ):
+        reasons.append("missing_or_nonfinite_metric")
+    legacy_safety = protocol.get("decision_gate", {}).get(
+        "safety_stop", {},
+    ).get("any_smooth_arm_fall_or_base_contact") is True
+    if legacy_safety and row["arm"] == "smooth" and (
+        bool(metrics.get("fall")) or bool(metrics.get("base_contact"))
+    ):
+        reasons.append("smooth_arm_safety_failure")
+    return sorted(set(reasons))
 
 
 def _write(path: Path, value: dict) -> None:
@@ -173,10 +305,14 @@ def _environment(domain_id: int) -> dict[str, str]:
     return environment
 
 
-def execute_cell(row: dict, protocol: dict, release: dict, output_root: Path, domain_id: int) -> dict:
+def execute_cell(
+    row: dict, protocol: dict, release: dict, output_root: Path, domain_id: int,
+    release_path: Path = RELEASE_PATH,
+) -> dict:
     common = protocol["common"]
     arm = release["arms"][row["arm"]]
     run_dir = output_root / row["backend"] / row["profile"] / f"block_{row['block_id']}" / row["arm"]
+    run_dir.mkdir(parents=True, exist_ok=True)
     timeline = common["point_density_timeline_s"]
     command = (
         "ros2", "launch", "anymal_locomotion_ros2", "fastlio2_locomotion_benchmark.launch.py",
@@ -199,18 +335,26 @@ def execute_cell(row: dict, protocol: dict, release: dict, output_root: Path, do
         f"output_dir:={run_dir}", "confidence_loss_is_outcome:=true", "record_bag:=true",
     )
     env = _environment(domain_id)
-    launch = subprocess.run(command, cwd=ROS2_WORKSPACE, env=env, check=False)
+    with (run_dir / "launch.log").open("w", encoding="utf-8") as stream:
+        launch = subprocess.run(
+            command, cwd=ROS2_WORKSPACE, env=env, check=False,
+            stdout=stream, stderr=subprocess.STDOUT,
+        )
     diagnostics = run_dir / "policy_diagnostics.json"
     bag = run_dir / "raw_bag"
     steps = []
-    def run(name: str, cmd: tuple[str, ...]) -> int:
-        result = subprocess.run(cmd, cwd=PROJECT_ROOT, env=env, check=False)
+    def run(name: str, cmd: tuple[str, ...], *, environment: dict[str, str] | None = None) -> int:
+        with (run_dir / f"{name}.log").open("w", encoding="utf-8") as stream:
+            result = subprocess.run(
+                cmd, cwd=PROJECT_ROOT, env=environment or env, check=False,
+                stdout=stream, stderr=subprocess.STDOUT,
+            )
         steps.append({"name": name, "returncode": result.returncode})
         return result.returncode
     if diagnostics.is_file():
         run("intervention_trace", (
             str(ISAAC_PYTHON), str(PROJECT_ROOT / "scripts/validation/validate_slam_action_intervention_trace.py"),
-            "--diagnostics", str(diagnostics), "--release", str(RELEASE_PATH),
+            "--diagnostics", str(diagnostics), "--release", str(release_path),
             "--arm", row["arm"], "--output", str(run_dir / "intervention_trace_validation.json"),
         ))
     if (run_dir / "locomotion_diagnostics.json").is_file() and (run_dir / "driver.json").is_file():
@@ -230,13 +374,18 @@ def execute_cell(row: dict, protocol: dict, release: dict, output_root: Path, do
             sys.executable, str(PROJECT_ROOT / "scripts/validation/evaluate_slam_map_consistency_run.py"),
             "--bag", str(bag), "--output", str(run_dir / "map_consistency.json"),
         ))
+        estimator_env = env.copy()
+        deployment_vendor = str(PROJECT_ROOT / "deployment/python_vendor")
+        estimator_env["PYTHONPATH"] = (
+            f"{deployment_vendor}:{env.get('PYTHONPATH', '')}"
+        ).rstrip(":")
         run("estimator_replay", (
             sys.executable, str(PROJECT_ROOT / "scripts/validation/evaluate_velocity_estimator_replay.py"),
             "--bag", str(bag), "--estimator-metadata",
             str(PROJECT_ROOT / release["common_runtime"]["velocity_estimator_metadata_path"]),
             "--policy-metadata", str(PROJECT_ROOT / arm["metadata_path"]),
             "--sync-tolerance-s", "0.025", "--output", str(run_dir / "velocity_estimator_replay.json"),
-        ))
+        ), environment=estimator_env)
     required = tuple(run_dir / name for name in (
         "intervention_trace_validation.json", "stability_gate.json", "offline_usability.json",
         "map_consistency.json", "velocity_estimator_replay.json",
@@ -249,36 +398,15 @@ def execute_cell(row: dict, protocol: dict, release: dict, output_root: Path, do
         ))
     record_path = run_dir / "intervention_run_record.json"
     record = json.loads(record_path.read_text()) if record_path.is_file() else {}
-    stop_reasons = []
-    if not record.get("gate", {}).get("passed", False):
-        stop_reasons.append("data_integrity_or_wiring_failure")
-    intervention = record.get("intervention", {})
-    maximum_residual = intervention.get("maximum_realized_residual")
-    if intervention.get("passed") is not True:
-        stop_reasons.append("intervention_trace_failure")
-    if maximum_residual is None or not math.isfinite(float(maximum_residual)):
-        stop_reasons.append("nonfinite_intervention_residual")
-    elif float(maximum_residual) > float(protocol["intervention"]["raw_action_linf_limit"]):
-        stop_reasons.append("intervention_linf_violation")
-    metrics = record.get("metrics", {})
-    required_metrics = (
-        "action_rate_rms_per_s", "while_stable_roll_pitch_rate_rms_radps",
-        "tracking_restricted_mean_survival_time_s",
-        "valid_requested_usable_next_horizon_failure_fraction", "moving_speed_mps",
-    )
-    if any(
-        metrics.get(name) is None or not math.isfinite(float(metrics[name]))
-        for name in required_metrics
-    ):
-        stop_reasons.append("missing_or_nonfinite_metric")
-    if row["arm"] == "smooth" and (
-        bool(metrics.get("fall")) or bool(metrics.get("base_contact"))
-    ):
-        stop_reasons.append("smooth_arm_safety_failure")
+    stop_reasons = cell_stop_reasons(record, row, protocol)
     result = {
         **row, "run_dir": str(run_dir), "launch_returncode": launch.returncode,
         "postprocess": steps, "passed": not stop_reasons,
         "stop_required": bool(stop_reasons), "stop_reasons": sorted(set(stop_reasons)),
+        "simulation_safety_event": bool(
+            record.get("metrics", {}).get("fall")
+            or record.get("metrics", {}).get("base_contact")
+        ),
     }
     _write(run_dir / "cell.json", result)
     return result
@@ -288,39 +416,56 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stage", choices=("wiring_smoke", "pilot", "expanded_only_after_pilot_inconclusive"), default="wiring_smoke")
     parser.add_argument("--output-root", type=Path, default=PROJECT_ROOT / "outputs/slam_action_risk_intervention_pilot_v1")
+    parser.add_argument("--protocol", type=Path, default=PROTOCOL_PATH)
+    parser.add_argument("--release", type=Path, default=RELEASE_PATH)
     parser.add_argument("--domain-id", type=int, default=1)
     parser.add_argument("--execute", action="store_true")
     args = parser.parse_args()
     output = args.output_root.expanduser().resolve()
     if not output.is_relative_to(PROJECT_ROOT):
         raise ValueError("output root must remain inside the project")
-    protocol, release = _load_yaml(PROTOCOL_PATH), _load_yaml(RELEASE_PATH)
+    protocol_path = args.protocol.expanduser().resolve()
+    release_path = args.release.expanduser().resolve()
+    if any(
+        not path.is_relative_to(PROJECT_ROOT) or not path.is_file()
+        for path in (protocol_path, release_path)
+    ):
+        raise ValueError("protocol and release must be existing project-local files")
+    protocol, release = _load_yaml(protocol_path), _load_yaml(release_path)
     validation = _validator_module().validate_protocol(protocol)
     if not validation["passed"]:
         raise ValueError(validation["failures"])
-    validate_release(release, PROTOCOL_PATH)
+    validate_release(release, protocol_path)
     schedule = validation["schedules"][args.stage]
     head = _git("rev-parse", "HEAD")
     manifest = {
-        "schema_version": 1, "kind": "slam_action_risk_intervention_matrix",
+        "schema_version": 2, "kind": "slam_action_risk_intervention_matrix",
         "dataset_role": "excluded_causal_development", "stage": args.stage,
-        "git_commit": head, "protocol_sha256": _sha256(PROTOCOL_PATH),
-        "release_sha256": _sha256(RELEASE_PATH), "selected_count": len(schedule),
+        "git_commit": head, "protocol_path": str(protocol_path.relative_to(PROJECT_ROOT)),
+        "protocol_sha256": _sha256(protocol_path),
+        "release_path": str(release_path.relative_to(PROJECT_ROOT)),
+        "release_sha256": _sha256(release_path), "selected_count": len(schedule),
         "schedule": schedule,
     }
     if not args.execute:
         print(json.dumps({"stage": args.stage, "selected_count": len(schedule)}, indent=2))
         return 0
     require_execution_authorization(release, args.stage)
-    head = require_clean_baseline()
-    manifest["git_commit"] = head
-    require_stage_prerequisite(output, protocol, args.stage)
+    baseline = capture_execution_baseline()
+    manifest["git_commit"] = baseline["git_commit"]
+    manifest["worktree_snapshot"] = baseline
+    require_stage_prerequisite(
+        output, protocol, args.stage, protocol_path, release,
+    )
     stage_root = output / args.stage
     require_fresh_stage_output(stage_root)
     _write(stage_root / "run_manifest.json", manifest)
     results = execute_schedule(
         schedule,
-        lambda row: execute_cell(row, protocol, release, stage_root, args.domain_id),
+        lambda row: execute_cell(
+            row, protocol, release, stage_root, args.domain_id, release_path,
+        ),
+        protocol,
     )
     analyzer = _analyzer_module()
     decision = analyzer.analyze_records(analyzer.load_records(stage_root), protocol, args.stage)
@@ -340,6 +485,13 @@ def main() -> int:
         "results": results,
     }
     _write(stage_root / "matrix_summary.json", summary)
+    print(json.dumps({
+        "stage": args.stage,
+        "selected_count": len(schedule),
+        "executed_count": len(results),
+        "collection_passed": summary["collection_passed"],
+        "decision": summary["decision"],
+    }, indent=2))
     return 0 if summary["collection_passed"] else 1
 
 

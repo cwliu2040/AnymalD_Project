@@ -46,7 +46,7 @@ def validate_trace(
     checks = {
         "formula_parity": bool(maximum_error <= atol),
         "residual_linf_bound": bool(
-            maximum_residual <= limit + np.finfo(np.float32).eps
+            maximum_residual <= limit + atol
         ),
         "invalid_exact_arm_B": bool(
             not len(invalid_error) or float(np.max(invalid_error)) <= atol

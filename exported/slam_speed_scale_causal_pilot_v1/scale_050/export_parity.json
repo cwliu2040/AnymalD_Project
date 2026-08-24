@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "kind": "slam_speed_scale_causal_arm_export",
+  "arm": "scale_050",
+  "assigned_scale": 0.5,
+  "passed": true,
+  "checks": {
+    "regenerated_arm_B_vs_hash_locked_base": {
+      "max_absolute_error": 2.86102294921875e-06,
+      "mean_absolute_error": 3.8274842495411576e-07,
+      "allclose_atol_1e-5": true
+    },
+    "module_vs_hash_locked_base_transformed_observation": {
+      "max_absolute_error": 2.86102294921875e-06,
+      "mean_absolute_error": 3.8274842495411576e-07,
+      "allclose_atol_1e-5": true
+    },
+    "module_vs_torchscript": {
+      "max_absolute_error": 0.0,
+      "mean_absolute_error": 0.0,
+      "allclose_atol_1e-5": true
+    },
+    "module_vs_onnx": {
+      "max_absolute_error": 2.86102294921875e-06,
+      "mean_absolute_error": 3.8274842495411576e-07,
+      "allclose_atol_1e-5": true
+    },
+    "valid_command_exact_assigned_scale": true,
+    "invalid_stale_command_exact_zero": true,
+    "uniform_xyz_scale": true,
+    "finite_actions": true
+  },
+  "artifacts": {
+    "policy": {
+      "path": "/home/ros/anymal_locomotion/exported/slam_speed_scale_causal_pilot_v1/scale_050/policy.onnx",
+      "sha256": "3627061c2e4f4c566bcf19e9d84cbc33eb9071ad750ab9208085e93d586ae956"
+    },
+    "torchscript": {
+      "path": "/home/ros/anymal_locomotion/exported/slam_speed_scale_causal_pilot_v1/scale_050/policy.pt",
+      "sha256": "bc1df779cf3040bee4a2e53470cd3e2098e8a3e6d14be29817d76d9cccc56f5c"
+    },
+    "metadata": {
+      "path": "/home/ros/anymal_locomotion/exported/slam_speed_scale_causal_pilot_v1/scale_050/policy_metadata.yaml",
+      "sha256": "cc91753230345726a17e1ea6bbd45f341c96275c1db7313fda8f13cfbae9d2ae"
+    }
+  }
+}

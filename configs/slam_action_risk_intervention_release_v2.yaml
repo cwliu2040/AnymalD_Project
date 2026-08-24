@@ -1,9 +1,9 @@
-schema_version: 1
-release_id: slam-action-risk-intervention-pilot-v1-artifacts
-status: experimental_pilot_stopped_after_first_cell_not_promoted
+schema_version: 2
+release_id: slam-action-risk-intervention-pilot-v2-artifacts
+status: fresh_block_v2_pilot_inconclusive_expansion_not_recommended_live_unauthorized
 protocol:
-  path: configs/slam_action_risk_intervention_pilot.yaml
-  sha256: 6e1b83b92c0e69085c64330ba6fdc289677198f294c798ebdedc7f110580c661
+  path: configs/slam_action_risk_intervention_pilot_v2.yaml
+  sha256: ae63bef8d1c5e4f60f843202ce6e784a172b2424524781aaaedd4cdd6cde0df3
 base_policy:
   path: exported/anymal_d_locomotion_slam_confidence_publication_v1/arm_b_model1450_deterministic_supervisor/policy.onnx
   sha256: 9f485d39aa02d65672082520edf68b49d9308b66d2e2ac382523691f4204ec8b
@@ -41,6 +41,14 @@ common_runtime:
   confidence:
     fastlio2: native-v1-1e6cf8347be1
     liosam: native-v1-edc098b0bd98
+prerequisites:
+  wiring_smoke:
+    disposition: reuse_hash_locked_v1_attempt2_and_recompute_from_raw_records
+    output_path: outputs/slam_action_risk_intervention_pilot_v1_attempt2/wiring_smoke
+    protocol_path: configs/slam_action_risk_intervention_pilot.yaml
+    protocol_sha256: 6e1b83b92c0e69085c64330ba6fdc289677198f294c798ebdedc7f110580c661
+    manifest_sha256: 4549ab991826e7a4c3ace627e73a611085fafedbe7f95cd94e1237ff4a87cd77
+    required_decision: WIRING_PASS
 boundaries:
   dataset_role: excluded_causal_development
   training_artifact: false

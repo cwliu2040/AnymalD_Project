@@ -1,0 +1,81 @@
+seed: 42
+device: cuda:0
+num_steps_per_env: 24
+max_iterations: 25
+empirical_normalization: null
+obs_groups: {}
+clip_actions: null
+save_interval: 5
+experiment_name: anymal_d_locomotion_slam_confidence_phase_separated_gait_v1
+run_name: degraded_stride_envelope_recovery_safe_ppo_gait
+logger: tensorboard
+neptune_project: isaaclab
+wandb_project: isaaclab
+resume: false
+load_run: .*
+load_checkpoint: logs/rsl_rl/anymal_d_locomotion_slam_confidence_constrained_gait_v1/2026-08-13_18-18-26_nonnegative_smoothing_recovery_safe_ppo_gait/model_48.pt
+class_name: OnPolicyRunner
+policy:
+  class_name: anymal_locomotion.policies.slam_confidence_residual:SlamConfidenceAuxIntentGaitActorCritic
+  init_noise_std: 1.0
+  noise_std_type: scalar
+  state_dependent_std: false
+  actor_obs_normalization: false
+  critic_obs_normalization: false
+  actor_hidden_dims:
+  - 128
+  - 128
+  - 128
+  critic_hidden_dims:
+  - 128
+  - 128
+  - 128
+  activation: elu
+  gait_hidden_dims:
+  - 64
+  - 64
+  gait_parameter_limits:
+  - 0.6
+  - 0.3
+  - 0.2
+  - 0.9
+  legacy_observation_dim: 48
+  confidence_offset: 48
+  previous_action_offset: 36
+  command_offset: 9
+  command_dimension: 3
+  nonnegative_stride_smoothing: true
+  smoothing_logit_gain: 1.0
+  degraded_stride_min_scale: 0.0
+  degraded_stride_confidence_low: 0.2
+  degraded_stride_confidence_high: 1.0
+  degraded_stride_age_ratio_max: 0.45
+  degraded_stride_envelope_power: 3.0
+  suppress_gait_when_tracking_invalid: true
+  gait_delta_safe_scale_power: 10.0
+  intent_blend_max: 0.79
+algorithm:
+  class_name: anymal_locomotion.algorithms.slam_confidence_intent_ppo:SlamConfidenceIntentPPO
+  num_learning_epochs: 5
+  num_mini_batches: 4
+  learning_rate: 0.0001
+  schedule: fixed
+  gamma: 0.99
+  lam: 0.95
+  entropy_coef: 0.0
+  desired_kl: 0.01
+  max_grad_norm: 1.0
+  value_loss_coef: 1.0
+  use_clipped_value_loss: true
+  clip_param: 0.2
+  normalize_advantage_per_mini_batch: false
+  rnd_cfg: null
+  symmetry_cfg:
+    use_data_augmentation: true
+    use_mirror_loss: false
+    data_augmentation_func: anymal_locomotion.tasks.manager_based.locomotion.velocity.config.anymal_d.mdp.symmetry:compute_symmetric_states
+    mirror_loss_coeff: 0.0
+  intent_learning_rate: 0.005
+  intent_num_epochs: 5
+  intent_num_mini_batches: 4
+  intent_loss_coef: 1.0

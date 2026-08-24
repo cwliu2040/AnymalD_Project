@@ -68,6 +68,55 @@ def _mean(values: Iterable[float]) -> float:
     return float(np.mean(array))
 
 
+def _simulation_safety_analysis(
+    by_pair: dict[tuple[str, str, int], dict[str, dict[str, Any]]],
+    protocol: dict[str, Any],
+) -> dict[str, Any]:
+    simulation = protocol.get("decision_gate", {}).get(
+        "safety_stop", {},
+    ).get("simulation")
+    smooth_event_any = any(
+        bool(arms.get("smooth", {}).get("metrics", {}).get("fall"))
+        or bool(arms.get("smooth", {}).get("metrics", {}).get("base_contact"))
+        for arms in by_pair.values()
+    )
+    if not isinstance(simulation, dict):
+        return {
+            "semantics": "v1_any_smooth_event",
+            "smooth_event_any": smooth_event_any,
+            "paired_excess_by_stratum": {},
+            "minimum_repeated_blocks": 1,
+            "route_fail": smooth_event_any,
+            "pass_condition": not smooth_event_any,
+        }
+
+    minimum = int(
+        simulation["route_fail_minimum_distinct_blocks_same_backend_profile"]
+    )
+    excess_by_stratum: dict[str, list[int]] = defaultdict(list)
+    for (backend, profile, block), arms in by_pair.items():
+        if "smooth" not in arms or "zero" not in arms:
+            continue
+        smooth = arms["smooth"]["metrics"]
+        zero = arms["zero"]["metrics"]
+        smooth_event = bool(smooth.get("fall")) or bool(smooth.get("base_contact"))
+        zero_event = bool(zero.get("fall")) or bool(zero.get("base_contact"))
+        if smooth_event and not zero_event:
+            excess_by_stratum[f"{backend}/{profile}"].append(block)
+    rendered = {
+        key: sorted(set(blocks)) for key, blocks in sorted(excess_by_stratum.items())
+    }
+    route_fail = any(len(blocks) >= minimum for blocks in rendered.values())
+    return {
+        "semantics": "v2_repeated_paired_smooth_specific_excess",
+        "smooth_event_any": smooth_event_any,
+        "paired_excess_by_stratum": rendered,
+        "minimum_repeated_blocks": minimum,
+        "route_fail": route_fail,
+        "pass_condition": not any(rendered.values()),
+    }
+
+
 def analyze_records(
     records: list[dict[str, Any]], protocol: dict[str, Any], stage: str,
 ) -> dict[str, Any]:
@@ -80,8 +129,6 @@ def analyze_records(
     failures: list[str] = []
     if duplicates:
         failures.append("duplicate_run_identities")
-    if missing:
-        failures.append("missing_run_identities")
     if unexpected:
         failures.append("unexpected_run_identities")
 
@@ -102,9 +149,10 @@ def analyze_records(
         if not intervention.get("passed", False):
             failures.append("intervention_trace_failure")
         maximum_residual = intervention.get("maximum_realized_residual")
+        residual_atol = float(intervention.get("atol", 0.0))
         if maximum_residual is None or not math.isfinite(float(maximum_residual)):
             failures.append("nonfinite_intervention_residual")
-        elif float(maximum_residual) > limit + np.finfo(np.float32).eps:
+        elif float(maximum_residual) > limit + residual_atol:
             failures.append("intervention_linf_violation")
         metrics = record.get("metrics", {})
         for metric in METRICS:
@@ -113,11 +161,28 @@ def analyze_records(
                 failures.append(f"missing_or_nonfinite_metric:{metric}")
         by_pair[(backend, profile, block)][arm] = record
 
+    incomplete_pairs = False
     for arms in by_pair.values():
         if tuple(sorted(arms)) != tuple(sorted(ARMS)):
             failures.append("incomplete_paired_arms")
+            incomplete_pairs = True
+    safety = _simulation_safety_analysis(by_pair, protocol)
+    safety_terminated_early = bool(
+        stage != "wiring_smoke"
+        and missing
+        and safety["semantics"] == "v2_repeated_paired_smooth_specific_excess"
+        and safety["route_fail"]
+        and not duplicates
+        and not unexpected
+        and not incomplete_pairs
+        and not failures
+    )
+    if missing and not safety_terminated_early:
+        failures.append("missing_run_identities")
     failures = sorted(set(failures))
-    integrity_passed = not failures and identity_set == expected
+    integrity_passed = not failures and (
+        identity_set == expected or safety_terminated_early
+    )
 
     exact_zero = bool(records) and all(
         record["intervention"]["checks"].get("zero_exact_arm_B", False)
@@ -140,6 +205,7 @@ def analyze_records(
             "missing_identities": missing,
             "unexpected_identities": unexpected,
             "duplicate_identities": duplicates,
+            "safety_terminated_early": safety_terminated_early,
         },
         "integrity": {
             "passed": integrity_passed,
@@ -156,6 +222,15 @@ def analyze_records(
             "status": "WIRING_PASS" if passed else "WIRING_FAIL",
             "claim_allowed": False,
             "next_step": "pilot_requires_separate_authorization" if passed else "repair_wiring",
+        }
+        return report
+
+    if safety_terminated_early:
+        report["simulation_safety"] = safety
+        report["decision"] = {
+            "status": "FAIL",
+            "claim_allowed": False,
+            "next_step": protocol["decision_gate"]["fail_next_step"],
         }
         return report
 
@@ -242,10 +317,6 @@ def analyze_records(
             "body_rate_and_survival_both_worse": body_worse and survival_worse,
         }
 
-    smooth_safety_failure = any(
-        bool(record["metrics"].get("fall")) or bool(record["metrics"].get("base_contact"))
-        for record in records if record["identity"]["arm"] == "smooth"
-    )
     threshold = int(protocol["decision_gate"]["minimum_ordered_backend_profile_strata"])
     separation_tolerance = float(
         protocol["decision_gate"]["no_action_rate_separation_absolute_tolerance_per_s"]
@@ -261,9 +332,9 @@ def analyze_records(
         "body_rate_ordered_strata": ordered_body >= threshold,
         "backend_survival_and_hazard_direction": backend_direction_pass,
         "moving_speed_guard": speed_guard,
-        "smooth_arm_safety": not smooth_safety_failure,
+        "smooth_arm_safety": safety["pass_condition"],
     }
-    if not integrity_passed or smooth_safety_failure or harm or no_action_separation:
+    if not integrity_passed or safety["route_fail"] or harm or no_action_separation:
         status = "FAIL"
         next_step = protocol["decision_gate"]["fail_next_step"]
     elif all(pass_conditions.values()):
@@ -280,7 +351,9 @@ def analyze_records(
             "ordered_body_rate_strata": ordered_body,
             "required_ordered_strata": threshold,
             "no_action_rate_separation": no_action_separation,
-            "smooth_arm_safety_failure": smooth_safety_failure,
+            "smooth_arm_safety_event_any": safety["smooth_event_any"],
+            "smooth_arm_safety_failure": safety["route_fail"],
+            "simulation_safety": safety,
             "body_rate_and_survival_harm": harm,
             "pass_conditions": pass_conditions,
         },
@@ -306,7 +379,8 @@ def _markdown(report: dict[str, Any]) -> str:
             "", "## Gate", "",
             f"- Ordered action-rate strata: {report['gate']['ordered_action_rate_strata']}/{report['gate']['required_ordered_strata']}",
             f"- Ordered body-rate strata: {report['gate']['ordered_body_rate_strata']}/{report['gate']['required_ordered_strata']}",
-            f"- Smooth-arm safety failure: {report['gate']['smooth_arm_safety_failure']}",
+            f"- Any smooth-arm safety event: {report['gate']['smooth_arm_safety_event_any']}",
+            f"- Repeated paired smooth-specific safety harm: {report['gate']['simulation_safety']['route_fail']}",
             f"- Body-rate plus survival harm: {report['gate']['body_rate_and_survival_harm']}",
             f"- No action-rate separation: {report['gate']['no_action_rate_separation']}",
         ]

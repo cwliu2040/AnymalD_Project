@@ -1,0 +1,192 @@
+schema_version: 1
+protocol_id: slam-speed-pulse-causal-pilot-v2
+status: phase7_randomized_repeated_run_frozen_live_unauthorized
+date: 2026-08-22
+dataset_role: excluded_causal_development
+formal_efficacy_use_allowed: false
+
+question: >-
+  Starting from an identical untreated prefix and matched pre-pulse state,
+  how does a 0.75 s uniform command-scale pulse change real-backend SLAM
+  usability over the subsequent 0.5 s without changing earlier route state?
+
+experimental_design:
+  type: randomized_balanced_repeated_run
+  one_robot_sequential_runs: true
+  exact_prestate_matching_required: false
+  prestate_covariates_reported_not_used_for_exclusion: true
+  treatment_assigned_before_run: true
+  post_treatment_outcome_based_exclusion_forbidden: true
+  primary_inference: within_backend_profile_arm_means_and_block_differences
+
+boundaries:
+  actual_slam_backend_required: true
+  ros2_bridge_required: true
+  model1450_plus_arm_b_frozen: true
+  whole_episode_scale_forbidden: true
+  synthetic_confidence_schedule_allowed: false
+  ground_truth_runtime_input: false
+  future_label_runtime_input: false
+  policy_training_allowed: false
+  ppo_training_allowed: false
+  physical_robot_use_authorized: false
+  live_execution_authorized: false
+
+common:
+  policy: arm_b_model1450_deterministic_supervisor
+  velocity_estimator: estimator15
+  policy_rate_hz: 50.0
+  simulation_steps: 4000
+  scene: assets/maps/factory/Factory_Layout.usd
+  initial_pose: {x_m: 0.0, y_m: -18.0, yaw_rad: 0.0}
+  point_density_profile: gradual_v2
+  point_density_min: 0.20
+  point_density_timeline_s:
+    healthy: 7.25
+    ramp_down: 3.0
+    low_support_hold: 2.0
+    recovery: 2.0
+  command_warmup_s: 5.0
+  simulator_seed_equals_block_id: true
+
+treatment:
+  family: matched_prefix_single_command_scale_pulse
+  untreated_prefix_required: true
+  pulse_start_relative_to_profile_s: 7.25
+  pulse_duration_s: 0.75
+  post_pulse_recovery_required: true
+  horizon_s: 0.5
+  uniform_xyz_scale_preserves_command_curvature: true
+  arms:
+    scale_100: 1.00
+    scale_075: 0.75
+    scale_050: 0.50
+    scale_025: 0.25
+  assignment: deterministic_balanced_latin_square_within_backend_profile_block
+
+trace_contract:
+  boundary_grace_s: 0.06
+  pre_pulse_sample_max_age_s: 0.12
+  pre_pulse_max_pairwise_time_skew_s: 0.04
+  command_atol: 0.0001
+  action_atol: 0.00001
+  required_phases: [untreated_prefix, pulse, recovered]
+  profile_clock_source: driver_profile_start_clock_s
+  pre_pulse_matching_offsets:
+    base_linear_velocity: [0, 3]
+    base_angular_velocity: [3, 6]
+    projected_gravity: [6, 9]
+    joint_position: [12, 24]
+    joint_velocity: [24, 36]
+    previous_action: [36, 48]
+    slam_confidence: [48, 51]
+  pre_pulse_max_pairwise_linf:
+    base_linear_velocity: 0.20
+    base_angular_velocity: 0.25
+    projected_gravity: 0.08
+    joint_position: 0.20
+    joint_velocity: 3.25
+    previous_action: 0.45
+    slam_confidence: 0.20
+  pre_pulse_max_pairwise_rms:
+    joint_velocity: 1.25
+  composite_matching_calibration:
+    dataset_role: excluded_wiring_development_pre_treatment_only
+    source_attempts: [2, 3, 4]
+    backends: [fastlio2, liosam]
+    profile: curve_1_5_right_1_0
+    block_id: 563
+    pairwise_comparisons: 24
+    observed_base_angular_velocity_linf_max: 0.225017
+    observed_previous_action_linf_max: 0.417230
+    observed_joint_velocity_rms_max: 1.167282
+    observed_joint_velocity_linf_max: 2.945145
+    post_pulse_outcomes_used: false
+    thresholds_frozen_before_attempt5: true
+
+outcomes:
+  primary:
+    - pulse_window_intention_to_treat_failure_fraction
+    - pulse_window_valid_requested_usable_next_horizon_failure_fraction
+    - pulse_window_tracking_survival_time_s
+  treatment_verification:
+    - untreated_prefix_exact_common_command
+    - pulse_exact_assigned_scale
+    - recovered_exact_common_command
+    - matched_pre_pulse_state
+  tradeoff:
+    - pulse_window_progress_m
+    - pulse_window_moving_speed_mps
+    - pulse_window_stance_weighted_foot_slip_rms_mps
+    - pulse_window_roll_pitch_rate_rms_radps
+  safety: [fall, base_contact]
+  inference_unit: complete_scheduled_live_run
+  frame_samples_are_independent_replicates: false
+  backends_reported_separately: true
+
+stages:
+  wiring_smoke:
+    backends: [fastlio2, liosam]
+    profiles: [curve_1_5_right_1_0]
+    arms: [scale_100, scale_075, scale_050, scale_025]
+    block_ids: [566]
+    expected_run_count: 8
+    claim_allowed: false
+  causal_pilot:
+    backends: [fastlio2, liosam]
+    profiles: [curve_1_5_right_1_0, lateral_right_1_5]
+    arms: [scale_100, scale_075, scale_050, scale_025]
+    block_ids: [567, 568, 569, 570]
+    expected_run_count: 64
+    claim_allowed: false
+
+decision_gate:
+  immediate_matrix_stop:
+    wiring_or_data_integrity_failure: true
+    nonfinite_or_contract_failure: true
+    pulse_formula_or_phase_violation: true
+    pre_pulse_matching_failure: true
+  simulation_safety:
+    single_fall_or_base_contact_is_retained_not_route_fail: true
+    repeated_scale_specific_harm_requires_two_blocks_same_backend_profile: true
+  ceiling_aware_headroom:
+    primary_improvement_backend: liosam
+    prespecified_improvement_profiles: [curve_1_5_right_1_0, lateral_right_1_5]
+    minimum_supported_primary_backend_strata: 1
+    supported_stratum_all_required:
+      mean_hazard_nondecreasing_with_scale: true
+      one_reduced_scale_minimum_nonpositive_blocks: 3
+      minimum_mean_full_minus_reduced_hazard: 0.05
+    fastlio2_role: noninferiority_or_ceiling_safeguard
+    fastlio2_maximum_mean_reduced_minus_full_hazard: 0.02
+    full_scale_hazard_ceiling_threshold: 0.05
+    ceiling_stratum_improvement_not_required: true
+  pass_all_required:
+    complete_integrity_valid_records: true
+    all_three_command_phases_verified: true
+    randomized_balanced_schedule_complete: true
+    pre_pulse_covariates_reported_without_exclusion: true
+    liosam_supported_headroom_strata_meets_minimum: true
+    fastlio2_noninferiority_or_ceiling_safeguard: true
+    no_repeated_reduced_scale_specific_safety_harm: true
+  pass_next_step: fit_offline_action_conditioned_risk_model_with_blockwise_validation
+  otherwise_next_step: stop_before_risk_model_and_redesign_intervention
+  no_claim_from_pilot: true
+
+disjointness:
+  forbidden_block_ranges:
+    - [43, 43]
+    - [143, 147]
+    - [243, 243]
+    - [343, 347]
+    - [443, 467]
+    - [542, 565]
+
+implementation_gates:
+  pulse_core_complete: true
+  benchmark_driver_wiring_complete: true
+  trace_and_analysis_complete: true
+  artifact_hash_lock_complete: true
+  wiring_smoke_authorized: false
+  causal_pilot_authorized: false
+  action_conditioned_model_training_authorized: false

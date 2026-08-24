@@ -111,6 +111,38 @@ def validate_protocol(protocol: dict[str, Any]) -> dict[str, Any]:
         failures.append("pilot must require three of four ordered backend/profile strata")
     if float(gate.get("no_action_rate_separation_absolute_tolerance_per_s", 0.0)) <= 0.0:
         failures.append("action-rate separation tolerance must be positive")
+    if int(protocol.get("schema_version", 1)) >= 2:
+        safety = gate.get("safety_stop", {})
+        immediate = safety.get("immediate_matrix_stop", {})
+        simulation = safety.get("simulation", {})
+        physical = safety.get("physical_robot", {})
+        if not all(immediate.get(key) is True for key in (
+            "any_wiring_or_data_integrity_failure",
+            "any_nonfinite_or_contract_failure",
+            "any_intervention_linf_violation",
+        )):
+            failures.append("v2 immediate matrix-stop integrity semantics are incomplete")
+        if simulation.get("fall_or_base_contact_ends_and_retains_episode") is not True:
+            failures.append("v2 must retain terminated simulation safety outcomes")
+        if simulation.get("single_event_stops_matrix") is not False:
+            failures.append("v2 single simulation safety event must not stop the matrix")
+        if tuple(simulation.get("scheduled_matched_arms", [])) != EXPECTED_ARMS:
+            failures.append("v2 safety comparison must retain all three matched arms")
+        if simulation.get("route_level_comparator") != "zero":
+            failures.append("v2 route-level safety comparator must be exact-zero")
+        if int(simulation.get(
+            "route_fail_minimum_distinct_blocks_same_backend_profile", 0,
+        )) < 2:
+            failures.append("v2 route safety FAIL must require repeated paired blocks")
+        if simulation.get("route_fail_stops_matrix_after_complete_matched_arms") is not True:
+            failures.append("v2 repeated route safety harm must stop after matched arms")
+        if simulation.get("one_paired_excess_disposition") != "INCONCLUSIVE":
+            failures.append("v2 single paired safety excess must be INCONCLUSIVE")
+        if not all(physical.get(key) is True for key in (
+            "any_fall_risk_requires_immediate_stop",
+            "pilot_result_cannot_relax_hardware_stop",
+        )):
+            failures.append("v2 physical robot must retain immediate stop semantics")
     forbidden = set(int(value) for value in protocol.get("disjointness", {}).get("forbidden_block_ids", []))
     schedules = {}
     used = set()
