@@ -68,6 +68,12 @@ SLAM_CONFIDENCE_PHASE_SEPARATED_GAIT_TASK_ID = (
     "Isaac-Velocity-Flat-Anymal-D-Locomotion-"
     "SlamConfidence-PhaseSeparatedGait-v0"
 )
+JOINT_TRAINING_J1_TASK_ID = (
+    "Isaac-Velocity-Flat-Anymal-D-Locomotion-JointTraining-J1-v0"
+)
+JOINT_TRAINING_J2_TASK_ID = (
+    "Isaac-Velocity-Flat-Anymal-D-Locomotion-JointTraining-J2-v0"
+)
 
 gym.register(
     id=TASK_ID,
@@ -125,6 +131,38 @@ gym.register(
         "rsl_rl_cfg_entry_point": (
             f"{agents.__name__}.rsl_rl_ppo_cfg:"
             "AnymalDLocomotionRecoveryV05PPORunnerCfg"
+        ),
+    },
+)
+
+gym.register(
+    id=JOINT_TRAINING_J1_TASK_ID,
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": (
+            f"{__name__}.flat_env_cfg:"
+            "AnymalDLocomotionJointTrainingJ1EnvCfg"
+        ),
+        "rsl_rl_cfg_entry_point": (
+            f"{agents.__name__}.rsl_rl_ppo_cfg:"
+            "AnymalDLocomotionJointTrainingJ1RunnerCfg"
+        ),
+    },
+)
+
+gym.register(
+    id=JOINT_TRAINING_J2_TASK_ID,
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": (
+            f"{__name__}.flat_env_cfg:"
+            "AnymalDLocomotionJointTrainingJ2EnvCfg"
+        ),
+        "rsl_rl_cfg_entry_point": (
+            f"{agents.__name__}.rsl_rl_ppo_cfg:"
+            "AnymalDLocomotionJointTrainingJ2RunnerCfg"
         ),
     },
 )

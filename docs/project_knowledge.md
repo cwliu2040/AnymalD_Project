@@ -1,6 +1,6 @@
 # Current project knowledge
 
-更新日期：2026-08-24
+更新日期：2026-08-26
 
 這是新對話的短版入口，只保存目前有效狀態、邊界、最新結論與下一步。完整截至
 2026-08-21的舊版交接內容逐字保存在`docs/project_history.md`；個別實驗的方法、數字與
@@ -10,14 +10,19 @@
 ## Repository state
 
 - 根目錄：`/home/ros/anymal_locomotion`；目前branch為`exp/slam-fastlio2`。
-- 最近已提交baseline包含`0f6ebb6 授權執行動作介入 wiring smoke`；精確HEAD以
-  `git rev-parse HEAD`為準。遠端仍為`bc88e75`，目前本機ahead 3且沒有push授權。`main`與
+- 最近已提交並推送baseline為`c3db39f 完成 SLAM 動作介入與分量式因果驗證`；精確HEAD以
+  `git rev-parse HEAD`為準，`origin/exp/slam-fastlio2`已同步到該commit。`main`與
   `origin/main`仍為`98b43dd`，不得為目前論文工作修改或合併`main`。
 - Formal analysis修正、800-cell診斷、risk predictability audit、action-risk intervention
   pilot的config／runner／analyzer／測試、短版current knowledge與完整history均已納入
-  baseline。Wiring smoke修復、attempt2、v2 pilot與新risk-aware governor／short-pulse／component-pulse／C2 route目前共有
-  49個Git可見project-owned dirty，另有21個`.gitignore`下但必須在未來commit時明確force-add的
-  fixed-scale export artifacts；live授權已重新關閉，尚未commit。後續在
+  baseline。其後兩版offline component risk model、fresh richer component-identification、
+  command-preserving residual、touchdown-headroom／phase-estimator／pilot，以及full-policy
+  joint-training與non-learning preflight均已整理為後續研究commits，不再是未整理的
+  project-owned working-tree dirty；
+  另有兩個component model reports、一個rejected v1 phase artifact，以及v2 development
+  candidate與fresh-validation frozen artifact位於ignored
+  `exported/`，未來commit時須明確判斷是否force-add。
+  Live授權已重新關閉。後續在
   完整實驗段落結束後才整理一次commit；每次commit／push前仍必須重新
   整理並取得使用者明確同意。
 - Root `build/`、`install/`、`log/`、`lidar_type`及其他`logs/`／`outputs/`是runtime或
@@ -89,6 +94,109 @@
 
 ## Current research decision
 
+- **2026-08-26 superseding decision:** the new formal target is original-command
+  confidence-conditioned full locomotion-policy joint training／fine-tuning. Initialize the full
+  actor from model1450, keep the exact unscaled requested XYZ/yaw command, add deployable
+  confidence/validity/age plus command/body/joint/previous-action history, and learn the complete
+  12-D joint action. Preserve linear/yaw tracking and progress while reducing unnecessary roll/pitch,
+  high-frequency yaw error, acceleration/jerk, body vibration and LiDAR scan-time motion, then test
+  future SLAM usability.
+- Old C/model48 does not show that confidence cannot enter a locomotion policy. It failed because it
+  used a confidence-scaled velocity target, making slowdown/stopping an easy PPO solution. The new
+  target forbids that semantic: confidence/history may condition gait/body response but may not scale
+  the requested command. B remains an invalid/stale safety fallback and risk--progress baseline.
+- Freeze three formal comparators before training: J0 is original model1450; J1 uses the same
+  vibration-aware training stack without confidence/history; J2 adds confidence/history. `J1-J0`
+  tests generic smoother locomotion, while `J2-J1` is the localization-aware contribution. Evaluate
+  all with fresh original commands and matched realized speed; report FAST-LIO2 and LIO-SAM separately.
+- Full-policy fine-tuning must use model1450 behavior anchoring and prospectively frozen reward,
+  curriculum and gates: strong command/yaw tracking and progress, body/LiDAR endpoints,
+  STOP/SHUFFLE/POSTURE/LIMITER collapse, cadence, stance width, clearance, joint margin, torque,
+  energy, slip, fall and base contact. Future SLAM/GT/internal diagnostics may be simulation-only
+  privileged signals or held-out labels; runtime still forbids GT/future/backend/intervention/route
+  phase/hardcoded timers.
+- Do not hand-design another fixed foot/joint mechanism, retune touchdown 0/25/50% or phase thresholds,
+  continue Risk v3, or build another scaling selector. The touchdown frozen pilot remains
+  `INCONCLUSIVE`; blocks602..605 must not run. Its audit found that the three formal matched-motion
+  failures were curved-route endpoint aliasing, but targeted physical response was still not
+  repeatable, so the family is retired. See
+  `docs/validation/slam_low_level_touchdown_headroom_v1.md`.
+- Before new training, freeze corrected future metrics once: monotone/accumulated curved-route
+  progress, paired zero-relative gait noninferiority plus absolute physical limits, and event-aligned
+  body/LiDAR windows. Do not change these after seeing J1/J2 outcomes.
+- This is currently a research objective, not execution permission. Teacher, history encoder,
+  full-policy PPO, live ROS wiring, default switch and physical robot remain unexecuted and
+  unauthorized. Blocks581..584 remain untouched; model1450 and B safety contracts remain unchanged.
+- Joint-training static implementation now exists in
+  `configs/slam_confidence_joint_training_v1.yaml`, `full_policy_bootstrap.py`,
+  `joint_training_contract.py`, `policies/joint_training.py`, `algorithms/behavior_anchored_ppo.py`
+  and the J1/J2 Isaac task configs. The actual model1450 checkpoint passed exact 48-to-1068 actor
+  parity, exact frozen-reference copy and fresh-critic checks; behavior anchoring and the offline
+  matched-motion block evaluator also have focused tests. No simulator was launched for these checks.
+- J1/J2 now share a 1068-D dense actor: current 48-D input plus 20 oldest-to-newest 51-D history
+  frames. J1 neutralizes only confidence/validity/age, while J2 receives those channels. Both retain
+  the original command and use the same full random/edge command distribution, source locomotion
+  reward stack, non-zero anchor and staged body/LiDAR distortion curriculum. The retired 51-D
+  `--adapt-confidence-input-only` mode is explicitly rejected for this full-policy task.
+- The offline block evaluator freezes exact command/timestamp identity, 0.05 m/s and 0.05 rad/s
+  matched-motion guards, accumulated progress, absolute and paired anti-collapse gates, shared
+  event-aligned body/LiDAR windows and held-out SLAM direction. It also prevents a false pass when
+  both arms stop. Details: `docs/validation/slam_confidence_joint_training_v1.md`.
+- The non-learning Isaac runtime preflight passed for both J1 and J2: each arm ran 8 environments ×
+  100 steps with seed1450 and model1450 inference. The 1068-D layout, reset/history flattening,
+  exact original command, J1 neutral localization and J2 confidence/validity/age contracts all
+  passed; model1450 bootstrap action error was exactly `0.0`; termination/truncation counts were
+  zero. Projected new-motion reward p99/max were `0.0473193/0.0622891`, below frozen `1.0/5.0`
+  limits. The ignored merged report is
+  `outputs/slam_confidence_joint_training_v1/nonlearning_preflight.json`, SHA-256
+  `6c3ab914d91d57365ba78397c13b36828a5b413041fcdb848e5d11d20306b81c`, and explicitly records
+  `ppo_constructed_or_run: false`.
+- The runner isolates J1/J2 in separate Isaac child processes because destroying and recreating a
+  process-global SimulationContext blocked during the first attempt; this is runner lifecycle
+  isolation, not a gate or metric change. It prints per-10-step status and merges the arm reports.
+  Both repository preflight authorization flags are closed again. Environment/reward wiring is now
+  verified, but this does not establish efficacy. The next boundary is a separately authorized,
+  already-frozen fixed-budget J1/J2 PPO run; PPO, live ROS wiring, default switch and physical robot
+  all remain unauthorized.
+- Motion reward equations were extracted to the torch-only
+  `joint_training_motion_core.py`. Tensor tests prove zero added cost for constant translation and
+  constant yaw with zero acceleration/jerk, positive cost for roll/pitch/non-constant scan motion,
+  and stronger weighting under localization vulnerability. This reduces the risk of learning to
+  reject normal turning before the runtime preflight.
+- Current verification split before the runtime preflight: system-Python suite `503 passed, 15 skipped` after excluding the
+  clean-worktree publication runner and separately executed PyTorch files; Isaac-Python PyTorch
+  subset `36 passed`; focused joint-training static set `24 passed`. No simulator was launched.
+- The custom algorithm has completed a real RSL-RL synthetic rollout/storage/return/PPO update,
+  not only an unbound helper test. Losses were finite, storage cleared correctly and the frozen
+  model1450 reference remained unchanged. Model1450 action noise is exact-copied and frozen for both
+  J1/J2 so exploration variance cannot bypass the mean-action anchor; the full 12-D actor mean remains
+  trainable. The subsequent non-learning Isaac preflight passed as recorded above.
+
+## Superseded research notes retained for traceability
+
+- 使用者已確認這不是另開新題目，而是回去完成原本只做一半的新C：不把B或learned component
+  governor當主要研究貢獻，正式完成localization-aware low-level motor adaptation。B仍是uniform
+  confidence safety fallback／tradeoff參考且不要求新C全面勝過B，component translation/yaw limiter
+  只作baseline。Residual contribution的valid matched-command path必須把exact original requested
+  command交給frozen model1450，只能疊加bounded 12-D joint residual。
+  無有益residual時使用original-command backbone-only而非risk stop，adaptation缺失／不可信／非法
+  才fallback B，SLAM invalid/stale仍exact-zero。RMA只借用privileged teacher＋history adaptation
+  的分層概念；runtime禁止GT/future/backend/intervention/route phase與hardcoded turn timer。
+- 新方向的第一個必要gate是matched-speed low-level causal headroom，不是PPO。舊smooth/zero/
+  antismooth 24-run evidence只有3/8 groups通過0.05 m/s speed guard，且lateral重複掉speed/progress，
+  因此不能當成功介入、也不執行舊72-run expansion。新core與contract已實作；第一個fresh
+  mechanism與gate現已凍結為history-phase touchdown displacement shaping，但history-only phase
+  estimator、model1450 anti-collapse envelope與execution wiring尚未完成，沒有執行任何新run。
+  teacher/adaptation/PPO/live/ROS/default/physical全為false，blocks581..584仍未使用。Command
+  preservation只用來歸因residual，不是強迫不安全速度；完整controller採
+  residual-first，scale1不可行時允許最小必要降速，但必須分開記錄且不得算成residual貢獻。
+  詳細：`docs/validation/slam_localization_aware_motor_adaptation_v1.md`。
+- 新C必須事前防四種退化：`STOP_COLLAPSE`（不願走）、`SHUFFLE_COLLAPSE`（小碎步／高頻接觸）、
+  `POSTURE_COLLAPSE`（蹲低、站太開、joint/clearance/torque/energy/slip惡化）、
+  `LIMITER_COLLAPSE`（效果其實來自降速或等同B/component scaling）。步態調整涵蓋腳步與完整
+  body/sensor response：平均linear/yaw command tracking需保留，真正要降低的是不必要roll/pitch、
+  yaw tracking error／高頻振動、linear/angular acceleration與jerk、LiDAR scan-time motion；不能為
+  降低總角速度而拒絕正常旋轉。
 - 論文目標是證明locomotion action能改變下一刻localization risk，而不是重新做一個SLAM
   confidence predictor。現有confidence已定義為未來0.5 s usability probability；被動資料中的
   motion-hazard關聯不等於action的causal controllability。
@@ -104,6 +212,12 @@
   為`0.826/0.616/0.399`，後兩者moving speed亦高`0.075/0.140 m/s`；兩candidate均通過FAST
   safeguard，64 runs無fall/base contact。這只授權下一步offline component-conditioned risk model，
   不代表C policy、PPO或正式claim已完成；left/right asymmetry與FAST right-curve tradeoff必須保留。
+- 第一版risk model失敗後，fresh richer identification已完成：block576 wiring為12/12
+  `WIRING_PASS`，blocks577..580六arms共96/96為development `PASS`，且沒有跨block重複的
+  arm-specific safety excess。簡化後的v2 component selector仍在LOBO gate得到`FAIL`：Brier
+  `0.257138`差於state-only `0.250483`與scalar `0.254038`，LIO selected-minus-uniform hazard
+  `+0.128289`，且選到兩個含safety event的control run。故blocks581..584保留驗證未執行，
+  action-conditioned risk signal仍不存在；live、ROS wiring、C2/PPO、default與physical全不授權。
 - V1 pilot第1個smooth cell發生fall與base contact並依當時gate停止；但單次simulation fall
   不能證明smooth-specific harm，因為同block的zero／antismooth尚未執行。該`FAIL`只對中止的
   v1 matrix有效，不能當成研究假設被否決。V2 safety semantics現已凍結，但live仍未授權；
@@ -141,6 +255,22 @@
   應改成相同untreated prefix後的短時scale pulse或等價state-restored設計，而不是增加原設計重複數。
 
 ## Current unfinished order
+
+1. The non-learning J1/J2 preflight is complete and its one-shot gates are closed. Do not rerun it or
+   alter the frozen reward/curriculum/evaluation gates based on future outcome data.
+2. Only after a separate explicit PPO authorization, run the frozen fixed-budget J1/J2 feasibility
+   training, including the common iteration-50 safety/collapse futility audit. Do not first build the
+   complete RMA teacher stack and do not select seeds by interim efficacy.
+3. Evaluate J0/J1/J2 and B on fresh original-command, matched-speed free-yaw, translation, lateral,
+   mixed and bounded-random commands; report FAST and LIO separately.
+4. Go/no-go is fixed: continue to teacher/history adaptation only if J2 adds matched-speed
+   body/LiDAR/SLAM value over J1; if only J1 works, report generic smoother locomotion without a
+   localization-aware contribution; if neither works without collapse, stop this architecture rather
+   than repeatedly changing rewards.
+5. Teacher, adaptation, production ROS wiring, default switch, physical ANYmal-D, commit and push each
+   require separate explicit authorization. Blocks581..584 and 602..605 remain forbidden.
+
+## Superseded execution history retained for traceability
 
 1. 凍結action-conditioned localization-risk intervention pilot protocol，明確定義intervention、
    matched conditions、SLAM outcome、mechanism endpoints、futility stop與資料角色。
@@ -278,6 +408,117 @@
     preserve-yaw有一block惡化；不得宣稱普遍對稱效果。Live已關閉，下一步是offline component-
     conditioned risk model與blockwise validation；PPO、default、physical均未授權。完整記錄：
     `docs/validation/slam_component_pulse_causal_v1.md`。
+19. 第一版offline component-conditioned risk model已依事前凍結gate完成，不含backend/profile/GT/
+    future label/intervention ID，使用blocks572..575 leave-one-block-out比較state-only、B-like scalar
+    與translation/yaw分離模型。Frozen decision為`FAIL`：component Brier `0.250866`，差於state-only
+    `0.245041`與scalar `0.245622`。雖然其選擇在LIO相對uniform平均risk `-0.2171`、速度
+    `+0.2528 m/s`，FAST相對control risk `0.0`且無safety event，不能用選擇結果覆蓋calibration
+    failure。Action headroom已確認，但`action_conditioned_risk_signal_available`仍false；不得接ROS、
+    C2/PPO或在相同64 runs上改gate重標PASS。下一個研究決策是fresh richer component-identification
+    blocks，或重設state representation後保留全新blocks驗證。詳細記錄：
+    `docs/validation/slam_component_risk_model_v1.md`。
+20. 使用者同意fresh richer component-identification路線後，block576完成12/12 wiring
+    `WIRING_PASS`，blocks577..580完成六arms、兩backend、左右curve共96/96 development runs並
+    得`PASS`；六次safety event沒有重複arm-specific excess。這批資料只作identification/model
+    development。事前保留blocks581..584作external validation。簡化interaction的v2 component
+    model在LOBO仍`FAIL`：component/state/scalar Brier為`0.257138/0.250483/0.254038`，LIO
+    selected-minus-uniform hazard為`+0.128289`，且兩個selected control含safety event。依凍結gate
+    未執行reserved blocks、未接ROS/C2/PPO，live已關閉。有效結論是component treatment有時有效，
+    但目前prestate無法可靠選擇新block的action；此component-model route停在研究決策點。完整記錄：
+    `docs/validation/slam_component_identification_v1.md`、
+    `docs/validation/slam_component_risk_model_v2.md`。
+21. 使用者在比較學術貢獻後正式選擇method 2：不把learned XYZ scale selector包裝成最終C，
+    改做command-preserving localization-aware low-level motor adaptation。新增ROS-independent
+    `localization_aware_residual_core.py`與凍結architecture contract：valid adapted path exact保留
+    original command、只加0.05 bounded 12-D residual；沒有有益residual時backbone-only不停車，
+    adaptation failure fallback B，invalid/stale hard stop。現有previous-action smoothing因只有3/8
+    matched sets守住speed guard，不構成low-level headroom。下一步先設計新的mechanism-specific、
+    matched-speed fresh intervention；通過後才允許RMA-inspired privileged teacher/history module，
+    再之後才可能PPO。所有訓練與live gate目前關閉。
+22. 後續釐清method 2就是原本未完成C的low-level residual分支，不是另一個新模型。舊C因
+    confidence-scaled velocity target、近期Risk v1/v2因候選action全是scales，才會反覆趨近B；
+    不能再讓新模型透過scale、停止或小碎步取得SLAM reward。Primary residual claim以相同command
+    的model1450+zero residual為對照；B與component limiter只報risk--progress tradeoff，不要求全面
+    勝過B。完整runtime可在residual不足時最小必要降速，但該效果必須與low-level貢獻分開。
+23. Residual分支的第一個fresh mechanism與decision gate已離線實作：不沿用previous-action
+    smoothing或固定joint offset，而是由允許的joint position／velocity／previous-action history
+    估計late-swing phase，再用foot XYZ Jacobian最小範數解抵消下一個20 ms tick的部分向下foot
+    displacement，同時一階horizontal target為exact zero；primary/low dose為50%/25%，完整12-D
+    residual以uniform rescale維持L-inf 0.05。Protocol先要求blocks585..596的36-run zero-residual
+    model1450 baseline凍結shuffle/posture envelope，再規劃block597 6-run wiring、598..601 72-run
+    pilot及602..605 72-run unchanged confirmation；581..584完全不排程。Core、protocol validator、
+    candidate-blind hierarchical baseline-envelope builder、matched-motion/mechanism/SLAM analyzer及
+    focused tests已完成。後續baseline execution與phase estimator結果見下一點。詳細：
+    `docs/validation/slam_low_level_touchdown_headroom_v1.md`。
+24. 使用者授權touchdown-headroom simulation baseline後，新增canonical joint/torque/foot position
+    instrumentation、model1450 ONNX trace重建、hard-safety run reducer、hash-locked baseline-only
+    release及fail-closed runner。Restricted attempt1因DDS/iceoryx/GPU/cache sandbox限制在首格前停止；
+    GPU-visible retry1完整跑首格，但因validator把正式ONNX input `obs`誤寫為`observation`而保留
+    integrity FAIL。修正為讀取graph唯一input後，retry2 blocks585..596完成36/36，三profiles各12
+    runs的command exact、model1450 parity、driver、physical-safety與record gates全通過；hierarchical
+    anti-collapse envelope已`frozen=true`，hash
+    `c9c987497fe990367388b1308fd1967dbd6ddca4e9d691fc737da81e125aad88`。接著在讀phase labels前
+    另凍結history-only estimator split/algorithm/gates：train585..592、calibration593..594、one-shot
+    holdout595..596，只用joint position/velocity/strict previous action。線性logistic+ridge v1為
+    `FAIL`且`frozen=false`：calibration precision/false-trigger為`0.6924/0.01822`（門檻
+    `>=0.90/<=0.01`），holdout precision`0.8386`；recall與progress MAE雖通過也不能救援安全性。
+    不得用holdout事後調threshold/gate，block597與所有residual effect runs完全未執行。下一步若
+    繼續phase estimator，必須事前定義不同temporal architecture並使用fresh disjoint資料驗證；
+    teacher/adaptation/PPO/ROS policy wiring/default/physical仍未授權。
+25. Phase estimator的必要性是把「怎麼改joint」與「何時安全改」分離：touchdown residual若在
+    stance或early swing誤觸發，可能造成slip、失衡、改變擺腿路徑或掉速。針對v1單frame線性
+    判斷的false activation，已實作v2 causal三狀態tracker，強制stance→early→late、禁止直接
+    stance→late，early需兩筆確認且至少追蹤三筆，late active tick仍需當下late證據、progress不得
+    明顯倒退並限制最多8 ticks。Blocks585..596全部降格為v2 development；最終development-only
+    precision/recall/false-trigger/progress-MAE為`0.9095/0.5728/0.00405/0.0921`，三profiles及四腳皆
+    有預測，但不得算正式PASS。Exact config hash為
+    `ae446427cefd634a59731cd3947d752b371cc737dd8fe67dc264cf033f11ceca`，candidate hash為
+    `8cca511eaef21ec0b32ce2b28c618d3bad6f5434788e3f06b4b2caa3907f66e7`。Fresh phase-only
+    validation已用事前排定blocks606..609、三profiles共12個exact-zero model1450 runs完成；12/12
+    integrity/safety PASS且unchanged one-shot gate PASS。Fresh aggregate precision/recall/
+    false-trigger/progress-MAE為`0.9138/0.5883/0.00394/0.1046`，各profile precision皆`>=0.8794`、
+    recall皆`>=0.5051`且四腳皆有positive prediction。已產生`frozen=true` artifact，SHA-256為
+    `943a04fbe2964fb86ec61c43e5675c469150e162913dc36c2ef4dd94767fd3cb`；phase gate允許下一步
+    block597，但execution gate已重新關閉。Blocks581..584與597仍完全未使用；residual effect、
+    teacher/adaptation/PPO/physical皆未執行／未授權。
+26. 已完成block597前可離線完成的deployable kinematics與完整pure pipeline。ANYmal-D官方USD
+    rest geometry依canonical model1450 mapping產生四腳base-frame position、per-rad與per-policy-action
+    `3x12` Jacobian及由joint velocity推算的relative foot velocity；不使用simulator foot/contact runtime
+    input。36-run/28,438-sample parity中position RMSE/max為`9.15e-7/5.68e-6 m`，vertical velocity
+    RMSE為`0.09335 m/s`，Jacobian finite-difference max error`1.53e-10 m/rad`，全部通過frozen gate。
+    原XYZ damped solve在完整replay暴露horizontal leakage `4.10e-5 m`超過事前`1e-5`契約，已依原
+    mechanism改成horizontal Jacobian null-space內解vertical damped minimum-norm；不是看SLAM outcome
+    調參。修後28,114-tick完整pipeline replay有2,128 active ticks，其餘25,986 exact-zero；command
+    全exact、residual max`0.0500000007`（float32 tolerance）、horizontal leakage降至`5.91e-10 m`、
+    vertical correction方向全正確。此為integrity PASS、effect claim=false；尚未證明realized gait、
+    body/LiDAR或SLAM效果；phase v2 fresh gate現已通過，但ROS policy wiring仍未授權。最新驗證為
+    focused 28 passed；依既有環境拆分的repository suite共515 passed、15 dependency/runtime skips，
+    publication檔另9 passed及1個預期的dirty-worktree gate failure；ROS 2 package build通過。
+27. Block597 simulation-only wiring smoke已完成。Attempt1因policy node把core正式欄位`applied_action`
+    誤寫成`adapted_action`而在第一tick崩潰，沒有形成有效behavior evidence；完整失敗輸出保留且只修
+    欄位名。Attempt2用相同block/seed/arm order完成FAST-LIO2與LIO-SAM各zero/25%/50%，6/6 integrity、
+    command exactness、residual bound、horizontal leakage及safety皆PASS，正式決策`WIRING_PASS`、
+    `claim_allowed=false`。25% arm每run有40個nonzero ticks，50% arm有35--42個，zero全exact-zero；
+    residual max分別`0.03848/0.0500000007`。50%-vs-zero moving-speed差FAST/LIO為`-0.00367/-0.00232
+    m/s`、yaw-rate差`-0.00257/+0.00136 rad/s`，沒有靠平均速度下降；但50%-vs-zero normalized-progress
+    ratio僅FAST/LIO `0.934/0.950`，是pilot前必須保留的LIMITER/behavior warning。Touchdown speed/contact/
+    body impulse有初步小幅下降，但LiDAR rotation與SLAM方向不一致：FAST hazard三arms皆0，LIO
+    50%-vs-zero hazard約`+0.0050`。單一excluded wiring block不得作effect claim；下一步是
+    blocks598..601的72-run pilot，
+    尚未授權。Execution gate已重新關閉；production ROS wiring仍未授權。
+28. Blocks598..601的72-run causal pilot已完成，72/72 raw simulations與run identities完整，無
+    treatment-specific fall/base-contact。初版decision因pure-yaw的linear-only progress/stop reducer
+    產生null而僅是integrity FAIL；v2修成yaw-distance progress後，發現anti-collapse仍誤用臨時絕對
+    cadence/switch門檻；兩版records/decisions皆保留。正式v3改用候選前已凍結且hash-locked的model1450
+    envelope，未看SLAM outcome調門檻，integrity PASS。正式決策為`INCONCLUSIVE`、`claim_allowed=false`、
+    supported strata為0。24個backend/profile/block比較中21個matched-motion、僅3個mechanism PASS、
+    6個primary arm通過全部anti-collapse，沒有任何block同時通過matched motion、mechanism、SLAM與
+    anti-collapse。FAST/LIO mixed block600等3個比較未matched，其中LIO mixed block600 progress ratio
+    僅`0.107`。Stratum mean touchdown speed只在FAST/LIO mixed略降，其餘四strata上升；SLAM hazard
+    方向亦不一致。Fresh zero arms本身常超出舊absolute shuffle/posture envelope，顯示envelope外推也
+    有限制，但即使不以此救援，mechanism repeatability仍不足。不得執行602..605 confirmation、不得
+    事後調0/25/50%或phase thresholds重標本pilot；pilot execution gate已關閉。這個touchdown family
+    尚未證明low-level causal headroom，不得進privileged teacher/adaptation/PPO。
 
 ## Detailed-record index
 

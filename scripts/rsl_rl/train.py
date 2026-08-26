@@ -43,8 +43,8 @@ parser.add_argument(
     type=Path,
     default=None,
     help=(
-        "Initialize only std and actor.* from a 48-D checkpoint; the 51-D "
-        "critic and optimizer remain freshly initialized."
+        "Initialize only std and actor.* from a 48-D checkpoint into a wider "
+        "dense actor; critic and optimizer remain freshly initialized."
     ),
 )
 parser.add_argument(
@@ -156,6 +156,11 @@ logger = logging.getLogger(__name__)
 
 import anymal_locomotion.tasks  # noqa: F401
 from anymal_locomotion.artifacts import LOG_ROOT, PROJECT_ROOT, build_run_manifest
+from anymal_locomotion.full_policy_bootstrap import (
+    bootstrap_dense_actor_state,
+    bootstrap_frozen_reference_actor_state,
+    validate_fresh_optimizer_state,
+)
 from anymal_locomotion.velocity_estimator_training import (
     VelocityEstimatorTrainingWrapper,
     validate_velocity_estimator_artifact,
@@ -181,7 +186,7 @@ def _state_sha256(state: dict[str, torch.Tensor], keys: list[str]) -> str:
 
 
 def actor_only_warm_start(policy, optimizer, source_path: Path) -> dict[str, object]:
-    """Copy the formal 48-D actor into a fresh 51-D runner."""
+    """Copy the formal 48-D actor into a fresh wider-input runner."""
     source_path = source_path.expanduser().resolve()
     checkpoint = torch.load(source_path, map_location="cpu", weights_only=False)
     source = checkpoint["model_state_dict"]
@@ -197,50 +202,45 @@ def actor_only_warm_start(policy, optimizer, source_path: Path) -> dict[str, obj
         )
     actor_keys = [name for name in target if name == "std" or name.startswith("actor.")]
     critic_keys = [name for name in target if name.startswith("critic.")]
-    if set(actor_keys) != {
-        name for name in source if name == "std" or name.startswith("actor.")
-    }:
-        raise ValueError("source and target actor parameter names differ")
     if tuple(source["actor.0.weight"].shape) != (128, 48):
         raise ValueError("source is not the expected 48-D model1450 actor")
-    if tuple(target["actor.0.weight"].shape) != (128, 51):
-        raise ValueError("target is not the expected 51-D confidence actor")
 
     critic_before = _state_sha256(target, critic_keys)
-    with torch.no_grad():
-        for name in actor_keys:
-            source_tensor = source[name].to(
-                device=target[name].device,
-                dtype=target[name].dtype,
-            )
-            if name == "actor.0.weight":
-                target[name][:, :48].copy_(source_tensor)
-                target[name][:, 48:].zero_()
-            else:
-                if tuple(source_tensor.shape) != tuple(target[name].shape):
-                    raise ValueError(f"actor parameter shape mismatch for {name}")
-                target[name].copy_(source_tensor)
+    bootstrap_report = bootstrap_dense_actor_state(source, target)
+    reference_actor_keys = [
+        name for name in target if name.startswith("reference_actor.")
+    ]
+    if reference_actor_keys:
+        bootstrap_frozen_reference_actor_state(source, target)
     critic_after = _state_sha256(policy.state_dict(), critic_keys)
     if critic_after != critic_before:
         raise RuntimeError("actor-only warm-start modified critic parameters")
-    if optimizer.state:
-        raise RuntimeError("actor-only warm-start requires a fresh optimizer")
-    if torch.count_nonzero(policy.state_dict()["actor.0.weight"][:, 48:]).item() != 0:
-        raise RuntimeError("new confidence input columns are not exactly zero")
+    validate_fresh_optimizer_state(optimizer.state)
+    target_input_dim = int(target["actor.0.weight"].shape[1])
 
     return {
         "schema_version": 1,
-        "kind": "actor_only_48_to_51_warm_start",
+        "kind": f"actor_only_48_to_{target_input_dim}_warm_start",
         "source": str(source_path),
         "source_sha256": _sha256(source_path),
         "source_iteration_ignored": int(checkpoint.get("iter", -1)),
         "target_iteration": 0,
-        "copied_parameters": actor_keys,
+        "copied_parameters": bootstrap_report["copied_parameters"],
         "actor_state_sha256": _state_sha256(policy.state_dict(), actor_keys),
+        "reference_actor_state_sha256": (
+            _state_sha256(policy.state_dict(), reference_actor_keys)
+            if reference_actor_keys
+            else None
+        ),
+        "behavior_reference_initialization": (
+            "exact_frozen_model1450_actor" if reference_actor_keys else None
+        ),
         "critic_state_sha256": critic_after,
         "critic_initialization": "fresh_runner_seeded_initialization",
         "optimizer_initialization": "fresh_empty_adam_state",
-        "new_input_columns": [48, 49, 50],
+        "source_actor_input_dimension": 48,
+        "target_actor_input_dimension": target_input_dim,
+        "new_input_columns": bootstrap_report["new_input_columns"],
         "new_input_columns_initialization": "exact_zero",
     }
 
@@ -436,6 +436,11 @@ def configure_confidence_input_adaptation(policy) -> dict[str, object]:
         raise ValueError(
             "--adapt-confidence-input-only is for the dense 51-D actor, not "
             "the bounded residual policy"
+        )
+    if int(policy.actor[0].in_features) != 51:
+        raise ValueError(
+            "--adapt-confidence-input-only is the retired 51-D warm-up mode; "
+            "it is forbidden for 1068-D full-policy joint training"
         )
     trainable = []
     frozen = []

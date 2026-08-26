@@ -1,5 +1,7 @@
 """Project-owned ANYmal-D Flat v1 environment configuration."""
 
+import torch
+
 from isaaclab.envs import mdp as isaac_mdp
 from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import EventTermCfg as EventTerm
@@ -7,11 +9,13 @@ from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils import configclass
+from isaaclab.utils.noise import UniformNoiseCfg as Unoise
 
 from isaaclab_tasks.manager_based.locomotion.velocity.config.anymal_d.flat_env_cfg import AnymalDFlatEnvCfg
 from isaaclab_tasks.manager_based.locomotion.velocity.velocity_env_cfg import (
     CurriculumCfg,
     EventCfg,
+    ObservationsCfg,
     RewardsCfg,
 )
 
@@ -283,6 +287,174 @@ class AnymalDLocomotionRecoveryV05EnvCfg(
                 heading=None,
             ),
         )
+
+
+def _joint_training_history_noise() -> Unoise:
+    """Match the legacy per-component observation corruption ranges."""
+    limits = torch.tensor(
+        [0.1] * 3
+        + [0.2] * 3
+        + [0.05] * 3
+        + [0.0] * 3
+        + [0.01] * 12
+        + [1.5] * 12
+        + [0.0] * 12
+        + [0.0] * 3,
+        dtype=torch.float32,
+    )
+    if limits.numel() != 51:
+        raise RuntimeError("joint-training history noise contract must remain 51-D")
+    return Unoise(n_min=-limits, n_max=limits)
+
+
+@configclass
+class AnymalDLocomotionJointTrainingObservationsCfg(ObservationsCfg):
+    """Current legacy 48-D input followed by 20 causal 51-D frames."""
+
+    @configclass
+    class PolicyCfg(ObservationsCfg.PolicyCfg):
+        history_frame = ObsTerm(
+            func=mdp.full_policy_history_frame,
+            params={
+                "command_name": "base_velocity",
+                "localization_mode": "actual",
+                "cycle_s": 10.0,
+                "asset_cfg": SceneEntityCfg("robot"),
+            },
+            noise=_joint_training_history_noise(),
+            history_length=20,
+            flatten_history_dim=True,
+        )
+
+    policy: PolicyCfg = PolicyCfg()
+
+
+@configclass
+class AnymalDLocomotionJointTrainingRewardsCfg(
+    AnymalDLocomotionRecoveryV05RewardsCfg
+):
+    """Original-command rewards plus body/LiDAR motion distortion objectives."""
+
+    angular_acceleration_l2 = RewTerm(
+        func=mdp.joint_training_angular_acceleration_l2,
+        weight=0.0,
+        params={"cycle_s": 10.0, "severity_gain": 1.0, "asset_cfg": SceneEntityCfg("robot")},
+    )
+    linear_jerk_l2 = RewTerm(
+        func=mdp.joint_training_linear_jerk_l2,
+        weight=0.0,
+        params={"cycle_s": 10.0, "severity_gain": 1.0, "asset_cfg": SceneEntityCfg("robot")},
+    )
+    lidar_scan_translation_distortion_l2 = RewTerm(
+        func=mdp.joint_training_lidar_scan_translation_distortion_l2,
+        weight=0.0,
+        params={
+            "scan_time_s": 0.10,
+            "cycle_s": 10.0,
+            "severity_gain": 1.0,
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
+    )
+    lidar_scan_rotation_distortion_l2 = RewTerm(
+        func=mdp.joint_training_lidar_scan_rotation_distortion_l2,
+        weight=0.0,
+        params={
+            "scan_time_s": 0.10,
+            "cycle_s": 10.0,
+            "severity_gain": 1.0,
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
+    )
+
+
+@configclass
+class AnymalDLocomotionJointTrainingCurriculumCfg(CurriculumCfg):
+    """Prespecified step gates: first retain walking, then introduce smoothness."""
+
+    terrain_levels = None
+    enable_angular_acceleration = CurrTerm(
+        func=isaac_mdp.modify_reward_weight,
+        params={"term_name": "angular_acceleration_l2", "weight": -1.0e-3, "num_steps": 600},
+    )
+    enable_lidar_translation = CurrTerm(
+        func=isaac_mdp.modify_reward_weight,
+        params={
+            "term_name": "lidar_scan_translation_distortion_l2",
+            "weight": -2.0,
+            "num_steps": 600,
+        },
+    )
+    enable_lidar_rotation = CurrTerm(
+        func=isaac_mdp.modify_reward_weight,
+        params={
+            "term_name": "lidar_scan_rotation_distortion_l2",
+            "weight": -1.0,
+            "num_steps": 600,
+        },
+    )
+    enable_linear_jerk = CurrTerm(
+        func=isaac_mdp.modify_reward_weight,
+        params={"term_name": "linear_jerk_l2", "weight": -1.0e-5, "num_steps": 1200},
+    )
+    enable_joint_limit_guard = CurrTerm(
+        func=isaac_mdp.modify_reward_weight,
+        params={"term_name": "dof_pos_limits", "weight": -1.0, "num_steps": 0},
+    )
+
+
+@configclass
+class AnymalDLocomotionJointTrainingEnvCfg(AnymalDLocomotionRecoveryV05EnvCfg):
+    """Shared J1/J2 environment; no route replay and no command scaling."""
+
+    observations: AnymalDLocomotionJointTrainingObservationsCfg = (
+        AnymalDLocomotionJointTrainingObservationsCfg()
+    )
+    rewards: AnymalDLocomotionJointTrainingRewardsCfg = (
+        AnymalDLocomotionJointTrainingRewardsCfg()
+    )
+    curriculum: AnymalDLocomotionJointTrainingCurriculumCfg = (
+        AnymalDLocomotionJointTrainingCurriculumCfg()
+    )
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.commands.base_velocity = mdp.EdgeBiasedVelocityCommandCfg(
+            asset_name="robot",
+            resampling_time_range=(4.0, 8.0),
+            rel_standing_envs=0.10,
+            rel_heading_envs=0.0,
+            heading_command=False,
+            debug_vis=True,
+            edge_probability=0.55,
+            ranges=mdp.EdgeBiasedVelocityCommandCfg.Ranges(
+                lin_vel_x=(-2.0, 3.0),
+                lin_vel_y=(-1.5, 1.5),
+                ang_vel_z=(-2.0, 2.0),
+                heading=None,
+            ),
+        )
+        joint_names = list(CANONICAL_JOINT_ORDER)
+        self.observations.policy.history_frame.params["asset_cfg"] = SceneEntityCfg(
+            "robot", joint_names=joint_names, preserve_order=True
+        )
+
+
+@configclass
+class AnymalDLocomotionJointTrainingJ1EnvCfg(AnymalDLocomotionJointTrainingEnvCfg):
+    """Generic history fine-tuning comparator with neutral localization."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.observations.policy.history_frame.params["localization_mode"] = "neutral"
+
+
+@configclass
+class AnymalDLocomotionJointTrainingJ2EnvCfg(AnymalDLocomotionJointTrainingEnvCfg):
+    """Localization-aware history fine-tuning arm with original commands."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.observations.policy.history_frame.params["localization_mode"] = "actual"
 
 
 @configclass

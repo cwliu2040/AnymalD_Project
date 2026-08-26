@@ -68,4 +68,7 @@ def test_c2_contract_reuses_requested_command_rewards_and_keeps_training_closed(
     assert evaluation["fastlio2"]["superiority_required"] is False
     assert evaluation["liosam"]["minimum_improved_degraded_strata"] == 1
     assert config["optimization"]["ppo_training_authorized"] is False
-    assert config["gates"]["short_pulse_headroom_passed"] is False
+    assert config["gates"]["short_pulse_headroom_passed"] is True
+    assert config["gates"]["richer_component_identification_passed"] is True
+    assert config["gates"]["offline_component_risk_model_blockwise_gate_passed"] is False
+    assert config["gates"]["action_conditioned_risk_signal_available"] is False

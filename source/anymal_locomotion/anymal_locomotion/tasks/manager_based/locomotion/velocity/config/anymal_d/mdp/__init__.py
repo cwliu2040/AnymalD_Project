@@ -9,6 +9,13 @@ from .commands import (
     RecoveryV05VelocityCommandCfg,
 )
 from .events import validate_anymal_d_joint_contract
+from .joint_training import (
+    full_policy_history_frame,
+    joint_training_angular_acceleration_l2,
+    joint_training_lidar_scan_rotation_distortion_l2,
+    joint_training_lidar_scan_translation_distortion_l2,
+    joint_training_linear_jerk_l2,
+)
 from .rewards import (
     confidence_gait_action_rate_l2,
     confidence_degradation_feet_slide,

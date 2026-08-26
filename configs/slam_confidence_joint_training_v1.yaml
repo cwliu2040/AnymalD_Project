@@ -1,0 +1,266 @@
+schema_version: 1
+protocol_id: slam-confidence-joint-training-v1
+status: static_training_stack_implemented_simulation_preflight_closed
+date: 2026-08-26
+
+research_question: >-
+  Can a full locomotion policy initialized from model1450 use deployable localization history to
+  reduce unnecessary body and LiDAR motion and future SLAM failure while preserving the exact
+  original requested command, realized motion, progress, gait quality, and physical safety?
+
+comparators:
+  J0:
+    policy: recovery_v0.4.0_model1450
+    observation_dimension: 48
+    training: none
+  J1:
+    role: generic_vibration_aware_full_policy
+    initialization: exact_model1450_actor
+    current_observation: exact_legacy_48d
+    history:
+      length: 20
+      rate_hz: 50
+      horizon_s: 0.40
+      frame_dimension: 51
+      localization_channels: constant_healthy_neutral_[1,1,0]
+    full_observation_dimension: 1068
+  J2:
+    role: localization_aware_full_policy
+    initialization: exact_model1450_actor
+    current_observation: exact_legacy_48d
+    history:
+      length: 20
+      rate_hz: 50
+      horizon_s: 0.40
+      frame_dimension: 51
+      localization_channels: backend_neutral_confidence_validity_age
+    full_observation_dimension: 1068
+  B:
+    role: deterministic_invalid_stale_safety_and_risk_progress_baseline
+    primary_contribution: false
+
+observation_contract:
+  history_order: oldest_to_newest
+  startup_padding: repeat_oldest_available_causal_frame
+  per_frame_terms:
+    - {name: legacy_observation, dimension: 48}
+    - {name: localization_state, dimension: 3, components: [confidence, tracking_valid, normalized_age]}
+  exact_original_command_offsets_current_and_history: [9, 10, 11]
+  requested_command_scaling_allowed: false
+  j1_j2_equal_proprioceptive_history: true
+  j1_j2_equal_network_input_width: true
+  runtime_forbidden:
+    - ground_truth
+    - future_label
+    - backend_id
+    - intervention_id
+    - route_phase
+    - hardcoded_turn_timer
+
+initialization_and_anchoring:
+  source_checkpoint: checkpoints/anymal_d_locomotion_v1/recovery_v0.4.0/model_1450.pt
+  source_actor_input_dimension: 48
+  target_actor_input_dimension: 1068
+  target_first_layer_columns_0_47: exact_source_copy
+  target_first_layer_columns_48_1067: exact_zero
+  remaining_actor_layers_and_action_noise: exact_source_copy
+  action_noise_after_bootstrap: frozen_exact_model1450
+  critic: fresh_seeded_initialization
+  optimizer: fresh_empty_state
+  behavior_reference: frozen_model1450_actor
+  behavior_anchor_coefficient: 0.25
+  behavior_anchor_epochs_per_ppo_update: 1
+  behavior_anchor_mini_batches: 4
+  behavior_anchor_applied_equally_to_j1_j2: true
+  healthy_localization_anchor_required: true
+  degraded_localization_anchor_remains_nonzero: true
+  old_c_model48_initialization_forbidden: true
+
+reward_contract:
+  source_stack: AnymalDLocomotionRecoveryV05RewardsCfg
+  requested_linear_target: exact_original_command
+  requested_yaw_target: exact_original_command
+  confidence_scaled_target_forbidden: true
+  invalid_motion_penalty_that_overrides_requested_motion_forbidden: true
+  duplicate_velocity_tracking_reward_forbidden: true
+  dense_motion_terms:
+    - roll_pitch_rate
+    - yaw_tracking_error
+    - linear_tracking_error
+    - angular_acceleration
+    - linear_acceleration_and_jerk
+    - lidar_scan_translation_error_proxy
+    - lidar_scan_rotation_error_proxy
+  safety_and_gait_terms:
+    - action_rate
+    - joint_acceleration
+    - torque_and_energy
+    - feet_slide
+    - cadence
+    - contact_switch_rate
+    - stance_width
+    - foot_clearance
+    - joint_margin
+    - fall_and_base_contact
+  raw_slam_confidence_as_only_reward_forbidden: true
+  simulation_privileged_signals_allowed:
+    - future_slam_usability
+    - ground_truth_drift
+    - point_support
+    - slam_internal_diagnostics
+  privileged_signals_exposed_to_actor: false
+  implemented_motion_weights_after_curriculum:
+    angular_acceleration_l2: -0.001
+    linear_jerk_l2: -0.00001
+    lidar_scan_translation_distortion_l2: -2.0
+    lidar_scan_rotation_distortion_l2: -1.0
+    joint_position_limit_violation: -1.0
+  constant_requested_translation_penalized_by_new_motion_terms: false
+  constant_requested_yaw_rate_penalized_by_new_motion_terms: false
+
+curriculum:
+  fixed_feasibility_budget_before_any_run: true
+  command_distribution:
+    free_yaw: true
+    forward_reverse: true
+    lateral: true
+    mixed_translation_yaw: true
+    bounded_random: true
+    standing_fraction_maximum: 0.15
+  model1450_anchor_relaxation_may_not_reach_zero: true
+  reward_or_gate_changes_after_j1_j2_outcome_forbidden: true
+  stages_common_to_j1_j2:
+    step_0:
+      active: [model1450_behavior_anchor, original_recovery_v0.5_reward_stack, joint_position_limit_guard]
+    step_600:
+      activate: [angular_acceleration_l2, lidar_scan_translation_distortion_l2, lidar_scan_rotation_distortion_l2]
+    step_1200:
+      activate: [linear_jerk_l2]
+
+training_budget:
+  execution_authorized: false
+  arms: [J1, J2]
+  independent_training_seeds: [1450, 1451, 1452]
+  num_environments_per_seed: 4096
+  rollout_steps_per_environment: 24
+  maximum_iterations_per_seed: 300
+  common_interim_safety_audit_iteration: 50
+  cherry_pick_seed_for_formal_evaluation_forbidden: true
+  j1_j2_equal_environment_steps_required: true
+  interim_stop_only_for:
+    - nonfinite_state_action_or_loss
+    - fall_or_base_contact_excess
+    - stop_collapse
+    - shuffle_collapse
+    - posture_collapse
+    - limiter_collapse
+  interim_efficacy_selection_forbidden: true
+
+nonlearning_preflight:
+  execution_authorized: false
+  task_arms: [J1, J2]
+  seed: 1450
+  num_environments: 8
+  total_steps: 100
+  reward_scale_warmup_steps: 25
+  source_checkpoint: checkpoints/anymal_d_locomotion_v1/recovery_v0.4.0/model_1450.pt
+  expected_policy_observation_dimension: 1068
+  expected_action_dimension: 12
+  expected_policy_rate_hz: 50.0
+  maximum_runtime_bootstrap_action_parity_abs: 0.000001
+  required_term_layout:
+    - [base_lin_vel, 3]
+    - [base_ang_vel, 3]
+    - [projected_gravity, 3]
+    - [velocity_commands, 3]
+    - [joint_pos, 12]
+    - [joint_vel, 12]
+    - [actions, 12]
+    - [history_frame, 1020]
+  maximum_new_reward_projected_p99_abs_per_step: 1.0
+  maximum_new_reward_projected_max_abs_per_step: 5.0
+  hard_requirements:
+    - runtime_model1450_bootstrap_action_parity_within_frozen_numeric_tolerance
+    - exact_original_current_command
+    - exact_history_buffer_flattening
+    - exact_j1_neutral_localization
+    - valid_j2_localization_contract
+    - finite_observation_action_reward_and_raw_terms
+    - no_termination_or_truncation
+    - reward_scale_below_frozen_limits
+
+future_evaluation:
+  curved_route_progress: accumulated_command_aligned_not_endpoint_projection
+  pure_yaw_progress: accumulated_signed_command_aligned_yaw
+  body_lidar_alignment: observed_localization_transition_plus_0.50_s
+  body_lidar_event_window_s: 0.50
+  lidar_scan_time_s: 0.10
+  gait_safety: paired_noninferiority_plus_absolute_physical_limits
+  frames_as_independent_replicates: false
+  matched_motion:
+    maximum_abs_moving_linear_speed_difference_mps: 0.05
+    maximum_abs_realized_yaw_rate_difference_radps: 0.05
+    minimum_linear_progress_ratio: 0.98
+    minimum_yaw_progress_ratio: 0.98
+    maximum_stopped_fraction_excess: 0.00
+    minimum_comparator_requested_progress_fraction: 0.50
+    maximum_candidate_stopped_fraction: 0.10
+  directional_gate:
+    minimum_improvement_fraction: 0.05
+    maximum_regression_fraction: 0.10
+    slam_required_improvements: 1
+  slam_metric_directions:
+    future_unusable_fraction: lower
+    ground_truth_drift_m: lower
+    point_support: higher
+  paired_noninferiority_metrics:
+    cadence_hz: {mode: upper_relative, tolerance: 0.10}
+    contact_switch_rate_hz: {mode: upper_relative, tolerance: 0.10}
+    duty_factor: {mode: two_sided_difference, tolerance: 0.05, absolute_minimum: 0.35, absolute_maximum: 0.75}
+    body_height_m: {mode: lower_difference, tolerance: 0.03, absolute_minimum: 0.45}
+    stance_width_m: {mode: two_sided_difference, tolerance: 0.03, absolute_minimum: 0.30, absolute_maximum: 0.60}
+    minimum_joint_margin_rad: {mode: lower_difference, tolerance: 0.05, absolute_minimum: 0.00}
+    foot_clearance_m: {mode: lower_difference, tolerance: 0.01, absolute_minimum: 0.00}
+    torque_rms_nm: {mode: upper_relative, tolerance: 0.10}
+    energy_per_progress: {mode: upper_relative, tolerance: 0.10}
+    stance_foot_slip_rms_mps: {mode: upper_difference, tolerance: 0.05}
+    stopped_fraction: {mode: upper_difference, tolerance: 0.00}
+  absolute_hard_failures:
+    fall: false
+    base_contact: false
+    nonfinite_state_or_action: false
+    actuator_limit_violation: false
+
+go_no_go:
+  unit: backend_profile_block
+  repeated_blocks_per_stratum: 4
+  minimum_supported_blocks_in_one_stratum: 3
+  block_support_all_required:
+    - integrity_passed
+    - matched_motion_passed
+    - body_lidar_passed
+    - slam_direction_passed
+    - anti_collapse_passed
+    - no_safety_event_excess
+  outcomes:
+    J2_over_J1_supported: LOCALIZATION_AWARE_HEADROOM_CONTINUE_TO_TEACHER_ADAPTATION
+    J1_over_J0_only_supported: GENERIC_SMOOTHER_LOCOMOTION_ONLY
+    neither_supported: STOP_FULL_POLICY_JOINT_TRAINING_ROUTE
+  pooled_backend_rescue_forbidden: true
+  posthoc_gate_change_forbidden: true
+
+execution_gates:
+  static_contract_complete: true
+  training_environment_wiring_complete: true
+  model1450_1068d_bootstrap_verified: true
+  behavior_anchoring_algorithm_verified: true
+  reward_wiring_verified: true
+  evaluation_runner_verified: true
+  nonlearning_preflight_authorized: false
+  nonlearning_preflight_passed: true
+  ppo_training_authorized: false
+  live_ros_wiring_authorized: false
+  default_switch_authorized: false
+  physical_robot_authorized: false
+  blocks_581_584_allowed: false
+  touchdown_blocks_602_605_allowed: false
