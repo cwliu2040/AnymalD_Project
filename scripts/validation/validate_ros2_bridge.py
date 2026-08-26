@@ -841,6 +841,7 @@ def _diagnostic_sample(
     robot_foot_ids: list[int],
     contact_foot_ids: list[int],
     base_contact_id: int,
+    canonical_joint_indices: tuple[int, ...],
     time_s: float,
     command: np.ndarray,
     terminated: bool,
@@ -867,6 +868,26 @@ def _diagnostic_sample(
         .numpy()
         .astype(np.float64)
     )
+    foot_positions = (
+        robot.data.body_pos_w[0, robot_foot_ids]
+        .detach()
+        .cpu()
+        .numpy()
+        .astype(np.float64)
+    )
+    base_position = (
+        robot.data.root_pos_w[0].detach().cpu().numpy().astype(np.float64)
+    )
+    w, x, y, z = quaternion
+    rotation = np.asarray(
+        (
+            (1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)),
+            (2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)),
+            (2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)),
+        ),
+        dtype=np.float64,
+    )
+    foot_positions_body = (rotation.T @ (foot_positions - base_position).T).T
     contact_forces = (
         contact_sensor.data.net_forces_w[0, contact_foot_ids]
         .detach()
@@ -891,6 +912,8 @@ def _diagnostic_sample(
             "normal_force_n": abs(float(force[2])),
             "tangential_force_n": float(np.linalg.norm(force[:2])),
             "velocity_w_mps": velocity.astype(float).tolist(),
+            "position_w_m": foot_positions[index].astype(float).tolist(),
+            "position_b_m": foot_positions_body[index].astype(float).tolist(),
             "tangential_speed_mps": float(np.linalg.norm(velocity[:2])),
         }
     return {
@@ -900,14 +923,31 @@ def _diagnostic_sample(
         "actual_linear_velocity_body_mps": (
             actual_linear_velocity_body.astype(float).tolist()
         ),
-        "base_position_w_m": (
-            robot.data.root_pos_w[0]
+        "actual_angular_velocity_body_radps": (
+            robot.data.root_ang_vel_b[0]
             .detach()
             .cpu()
             .numpy()
             .astype(float)
             .tolist()
         ),
+        "joint_position_rad": (
+            robot.data.joint_pos[0, list(canonical_joint_indices)]
+            .detach().cpu().numpy().astype(float).tolist()
+        ),
+        "joint_velocity_radps": (
+            robot.data.joint_vel[0, list(canonical_joint_indices)]
+            .detach().cpu().numpy().astype(float).tolist()
+        ),
+        "joint_acceleration_radps2": (
+            robot.data.joint_acc[0, list(canonical_joint_indices)]
+            .detach().cpu().numpy().astype(float).tolist()
+        ),
+        "applied_joint_torque_nm": (
+            robot.data.applied_torque[0, list(canonical_joint_indices)]
+            .detach().cpu().numpy().astype(float).tolist()
+        ),
+        "base_position_w_m": base_position.astype(float).tolist(),
         "base_height_m": float(robot.data.root_pos_w[0, 2].item()),
         "roll_rad": roll,
         "pitch_rad": pitch,
@@ -1254,6 +1294,24 @@ def main() -> None:
             }
         )
         canonical_joint_indices = validate_runtime_joint_names(robot.joint_names)
+        diagnostic_metadata.update(
+            {
+                "joint_order": list(CANONICAL_JOINT_ORDER),
+                "joint_position_limits_rad": (
+                    robot.data.soft_joint_pos_limits[
+                        0, list(canonical_joint_indices)
+                    ]
+                    .detach()
+                    .cpu()
+                    .numpy()
+                    .astype(float)
+                    .tolist()
+                ),
+                "policy_action_scale_rad": float(
+                    POLICY_CONTRACT["action"]["scale"]
+                ),
+            }
+        )
         if transplant is not None and transplant.action_history:
             if transplant.replay_spawn is None:
                 raise RuntimeError(
@@ -1775,6 +1833,7 @@ def main() -> None:
                     robot_foot_ids=robot_foot_ids,
                     contact_foot_ids=contact_foot_ids,
                     base_contact_id=base_contact_ids[0],
+                    canonical_joint_indices=canonical_joint_indices,
                     time_s=(step_index + 1) * base_env.step_dt,
                     command=command_for_step,
                     terminated=bool(step_terminated),

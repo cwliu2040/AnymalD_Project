@@ -1,0 +1,164 @@
+schema_version: 1
+candidate_id: slam-localization-aware-motor-adaptation-c3-v1
+status: architecture_phase1_complete_low_level_headroom_unproven
+date: 2026-08-24
+
+research_claim:
+  name: command_preserving_localization_aware_motor_adaptation
+  question: >-
+    Can bounded low-level gait or joint-action adaptation improve future SLAM
+    usability while preserving the original requested command, realized speed,
+    progress, and locomotion safety?
+  velocity_limiter_as_primary_contribution: false
+  locomotion_as_active_sensing: true
+
+architecture:
+  frozen_backbone: model1450
+  initialize_from_old_c_model48: false
+  valid_adapted_command: exact_original_requested_command
+  residual_module_command_scaling_allowed: false
+  output: bounded_12d_joint_action_residual
+  residual_linf_limit: 0.05
+  no_beneficial_residual_behavior: original_command_plus_exact_zero_residual
+  adaptation_missing_uncertain_or_invalid_behavior: exact_arm_b_soft_fallback
+  slam_invalid_or_stale_behavior: exact_zero_hard_stop
+  full_system_governor:
+    residual_first_at_scale_one: true
+    minimal_necessary_slowdown_allowed_when_scale_one_is_infeasible: true
+    slowdown_must_be_logged_separately_from_residual_contribution: true
+    force_command_tracking_when_unsafe_forbidden: true
+
+rma_inspiration:
+  direct_copy_of_rma: false
+  privileged_teacher:
+    training_only: true
+    may_use:
+      - future_slam_usability_label
+      - ground_truth_drift
+      - point_support_schedule
+      - slam_internal_diagnostics
+      - realized_intervention_outcome
+  localization_dynamics_latent:
+    purpose: summarize_action_sensitivity_not_route_phase
+    hardcoded_turn_timer_forbidden: true
+    backend_id_runtime_input_forbidden: true
+    intervention_id_runtime_input_forbidden: true
+  adaptation_module:
+    runtime_inputs:
+      - slam_confidence_history
+      - tracking_valid_and_age_history
+      - requested_command_xyz_history
+      - base_motion_history
+      - joint_motion_history
+      - previous_action_history
+    route_phase_input_forbidden: true
+    obstacle_or_planner_state_required: false
+
+reward_and_constraints:
+  reuse_existing_locomotion_reward_stack: true
+  velocity_tracking_target: original_requested_command
+  confidence_scaled_velocity_target_forbidden: true
+  duplicate_velocity_reward_forbidden: true
+  future_slam_term_requires_low_level_headroom_gate: true
+  stopped_fraction_excess_vs_zero_residual_maximum: 0.0
+  safety_events_excess_vs_zero_residual_maximum: 0
+  b_is_reported_reference_not_universal_pass_fail_gate: true
+  commanded_mean_motion_must_not_be_confused_with_unwanted_vibration: true
+
+anti_collapse:
+  stop_collapse:
+    requested_motion_but_no_progress: fail
+    stopped_fraction_excess_vs_zero_residual: fail
+  shuffle_collapse:
+    metrics: [stride_length, cadence, duty_factor, contact_switch_rate, swing_duration]
+    bounds_source: frozen_model1450_matched_command_distribution
+    pathological_small_step_high_frequency_behavior: fail
+  posture_collapse:
+    metrics: [body_height, stance_width, joint_margin, foot_clearance, torque, energy, slip]
+    unsafe_or_materially_degraded_behavior: fail
+  limiter_collapse:
+    residual_claim_from_command_or_realized_speed_reduction: fail
+    equivalent_to_b_or_component_scaler_without_low_level_mechanism: fail
+  body_sensor_motion:
+    preserve_commanded_mean_linear_and_yaw_motion: true
+    target_unwanted_components:
+      - roll_pitch_oscillation
+      - yaw_rate_error_and_high_frequency_oscillation
+      - linear_acceleration_and_jerk
+      - angular_acceleration_and_jerk
+      - lidar_scan_time_translation_and_rotation
+
+baselines:
+  - model1450
+  - arm_b_uniform_confidence_limiter
+  - learned_oracle_component_velocity_limiter
+  - old_c_model48
+  - model1450_plus_exact_zero_residual
+
+low_level_headroom_gate:
+  existing_previous_action_smoothing_disposition: insufficient_not_reused_as_success
+  existing_speed_guard_passed_groups: 3
+  existing_total_groups: 8
+  first_fresh_mechanism:
+    protocol: configs/slam_low_level_touchdown_headroom_v1.yaml
+    family: deployable_history_phase_touchdown_displacement_shaping
+    mechanism_and_gate_frozen: true
+    history_phase_estimator_frozen: true
+    history_phase_estimator_v1_disposition: FAIL_not_frozen_false_activation_gate
+    history_phase_tracker_v2:
+      family: causal_stance_early_swing_late_swing_state_tracker
+      development_candidate_frozen: true
+      fresh_validation_passed: true
+      frozen_artifact: exported/slam_low_level_touchdown_phase_tracker_v2/frozen.json
+      frozen_artifact_sha256: 943a04fbe2964fb86ec61c43e5675c469150e162913dc36c2ef4dd94767fd3cb
+      runtime_deployable: true
+      fresh_validation_blocks: [606, 607, 608, 609]
+      fresh_validation_completed_runs: 12
+      direct_stance_to_late_transition_allowed: false
+    deployable_kinematics:
+      config: configs/anymal_d_frozen_kinematics_v1.yaml
+      validation: docs/validation/anymal_d_frozen_kinematics_v1.json
+      frozen: true
+      simulator_foot_state_runtime_input: false
+    complete_touchdown_pipeline_static_validation:
+      report: docs/validation/slam_low_level_touchdown_pipeline_v1.json
+      passed: true
+      effect_claim_allowed: false
+    model1450_anti_collapse_envelope_frozen: true
+    model1450_anti_collapse_envelope_sha256: c9c987497fe990367388b1308fd1967dbd6ddca4e9d691fc737da81e125aad88
+    baseline_execution_completed_runs: 36
+    wiring_smoke_completed_runs: 6
+    wiring_smoke_decision: WIRING_PASS
+    residual_effect_execution_completed_runs: 72
+    residual_effect_pilot_decision: INCONCLUSIVE
+    residual_effect_supported_strata: 0
+    any_execution_completed: true
+  fresh_success_all_required:
+    exact_original_command_on_valid_path: true
+    repeatable_joint_or_gait_mechanism: true
+    maximum_absolute_moving_speed_difference_vs_zero_mps: 0.05
+    minimum_progress_ratio_vs_zero: 0.98
+    minimum_backend_profile_strata_with_repeated_improvement: 1
+    no_excess_fall_or_base_contact: true
+    no_stop_shuffle_posture_or_limiter_collapse: true
+  reporting_required:
+    backends_reported_separately: true
+    arm_b_risk_progress_tradeoff: true
+    component_limiter_risk_progress_tradeoff: true
+    superiority_to_arm_b_required: false
+    pooled_backend_rescue_forbidden: true
+  pass_next_step: train_privileged_teacher_then_history_adaptation_module
+  fail_next_step: stop_low_level_motor_adaptation_claim_retain_limiter_as_baseline
+
+boundaries:
+  existing_blocks_542_through_580_are_development_or_retired: true
+  blocks_581_through_584_untouched: true
+  fresh_mechanism_and_gate_frozen: true
+  fresh_protocol_execution_ready: false
+  live_execution_authorized: false
+  privileged_teacher_training_authorized: false
+  adaptation_module_training_authorized: false
+  ppo_training_authorized: false
+  ros_policy_wiring_authorized: false
+  default_switch_authorized: false
+  physical_robot_authorized: false

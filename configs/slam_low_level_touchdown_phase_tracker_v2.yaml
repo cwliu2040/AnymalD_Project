@@ -1,0 +1,78 @@
+schema_version: 1
+estimator_id: slam-low-level-touchdown-phase-tracker-v2
+status: development_candidate_frozen_pending_fresh_blocks_606_through_609
+date: 2026-08-24
+purpose: prevent_unsafe_early_touchdown_residual_activation
+data_roles:
+  development_only:
+    baseline_root: outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope
+    blocks: [585, 586, 587, 588, 589, 590, 591, 592, 593, 594, 595, 596]
+    prior_v1_holdout_is_now_contaminated_and_not_validation: true
+  fresh_validation:
+    blocks: [606, 607, 608, 609]
+    profiles: [mixed_curve_bounded, pure_yaw_bounded, lateral_translation_bounded]
+    expected_run_count: 12
+    exact_zero_residual_model1450_only: true
+    may_tune_v2: false
+inputs:
+  history_offsets_samples_newest_first: [0, 2, 4, 6, 8]
+  terms_per_offset: [joint_position, joint_velocity, previous_action]
+  previous_action_is_strictly_previous_sample: true
+  runtime_forbidden:
+    - contact_truth
+    - foot_velocity_truth
+    - ground_truth
+    - command_profile
+    - backend_id
+    - route_phase
+    - future_label
+labels_offline_only:
+  contact_force_threshold_n: 50.0
+  transition_confirmation_samples: 2
+  states: [stance, early_swing, late_swing]
+  late_swing_progress_minimum: 0.70
+model:
+  classifier: independent_per_foot_three_state_l2_logistic_regression
+  logistic_c: 1.0
+  logistic_solver: lbfgs
+  logistic_max_iterations: 2000
+  class_weight: none
+  progress_regressor: independent_per_foot_l2_ridge
+  ridge_alpha: 1.0
+tracker:
+  stance_state: 0
+  early_swing_state: 1
+  late_swing_state: 2
+  early_enter_probability: 0.55
+  early_enter_maximum_progress: 0.60
+  late_enter_probability: 0.50
+  late_hold_probability: 0.50
+  stance_reset_probability: 0.70
+  early_transition_confirmation_samples: 2
+  late_transition_confirmation_samples: 1
+  stance_reset_confirmation_samples: 2
+  minimum_early_swing_samples_before_late: 3
+  maximum_progress_regression_per_sample: 0.08
+  maximum_late_state_samples: 8
+  stance_to_late_transition_allowed: false
+  late_activation_requires_monotonic_progress: true
+  malformed_or_unfrozen_artifact_behavior: invalid_zero_eligibility
+fresh_validation_gates:
+  aggregate_minimum_late_swing_precision: 0.90
+  aggregate_maximum_false_trigger_fraction: 0.01
+  aggregate_minimum_late_swing_recall: 0.35
+  aggregate_maximum_swing_progress_mae: 0.15
+  each_profile_minimum_late_swing_precision: 0.85
+  each_profile_minimum_late_swing_recall: 0.20
+  all_four_feet_must_have_positive_predictions: true
+  no_threshold_model_or_tracker_change_after_fresh_validation: true
+  failure_disposition: stop_v2_do_not_execute_block_597
+boundaries:
+  development_report_is_not_validation: true
+  candidate_artifact_is_not_runtime_usable: true
+  block_597_execution_authorized: false
+  effect_execution_authorized: false
+  teacher_training_authorized: false
+  adaptation_training_authorized: false
+  ppo_training_authorized: false
+  physical_robot_authorized: false

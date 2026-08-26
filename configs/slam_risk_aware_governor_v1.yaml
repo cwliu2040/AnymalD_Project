@@ -1,6 +1,6 @@
 schema_version: 1
 governor_id: slam-risk-aware-governor-v1-phase1
-status: interface_skeleton_only_no_model_no_live_authorization
+status: retained_component_velocity_limiter_baseline_v2_model_gate_failed
 
 architecture:
   formal_locomotion_policy: model1450
@@ -33,4 +33,12 @@ boundaries:
   ppo_training_allowed: false
   live_execution_authorized: false
   candidate_risk_model_present: false
+  offline_component_model_attempted: true
+  richer_component_identification_passed: true
+  offline_component_model_v2_attempted: true
+  offline_component_model_gate_passed: false
+  reserved_external_validation_executed: false
   default_switch_authorized: false
+successor:
+  candidate: slam-localization-aware-motor-adaptation-c3-v1
+  governor_role: comparison_baseline_and_legacy_b_fallback_not_primary_claim

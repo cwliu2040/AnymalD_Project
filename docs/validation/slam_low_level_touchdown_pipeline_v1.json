@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "kind": "slam_low_level_touchdown_pipeline_static_validation",
+  "passed": true,
+  "effect_claim_allowed": false,
+  "config_path": "configs/slam_low_level_touchdown_pipeline_validation_v1.yaml",
+  "config_sha256": "49a4c0020e52466b77afa6f2cccafadd56042181ac13f0d139272c8b375a1e2d",
+  "checks": {
+    "active_tick_count": true,
+    "residual_bound": true,
+    "horizontal_first_order": true,
+    "vertical_correction_direction": true,
+    "original_command_bit_exact": true,
+    "noneligible_exact_zero": true
+  },
+  "total_tick_count": 28114,
+  "active_tick_count": 2128,
+  "active_tick_fraction": 0.07569182613644447,
+  "maximum_residual_linf": 0.05000000074505806,
+  "maximum_horizontal_first_order_m": 5.912501217786303e-10,
+  "minimum_vertical_correction_m": 1.1119558058215824e-08,
+  "mode_counts": {
+    "valid_no_eligible_foot_exact_zero_residual": 25986,
+    "valid_touchdown_residual": 2128
+  },
+  "phase_candidate_frozen": false,
+  "runtime_simulator_foot_or_contact_input_used": false
+}

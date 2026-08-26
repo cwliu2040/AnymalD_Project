@@ -25,6 +25,16 @@ COMPONENT_SCALES = (
     (0.75, 0.75, 1.0),
     (1.0, 1.0, 0.75),
 )
+IDENTIFICATION_ARMS = (
+    "control", "uniform_075",
+    "reduce_translation_075", "reduce_translation_0875",
+    "reduce_yaw_075", "reduce_yaw_0875",
+)
+IDENTIFICATION_SCALES = (
+    (1.0, 1.0, 1.0), (0.75, 0.75, 0.75),
+    (0.75, 0.75, 1.0), (0.875, 0.875, 1.0),
+    (1.0, 1.0, 0.75), (1.0, 1.0, 0.875),
+)
 
 
 def _sha256(path: Path) -> str:
@@ -78,6 +88,12 @@ def validate_protocol(protocol: dict[str, Any]) -> dict[str, Any]:
         vectors = tuple(tuple(float(x) for x in v) for v in treatment["arms"].values())
         if vectors != COMPONENT_SCALES:
             failures.append("component pulse arms do not match the frozen XYZ vectors")
+    elif arm_names == IDENTIFICATION_ARMS:
+        vectors = tuple(tuple(float(x) for x in v) for v in treatment["arms"].values())
+        if vectors != IDENTIFICATION_SCALES:
+            failures.append("identification arms do not match the frozen two-level XYZ design")
+        if treatment.get("design_kind") != "component_identification_two_level_v1":
+            failures.append("component identification design kind is not frozen")
     else:
         failures.append("unsupported pulse arm set")
     if treatment.get("untreated_prefix_required") is not True or treatment.get("post_pulse_recovery_required") is not True:
@@ -143,6 +159,16 @@ def validate_protocol(protocol: dict[str, Any]) -> dict[str, Any]:
             failures.append("at least one component candidate must be required")
         if comparison.get("fastlio2_role") != "noninferiority_safeguard":
             failures.append("FAST-LIO2 must remain a component safeguard")
+    elif arm_names == IDENTIFICATION_ARMS:
+        identification = decision_gate.get("component_identification", {})
+        if identification.get("training_dataset_only") is not True:
+            failures.append("identification data must remain training/development only")
+        if identification.get("reserved_validation_blocks") != [581, 582, 583, 584]:
+            failures.append("fresh validation blocks must remain reserved")
+        if int(identification.get("minimum_distinct_targets_per_stratum", 0)) != 2:
+            failures.append("identification strata must require target variation")
+        if identification.get("no_post_outcome_exclusion") is not True:
+            failures.append("identification must retain every outcome")
     else:
         headroom = decision_gate.get("ceiling_aware_headroom", {})
         if headroom.get("primary_improvement_backend") != "liosam":

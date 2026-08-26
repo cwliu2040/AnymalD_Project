@@ -1,0 +1,45 @@
+schema_version: 1
+kinematics_id: anymal-d-official-usd-foot-kinematics-v1
+status: frozen_geometry_trace_parity_passed
+source:
+  robot: ANYmal-D
+  official_usd_uri: https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1/Isaac/IsaacLab/Robots/ANYbotics/ANYmal-D/anymal_d.usd
+  isaac_sim_version: 5.1.0
+frames:
+  input_joint_position: model1450_canonical_joint_order
+  output_foot_position: base
+  output_jacobian: base
+joint_order: [LF_HAA, LH_HAA, RF_HAA, RH_HAA, LF_HFE, LF_KFE, LH_HFE, LH_KFE, RF_HFE, RF_KFE, RH_HFE, RH_KFE]
+foot_order: [LF_FOOT, RF_FOOT, LH_FOOT, RH_FOOT]
+policy_action_scale_rad: 0.5
+legs:
+  LF_FOOT:
+    policy_indices: [0, 4, 5]
+    joint_origins_zero_base_m: [[0.304, 0.109, 0.0], [0.373, 0.115, 0.0], [0.373, 0.2955, -0.285]]
+    foot_zero_base_m: [0.473, 0.31775, -0.6774598]
+  RF_FOOT:
+    policy_indices: [2, 8, 9]
+    joint_origins_zero_base_m: [[0.304, -0.109, 0.0], [0.373, -0.115, 0.0], [0.373, -0.2955, -0.285]]
+    foot_zero_base_m: [0.473, -0.31775, -0.6774598]
+  LH_FOOT:
+    policy_indices: [1, 6, 7]
+    joint_origins_zero_base_m: [[-0.304, 0.109, 0.0], [-0.373, 0.115, 0.0], [-0.373, 0.2955, -0.285]]
+    foot_zero_base_m: [-0.473, 0.31775, -0.6774598]
+  RH_FOOT:
+    policy_indices: [3, 10, 11]
+    joint_origins_zero_base_m: [[-0.304, -0.109, 0.0], [-0.373, -0.115, 0.0], [-0.373, -0.2955, -0.285]]
+    foot_zero_base_m: [-0.473, -0.31775, -0.6774598]
+joint_axes_zero_base:
+  HAA: [1.0, 0.0, 0.0]
+  HFE: [0.0, 1.0, 0.0]
+  KFE: [0.0, 1.0, 0.0]
+validation_gates:
+  finite_difference_jacobian_max_abs_error_m_per_rad: 1.0e-5
+  baseline_trace_foot_position_rmse_max_m: 0.005
+  baseline_trace_foot_position_max_abs_error_max_m: 0.020
+  baseline_trace_vertical_velocity_rmse_max_mps: 0.10
+boundaries:
+  simulator_foot_position_runtime_input_allowed: false
+  simulator_foot_velocity_runtime_input_allowed: false
+  contact_truth_runtime_input_allowed: false
+  canonical_joint_mapping_required: true

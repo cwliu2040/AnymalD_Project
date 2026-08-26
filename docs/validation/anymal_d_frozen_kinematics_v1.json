@@ -1,0 +1,170 @@
+{
+  "schema_version": 1,
+  "kind": "anymal_d_frozen_kinematics_validation",
+  "passed": true,
+  "frozen": true,
+  "config_path": "configs/anymal_d_frozen_kinematics_v1.yaml",
+  "config_sha256": "59a2e273b2741492940159154bdef449c5ba2fa6e2c11ef940b12d1c7c8a3ee5",
+  "checks": {
+    "finite_difference_jacobian": true,
+    "trace_foot_position_rmse": true,
+    "trace_foot_position_max_abs_error": true,
+    "trace_vertical_velocity_rmse": true
+  },
+  "finite_difference_jacobian_max_abs_error_m_per_rad": 1.5347711990187918e-10,
+  "trace_validation": {
+    "run_count": 36,
+    "sample_count": 28438,
+    "foot_position_rmse_m": 9.148934390576525e-07,
+    "foot_position_max_abs_error_m": 5.681934598988914e-06,
+    "vertical_velocity_rmse_mps": 0.09335164150762097,
+    "vertical_velocity_abs_error_p99_mps": 0.38737305414163836,
+    "trace_records": [
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/lateral_translation_bounded/block_585/zero/locomotion_diagnostics.json",
+        "sha256": "7c6f57cf4671914ba20d7e4df706431d48f460641a9c2ee069545a38658536a8"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/lateral_translation_bounded/block_586/zero/locomotion_diagnostics.json",
+        "sha256": "dd9a185ce80983c92d1d4597c30e39c42dbc84fdf722a252fd0877225fc4e2db"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/lateral_translation_bounded/block_587/zero/locomotion_diagnostics.json",
+        "sha256": "d1d6cbd9aa2d528caffe4a3571070af63eb1a508f0dcde45002c569320804d60"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/lateral_translation_bounded/block_588/zero/locomotion_diagnostics.json",
+        "sha256": "27ff823d0b76b7bf40366830f094b73f23ac9ad424a1aaef426c593448648dbe"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/lateral_translation_bounded/block_589/zero/locomotion_diagnostics.json",
+        "sha256": "8cba3175dc084b4f85b695d91989a548b7f5dd9e5685c9189b7259a37a1e246d"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/lateral_translation_bounded/block_590/zero/locomotion_diagnostics.json",
+        "sha256": "641692fb66e27b4109dcc0bcf2e5b2d8f0fc488b07d8cb56a4f7c6f4488f6135"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/lateral_translation_bounded/block_591/zero/locomotion_diagnostics.json",
+        "sha256": "fb8decffaf73e0d8d75b7da10bfd0a3249d44fb7957f1b69a6dcd44689b2263c"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/lateral_translation_bounded/block_592/zero/locomotion_diagnostics.json",
+        "sha256": "9a7bf0631d313b29c6ef500abbe3d004a7d9a90095fef019882b27045002458f"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/lateral_translation_bounded/block_593/zero/locomotion_diagnostics.json",
+        "sha256": "0928c9a74f4903c907d1ade8ccd325ea5b63e80582b0049b09a93a96254c94c2"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/lateral_translation_bounded/block_594/zero/locomotion_diagnostics.json",
+        "sha256": "288aa4e284d247a515c84f99936fc1fa86f72090b616389f50a039c2e208a2aa"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/lateral_translation_bounded/block_595/zero/locomotion_diagnostics.json",
+        "sha256": "70ec7cefa5b1a349084bd79f58e3bd223464f88d8883ecc0038f25f3305f2828"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/lateral_translation_bounded/block_596/zero/locomotion_diagnostics.json",
+        "sha256": "deb0a075f1d8be0328c076dd53350f651bdc193787295811c686d72a1abf99ef"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/mixed_curve_bounded/block_585/zero/locomotion_diagnostics.json",
+        "sha256": "dc3812f5b90b341b09030edea4f7711c8bcf513413e6fddc8d017cf52220c849"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/mixed_curve_bounded/block_586/zero/locomotion_diagnostics.json",
+        "sha256": "fd7e47ac8cb92817ba4bded2bf34f94f159044b5ee306afc9f16a2d280af8b41"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/mixed_curve_bounded/block_587/zero/locomotion_diagnostics.json",
+        "sha256": "bb359b16a340e0cfe305a1c599c2cf6c68812f2e4f3fa72b8b1b308705f472b9"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/mixed_curve_bounded/block_588/zero/locomotion_diagnostics.json",
+        "sha256": "34f5278cbe77c004b51337558bb7eddaac22825ea6c4be5addf3e74b80dff7fd"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/mixed_curve_bounded/block_589/zero/locomotion_diagnostics.json",
+        "sha256": "defc3b0e156f80ebd4c8a963c8c49df7b097c2bed9be8d915be4439d9984c4b0"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/mixed_curve_bounded/block_590/zero/locomotion_diagnostics.json",
+        "sha256": "842adcb8ddcb54933a662466703274983cb2c2011017ea175eb75c99689af311"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/mixed_curve_bounded/block_591/zero/locomotion_diagnostics.json",
+        "sha256": "bd724f209459f6df3d4ab3a52d5d2f30bac33efb3c3a5f62aa9d287d133a8e45"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/mixed_curve_bounded/block_592/zero/locomotion_diagnostics.json",
+        "sha256": "029df5b8b943e2d2907b35dde8213dfc3c80eca5082728b2bd551d9f562fc6bd"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/mixed_curve_bounded/block_593/zero/locomotion_diagnostics.json",
+        "sha256": "1cc19323796a6cab3f3cac0238992a6c19deca1a9ae49273b87f9560316da9d9"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/mixed_curve_bounded/block_594/zero/locomotion_diagnostics.json",
+        "sha256": "4b2c66faab9d950c2aff86d3e1b5695dfd5920a8aad5021cef1dd217bf90a4e7"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/mixed_curve_bounded/block_595/zero/locomotion_diagnostics.json",
+        "sha256": "c4e0dfa840150ff30b33f925edbc368a917deda46cede0929439952e52fb2931"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/mixed_curve_bounded/block_596/zero/locomotion_diagnostics.json",
+        "sha256": "2316d76479e15e613f335546ad66421978f0dda35d203dc3a3a35f9b70baa0d0"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/pure_yaw_bounded/block_585/zero/locomotion_diagnostics.json",
+        "sha256": "6422ab32bc60333c502ab37516523c827d6b2f4f9ae00110df5749e6d826b120"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/pure_yaw_bounded/block_586/zero/locomotion_diagnostics.json",
+        "sha256": "c9dfa372d5b6a207d604b86f783fe4a9b3d7accd22584c678f76faedb712e734"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/pure_yaw_bounded/block_587/zero/locomotion_diagnostics.json",
+        "sha256": "4044642980378268dad09f06b74a6e6ddae6a54d0c4357568fb163fafaaccf28"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/pure_yaw_bounded/block_588/zero/locomotion_diagnostics.json",
+        "sha256": "f163abe9a96143d5cfcef629557c7e8b9e39deadea081f7e6a3023b8d56b7636"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/pure_yaw_bounded/block_589/zero/locomotion_diagnostics.json",
+        "sha256": "b312ea6f62f904a61b83a22dcef41bea30c556c05d7fc37101d41c2d0a2c79d9"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/pure_yaw_bounded/block_590/zero/locomotion_diagnostics.json",
+        "sha256": "9ba020c1e9302450f9701968005c136e96620e912d9c0b33aff4918a2588aabd"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/pure_yaw_bounded/block_591/zero/locomotion_diagnostics.json",
+        "sha256": "fed0e7f3bc76bf39c4d40ec2b83986e6548319613ac037529d0e8b1fbc3cdb0b"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/pure_yaw_bounded/block_592/zero/locomotion_diagnostics.json",
+        "sha256": "9c9f3f9d26fb62d2e24bcf5fa5f8e00b78985c5f2b1b9ad0f141433b7c72ccdc"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/pure_yaw_bounded/block_593/zero/locomotion_diagnostics.json",
+        "sha256": "19a9adacef2429eb6d7b5d867d76bed4a37543e102cef713d809336b26a72ad8"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/pure_yaw_bounded/block_594/zero/locomotion_diagnostics.json",
+        "sha256": "e1ccb1cef537c5aea7cccf427cc0e3e1fe711ddbb525b2cb59d5536549a16f45"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/pure_yaw_bounded/block_595/zero/locomotion_diagnostics.json",
+        "sha256": "72f1f093b816a5cfcf15b8d9eb2c8856c3bd81b769da70412b0f53e0b5fe909b"
+      },
+      {
+        "path": "outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope/pure_yaw_bounded/block_596/zero/locomotion_diagnostics.json",
+        "sha256": "28a8cebac429d5f78dccdd02a981fcbffac61e85e862b9a95f94178a55c343bd"
+      }
+    ]
+  },
+  "simulator_foot_state_runtime_input_used": false
+}

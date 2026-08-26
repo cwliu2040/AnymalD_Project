@@ -63,7 +63,7 @@ def build_record(
     full = summarize_locomotion(locomotion_trace["samples"])
     return {
         "schema_version": 1, "kind": "slam_speed_pulse_causal_run_record",
-        "dataset_role": "excluded_causal_development",
+        "dataset_role": protocol.get("dataset_role", "excluded_causal_development"),
         "experimental_unit": "scheduled_live_run",
         "identity": {"stage": stage, "backend": backend, "profile": profile, "block_id": block, "arm": arm},
         "pulse_window": {"start_clock_s": start_clock, "end_clock_s": end_clock, "sample_count": len(window_samples)},

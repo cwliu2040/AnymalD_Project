@@ -269,6 +269,16 @@ def generate_launch_description() -> LaunchDescription:
     interactive = LaunchConfiguration("interactive")
     use_rviz = LaunchConfiguration("use_rviz")
     open_teleop_terminal = LaunchConfiguration("open_teleop_terminal")
+    enable_touchdown_residual_experiment = LaunchConfiguration(
+        "enable_touchdown_residual_experiment"
+    )
+    touchdown_residual_arm = LaunchConfiguration("touchdown_residual_arm")
+    touchdown_phase_artifact_path = LaunchConfiguration(
+        "touchdown_phase_artifact_path"
+    )
+    touchdown_phase_artifact_sha256 = LaunchConfiguration(
+        "touchdown_phase_artifact_sha256"
+    )
 
     project_python_path = [
         PathJoinSubstitution([project_root, "deployment", "python_vendor"]),
@@ -315,6 +325,12 @@ def generate_launch_description() -> LaunchDescription:
                 "diagnostics_path": PathJoinSubstitution(
                     [output_dir, "policy_diagnostics.json"]
                 ),
+                "enable_touchdown_residual_experiment": ParameterValue(
+                    enable_touchdown_residual_experiment, value_type=bool,
+                ),
+                "touchdown_residual_arm": touchdown_residual_arm,
+                "touchdown_phase_artifact_path": touchdown_phase_artifact_path,
+                "touchdown_phase_artifact_sha256": touchdown_phase_artifact_sha256,
             }
         ],
         output="screen",
@@ -564,6 +580,18 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "open_teleop_terminal", default_value="false"
             ),
+            DeclareLaunchArgument(
+                "enable_touchdown_residual_experiment",
+                default_value="false",
+                description="Opt-in block597-only touchdown residual experiment",
+            ),
+            DeclareLaunchArgument(
+                "touchdown_residual_arm",
+                default_value="zero",
+                choices=["zero", "touchdown_soft_low", "touchdown_soft"],
+            ),
+            DeclareLaunchArgument("touchdown_phase_artifact_path", default_value=""),
+            DeclareLaunchArgument("touchdown_phase_artifact_sha256", default_value=""),
             DeclareLaunchArgument(
                 "ros_domain_id",
                 default_value=EnvironmentVariable(

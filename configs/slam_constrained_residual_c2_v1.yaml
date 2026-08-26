@@ -1,7 +1,7 @@
 schema_version: 1
 candidate_id: slam-constrained-residual-c2-v1
-status: phase1_pure_core_complete_training_blocked_by_short_pulse_headroom
-date: 2026-08-22
+status: retained_component_velocity_baseline_v2_model_failed_not_primary_candidate
+date: 2026-08-24
 
 implementation:
   pure_core: >-
@@ -102,8 +102,18 @@ anti_collapse:
 
 gates:
   c2_pure_core_complete: true
-  short_pulse_headroom_passed: false
+  short_pulse_headroom_passed: true
+  component_specific_headroom_passed: true
+  richer_component_identification_passed: true
+  offline_component_risk_model_attempted: true
+  offline_component_risk_model_v2_attempted: true
+  offline_component_risk_model_blockwise_gate_passed: false
+  reserved_external_validation_executed: false
   action_conditioned_risk_signal_available: false
   training_environment_wiring_complete: false
   ppo_training_authorized: false
   physical_robot_authorized: false
+successor:
+  candidate: slam-localization-aware-motor-adaptation-c3-v1
+  role_of_c2: anisotropic_velocity_limiter_baseline_only
+  command_preserving_low_level_headroom_proven: false

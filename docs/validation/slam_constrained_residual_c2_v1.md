@@ -47,6 +47,22 @@ SLAM and a well-formed but risk-inadmissible candidate both use an exact-zero co
 residual, with distinct hard-stop and risk-stop modes. Candidate values are never silently clipped
 into the valid range.
 
-The pure core is complete. Short-pulse headroom, an action-conditioned risk signal, policy-node and
-training wiring, PPO, and physical use are all false. Until the short-pulse experiment independently
-demonstrates controllable headroom, no risk model or candidate training should start.
+The pure core is complete. The component-pulse experiment subsequently demonstrated controllable
+headroom: on the LIO-SAM right curve, preserving translation while reducing yaw improved mean risk
+by 0.428 over uniform 0.75 scaling and moved 0.140 m/s faster.
+
+That result unlocked only an offline model attempt. The first frozen component-conditioned ridge
+model used causal runtime state plus candidate XYZ scale and left out one complete block per fold.
+It failed its predictive gate: component Brier was 0.2509 versus 0.2450 for state-only and 0.2456
+for a scalar-action model. Favorable selected-action risk and progress do not repair worse held-out
+probability accuracy. Therefore `action_conditioned_risk_signal_available` remains false;
+policy-node wiring, training wiring, PPO, and physical use remain blocked. The failed model must
+not be wired into ROS or rescued by changing its gate on the same 64 development runs.
+
+A fresh richer identification stage then varied translation and yaw reductions independently at
+0.75 and 0.875 over blocks 577--580. All 96 runs passed integrity and established usable action and
+target variation, but the refrozen simpler v2 selector still failed leave-one-block-out validation:
+component Brier was 0.2571 versus 0.2505 state-only and 0.2540 scalar-action, and selected LIO-SAM
+risk was 0.1283 worse than uniform slowdown on average. It also selected two runs with safety
+events. Therefore reserved blocks 581--584 were deliberately not executed. Causal component
+headroom remains true, but a reliable state-to-component decision signal remains unavailable.

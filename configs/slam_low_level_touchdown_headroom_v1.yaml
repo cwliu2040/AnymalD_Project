@@ -1,0 +1,257 @@
+schema_version: 1
+protocol_id: slam-low-level-touchdown-headroom-v1
+candidate_id: slam-localization-aware-motor-adaptation-c3-v1
+status: mechanism_and_gate_frozen_baseline_envelope_pending_no_execution_authorization
+date: 2026-08-24
+
+question: >-
+  At an exact matched original command, can a bounded late-swing touchdown
+  residual change foot impact, body and LiDAR motion, and future 0.5 s SLAM
+  usability without reducing realized linear or yaw motion?
+
+boundaries:
+  model1450_frozen: true
+  original_requested_command_bit_exact_for_all_arms: true
+  command_scaling_allowed: false
+  previous_action_smoothing_family_reused: false
+  fixed_joint_offset_family_allowed: false
+  residual_linf_limit: 0.05
+  actual_slam_backends_required_for_effect_stages: true
+  synthetic_confidence_schedule_allowed: false
+  ground_truth_intervention_input_allowed: false
+  contact_truth_intervention_input_allowed: false
+  future_label_intervention_input_allowed: false
+  backend_id_intervention_input_allowed: false
+  profile_or_route_phase_intervention_input_allowed: false
+  intervention_id_runtime_policy_input_allowed: false
+  live_execution_authorized: false
+  authorized_stages: []
+  teacher_training_authorized: false
+  adaptation_training_authorized: false
+  ppo_training_authorized: false
+  ros_policy_wiring_authorized: false
+  physical_robot_authorized: false
+
+mechanism:
+  family: deployable_history_phase_touchdown_displacement_shaping
+  core: >-
+    deployment/ros2_ws/src/anymal_locomotion_ros2/anymal_locomotion_ros2/
+    touchdown_shaping_intervention_core.py
+  causal_chain:
+    - late_swing_downward_foot_displacement_reduced
+    - touchdown_velocity_and_contact_impulse_reduced
+    - unwanted_body_and_lidar_motion_reduced
+    - future_slam_usability_changed
+  phase_source:
+    deployable_inputs_only:
+      - joint_position_history
+      - joint_velocity_history
+      - previous_action_history
+    confidence_required: true
+    minimum_phase_confidence: 0.80
+    simulator_contact_truth_role: offline_phase_estimator_label_and_evaluation_only
+    estimator_artifact_frozen: false
+  deployable_kinematics:
+    robot_model: frozen_anymal_d_kinematic_model
+    canonical_joint_mapping_required: true
+    foot_position_jacobian_source: joint_position_history_and_frozen_robot_model
+    foot_vertical_velocity_source: joint_position_velocity_history_and_frozen_robot_model
+    simulator_foot_velocity_runtime_input_allowed: false
+  solve:
+    policy_rate_hz: 50.0
+    late_swing_progress_window: [0.70, 1.00]
+    target_horizontal_foot_displacement_m: [0.0, 0.0]
+    target_vertical_correction: >-
+      attenuation_fraction times the predicted one-control-tick downward foot displacement
+    method: minimum_norm_damped_foot_xyz_jacobian_solve
+    damping: 1.0e-4
+    residual_bound_method: uniform_vector_rescale_preserving_direction
+    residual_linf_limit: 0.05
+    no_eligible_foot_behavior: exact_zero_residual
+    invalid_tracking_behavior: exact_model1450_action_and_exact_zero_residual
+  arms:
+    zero:
+      attenuation_fraction: 0.0
+      role: exact_model1450_original_command_control
+    touchdown_soft_low:
+      attenuation_fraction: 0.25
+      role: low_dose_mechanism_check
+    touchdown_soft:
+      attenuation_fraction: 0.50
+      role: primary_low_level_treatment
+  amplitude_selection:
+    slam_outcomes_used: false
+    old_smoothing_results_used: false
+    values_changed_after_pilot_allowed: false
+
+command_coverage:
+  profiles:
+    - mixed_curve_bounded
+    - pure_yaw_bounded
+    - lateral_translation_bounded
+  free_rotation_required: true
+  mixed_translation_yaw_required: true
+  lateral_translation_required: true
+  bounded_random_command_static_property_test_required: true
+  hardcoded_turn_timer_forbidden_for_phase_estimation: true
+  experiment_scheduler_is_not_runtime_policy_input: true
+
+baseline_envelope:
+  status: pending_collection
+  source: fresh_model1450_original_command_exact_zero_residual
+  dataset_role: anti_collapse_calibration_only
+  block_ids: [585, 586, 587, 588, 589, 590, 591, 592, 593, 594, 595, 596]
+  profiles: [mixed_curve_bounded, pure_yaw_bounded, lateral_translation_bounded]
+  expected_run_count: 36
+  slam_effect_claim_allowed: false
+  minimum_complete_runs_per_profile: 12
+  freeze_before_wiring_smoke: true
+  frozen_artifact_required_for_effect_execution: true
+  bounds_rule:
+    unit: complete_run_or_complete_stride_not_frame
+    frames_are_independent_replicates: false
+    within_run_lower_quantile: 0.01
+    within_run_upper_quantile: 0.99
+    profile_lower_bound: minimum_within_run_lower_quantile
+    profile_upper_bound: maximum_within_run_upper_quantile
+    each_complete_run_weighted_once: true
+    bounds_may_only_expand_from_predeclared_physical_safety_limits: true
+    candidate_results_may_change_bounds: false
+  metrics:
+    - stride_length_m
+    - cadence_hz
+    - duty_factor
+    - contact_switch_rate_hz
+    - swing_duration_s
+    - body_height_m
+    - stance_width_m
+    - minimum_joint_margin_rad
+    - foot_clearance_m
+    - torque_rms_nm
+    - energy_per_progress
+    - stance_foot_slip_rms_mps
+    - stopped_fraction
+
+stages:
+  wiring_smoke:
+    dataset_role: excluded_wiring
+    backends: [fastlio2, liosam]
+    profiles: [mixed_curve_bounded]
+    arms: [zero, touchdown_soft_low, touchdown_soft]
+    block_ids: [597]
+    expected_run_count: 6
+    claim_allowed: false
+  pilot:
+    dataset_role: causal_mechanism_development
+    backends: [fastlio2, liosam]
+    profiles: [mixed_curve_bounded, pure_yaw_bounded, lateral_translation_bounded]
+    arms: [zero, touchdown_soft_low, touchdown_soft]
+    block_ids: [598, 599, 600, 601]
+    expected_run_count: 72
+    claim_allowed: false
+  confirmation:
+    dataset_role: causal_headroom_confirmation
+    backends: [fastlio2, liosam]
+    profiles: [mixed_curve_bounded, pure_yaw_bounded, lateral_translation_bounded]
+    arms: [zero, touchdown_soft_low, touchdown_soft]
+    block_ids: [602, 603, 604, 605]
+    expected_run_count: 72
+    claim_allowed_only_after_unchanged_pilot_pass: true
+
+trace_contract:
+  requested_command_exact_across_arms: true
+  model1450_observation_command_exact_original: true
+  zero_arm_action_bit_exact_model1450: true
+  nonzero_residual_only_in_eligible_late_swing: true
+  residual_linf_maximum: 0.05
+  horizontal_foot_correction_first_order_tolerance_m: 1.0e-5
+  invalid_or_stale_slam_uses_localization_aware_core_hard_stop: true
+  malformed_phase_or_jacobian_stops_stage: true
+
+outcomes:
+  future_slam_horizon_s: 0.5
+  primary_slam:
+    - valid_requested_usable_next_horizon_failure_fraction
+    - tracking_restricted_mean_survival_time_s
+  primary_mechanism:
+    - touchdown_vertical_speed_abs_mps
+    - touchdown_contact_impulse_ns
+    - touchdown_roll_pitch_rate_impulse_rad
+    - lidar_scan_time_rotation_rad
+  command_and_motion_equivalence:
+    - moving_linear_speed_mps
+    - realized_yaw_rate_radps
+    - normalized_progress
+    - stopped_fraction
+  whole_body_secondary:
+    - roll_pitch_rate_rms_radps
+    - yaw_tracking_error_rms_radps
+    - yaw_high_frequency_oscillation_rms_radps
+    - linear_acceleration_rms_mps2
+    - angular_acceleration_rms_radps2
+    - linear_jerk_rms_mps3
+    - angular_jerk_rms_radps3
+    - body_vibration_rms
+    - lidar_scan_time_translation_m
+  inference_unit: complete_run
+  cluster_unit: [backend, profile, block_id]
+  frame_samples_are_independent_replicates: false
+  realized_speed_is_post_treatment: true
+  realized_speed_role: whole_matched_group_equivalence_gate_not_posthoc_run_filter
+  backends_reported_separately: true
+  pooled_backend_rescue_forbidden: true
+
+decision_gate:
+  primary_treatment: touchdown_soft
+  comparator: zero
+  minimum_distinct_improved_blocks_per_supported_stratum: 3
+  minimum_supported_backend_profile_strata: 1
+  matched_motion_all_required:
+    maximum_absolute_moving_linear_speed_difference_mps: 0.05
+    maximum_absolute_realized_yaw_rate_difference_radps: 0.05
+    minimum_progress_ratio: 0.98
+    maximum_stopped_fraction_excess: 0.0
+  mechanism_all_required:
+    touchdown_vertical_speed_mean_difference_maximum_mps: 0.0
+    minimum_additional_improved_body_or_lidar_endpoints: 2
+    low_dose_and_primary_direction_consistent: true
+  slam_all_required_in_supported_stratum:
+    future_failure_fraction_mean_difference_maximum: 0.0
+    tracking_survival_mean_difference_minimum_s: 0.0
+    repeated_block_direction_required: true
+  anti_collapse_all_required:
+    stop_envelope_pass: true
+    shuffle_envelope_pass: true
+    posture_envelope_pass: true
+    limiter_equivalence_pass: true
+  safety:
+    fall_or_base_contact_ends_and_retains_simulation_episode: true
+    single_treatment_specific_excess_disposition: INCONCLUSIVE
+    repeated_treatment_specific_excess_distinct_blocks_same_stratum: 2
+    repeated_treatment_specific_excess_disposition: FAIL
+    physical_robot_any_fall_risk_requires_immediate_stop: true
+  wiring_failure_status: WIRING_FAIL
+  pilot_pass_status: PILOT_PASS
+  confirmation_pass_status: HEADROOM_PASS
+  otherwise: INCONCLUSIVE
+  pilot_pass_next_step: unchanged_confirmation_only_requires_separate_authorization
+  confirmation_pass_next_step: privileged_teacher_then_history_adaptation_module
+  fail_next_step: stop_touchdown_mechanism_do_not_sweep_on_same_data
+
+stage_prerequisites:
+  wiring_smoke:
+    - baseline_envelope_artifact_frozen
+    - phase_estimator_artifact_frozen
+  pilot:
+    - wiring_smoke_WIRING_PASS_recomputed_from_raw_records
+  confirmation:
+    - pilot_PILOT_PASS_recomputed_from_raw_records
+    - mechanism_config_hash_unchanged_since_pilot
+    - baseline_envelope_hash_unchanged_since_pilot
+
+disjointness:
+  blocks_581_through_584_reserved_and_untouched: true
+  reserved_block_ids: [581, 582, 583, 584]
+  minimum_new_block_id: 585
+  stages_must_use_disjoint_blocks: true
+  confirmation_data_may_not_tune_mechanism_or_bounds: true

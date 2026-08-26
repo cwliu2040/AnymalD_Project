@@ -1,0 +1,30 @@
+schema_version: 1
+validation_id: slam-low-level-touchdown-pipeline-static-v1
+status: frozen_integrity_gate
+phase_candidate:
+  path: exported/slam_low_level_touchdown_phase_tracker_v2/candidate.json
+  sha256: 8cca511eaef21ec0b32ce2b28c618d3bad6f5434788e3f06b4b2caa3907f66e7
+  role: development_validation_only_unfrozen_not_runtime_deployable
+kinematics:
+  config_path: configs/anymal_d_frozen_kinematics_v1.yaml
+  config_sha256: 59a2e273b2741492940159154bdef449c5ba2fa6e2c11ef940b12d1c7c8a3ee5
+  report_path: docs/validation/anymal_d_frozen_kinematics_v1.json
+  report_sha256: c44c01bf68a45c9e28570c777665a36c1afc14635691ed456f22378614cf0c58
+source:
+  baseline_root: outputs/slam_low_level_touchdown_headroom_v1_retry2/baseline_envelope
+  expected_run_count: 36
+mechanism:
+  attenuation_fraction: 0.50
+gates:
+  minimum_active_tick_count: 1
+  residual_linf_maximum_with_float32_tolerance: 0.0500001
+  horizontal_first_order_max_abs_m: 1.0e-5
+  vertical_correction_minimum_m: -1.0e-9
+  original_command_bit_exact: true
+  noneligible_tick_exact_zero_residual: true
+boundaries:
+  effect_claim_allowed: false
+  candidate_phase_runtime_promotion_allowed: false
+  simulator_foot_state_runtime_input_allowed: false
+  contact_truth_runtime_input_allowed: false
+  block_597_execution_authorized: false

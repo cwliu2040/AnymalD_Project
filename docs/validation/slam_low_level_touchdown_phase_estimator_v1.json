@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "kind": "slam_low_level_touchdown_phase_estimator_gate",
+  "passed": false,
+  "frozen": false,
+  "calibration": {
+    "passed": false,
+    "failures": [
+      "aggregate_precision",
+      "aggregate_false_trigger",
+      "profile_precision:mixed_curve_bounded",
+      "profile_precision:pure_yaw_bounded",
+      "profile_precision:lateral_translation_bounded"
+    ],
+    "aggregate": {
+      "late_swing_precision": 0.6923818707810994,
+      "late_swing_recall": 0.5851670741646292,
+      "false_trigger_fraction": 0.01821504025580997,
+      "swing_progress_mae": 0.11388285909642934,
+      "positive_predictions_by_foot": [
+        507,
+        198,
+        159,
+        173
+      ],
+      "sample_count": 4685
+    },
+    "by_profile": {
+      "mixed_curve_bounded": {
+        "late_swing_precision": 0.7536231884057971,
+        "late_swing_recall": 0.6419753086419753,
+        "false_trigger_fraction": 0.016216216216216217,
+        "swing_progress_mae": 0.08641431499732737,
+        "positive_predictions_by_foot": [
+          181,
+          64,
+          82,
+          87
+        ],
+        "sample_count": 1694
+      },
+      "pure_yaw_bounded": {
+        "late_swing_precision": 0.6219081272084805,
+        "late_swing_recall": 0.5269461077844312,
+        "false_trigger_fraction": 0.017685950413223142,
+        "swing_progress_mae": 0.1203320585546874,
+        "positive_predictions_by_foot": [
+          153,
+          60,
+          39,
+          31
+        ],
+        "sample_count": 1596
+      },
+      "lateral_translation_bounded": {
+        "late_swing_precision": 0.6764705882352942,
+        "late_swing_recall": 0.5651105651105651,
+        "false_trigger_fraction": 0.021264256717572007,
+        "swing_progress_mae": 0.14246026127262007,
+        "positive_predictions_by_foot": [
+          173,
+          74,
+          38,
+          55
+        ],
+        "sample_count": 1395
+      }
+    }
+  },
+  "final_holdout": {
+    "passed": false,
+    "failures": [
+      "aggregate_precision",
+      "profile_precision:pure_yaw_bounded",
+      "profile_precision:lateral_translation_bounded"
+    ],
+    "aggregate": {
+      "late_swing_precision": 0.8386123680241327,
+      "late_swing_recall": 0.44302788844621516,
+      "false_trigger_fraction": 0.006118131396878038,
+      "swing_progress_mae": 0.11327029549426301,
+      "positive_predictions_by_foot": [
+        134,
+        125,
+        149,
+        255
+      ],
+      "sample_count": 4686
+    },
+    "by_profile": {
+      "mixed_curve_bounded": {
+        "late_swing_precision": 0.8807017543859649,
+        "late_swing_recall": 0.49604743083003955,
+        "false_trigger_fraction": 0.00541573749601784,
+        "swing_progress_mae": 0.09117829104748124,
+        "positive_predictions_by_foot": [
+          42,
+          43,
+          84,
+          116
+        ],
+        "sample_count": 1696
+      },
+      "pure_yaw_bounded": {
+        "late_swing_precision": 0.7625,
+        "late_swing_recall": 0.3674698795180723,
+        "false_trigger_fraction": 0.006283068783068783,
+        "swing_progress_mae": 0.11632001484050429,
+        "positive_predictions_by_foot": [
+          34,
+          39,
+          29,
+          58
+        ],
+        "sample_count": 1595
+      },
+      "lateral_translation_bounded": {
+        "late_swing_precision": 0.8394495412844036,
+        "late_swing_recall": 0.43884892086330934,
+        "false_trigger_fraction": 0.006779004454774356,
+        "swing_progress_mae": 0.1389759124502338,
+        "positive_predictions_by_foot": [
+          58,
+          43,
+          36,
+          81
+        ],
+        "sample_count": 1395
+      }
+    }
+  },
+  "gates": {
+    "calibration_and_holdout_both_required": true,
+    "aggregate_minimum_late_swing_precision": 0.9,
+    "aggregate_maximum_false_trigger_fraction": 0.01,
+    "aggregate_minimum_late_swing_recall": 0.35,
+    "aggregate_maximum_swing_progress_mae": 0.15,
+    "each_profile_minimum_late_swing_precision": 0.85,
+    "each_profile_minimum_late_swing_recall": 0.2,
+    "all_four_feet_must_have_positive_predictions": true,
+    "holdout_may_tune_model_or_threshold": false,
+    "failed_gate_disposition": "stop_phase_estimator_do_not_wire_block_597"
+  },
+  "artifact_path": "exported/slam_low_level_touchdown_phase_estimator_v1/phase_estimator.json"
+}
