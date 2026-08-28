@@ -106,284 +106,39 @@ def _checkpoint_mlp(
     return torch.nn.Sequential(*modules), dimensions
 
 
-class _ResidualCheckpointActor(torch.nn.Module):
-    """Local reconstruction of the exported confidence residual actor."""
-
-    def __init__(
-        self,
-        backbone: torch.nn.Module,
-        residual: torch.nn.Module,
-        action_skip: torch.nn.Module,
-        residual_action_limit: float,
-        confidence_offset: int,
-    ) -> None:
-        super().__init__()
-        self.backbone = backbone
-        self.residual = residual
-        self.action_skip = action_skip
-        self.residual_action_limit = residual_action_limit
-        self.confidence_offset = confidence_offset
-
-    def forward(self, observation: torch.Tensor) -> torch.Tensor:
-        legacy_action = self.backbone(observation[..., : self.confidence_offset])
-        residual = self.residual_action_limit * torch.tanh(
-            self.residual(torch.cat((observation, legacy_action), dim=-1))
-            + self.action_skip(legacy_action)
-        )
-        confidence = observation[..., self.confidence_offset]
-        valid = observation[..., self.confidence_offset + 1]
-        safe_scale = torch.clamp(valid, 0.0, 1.0) * torch.clamp(
-            (confidence - 0.2) / 0.8,
-            0.0,
-            1.0,
-        )
-        return legacy_action + (1.0 - safe_scale).unsqueeze(-1) * residual
-
-
-class _SafeCommandCheckpointActor(torch.nn.Module):
-    """Local reconstruction of the exact safe-command actor."""
-
-    def __init__(
-        self,
-        backbone: torch.nn.Module,
-        safe_command_gain: torch.Tensor,
-        confidence_offset: int,
-        command_offset: int,
-        command_dimension: int,
-        safe_command_gain_limit: float,
-    ) -> None:
-        super().__init__()
-        self.backbone = backbone
-        self.safe_command_gain = torch.nn.Parameter(safe_command_gain.clone())
-        self.confidence_offset = confidence_offset
-        self.command_offset = command_offset
-        self.command_dimension = command_dimension
-        self.safe_command_gain_limit = safe_command_gain_limit
-
-    def forward(self, observation: torch.Tensor) -> torch.Tensor:
-        legacy_observation = observation[..., : self.confidence_offset]
-        legacy_action = self.backbone(legacy_observation)
-        confidence = observation[..., self.confidence_offset]
-        valid = observation[..., self.confidence_offset + 1]
-        safe_scale = torch.clamp(valid, 0.0, 1.0) * torch.clamp(
-            (confidence - 0.2) / 0.8,
-            0.0,
-            1.0,
-        )
-        safe_observation = legacy_observation.clone()
-        command_slice = slice(
-            self.command_offset,
-            self.command_offset + self.command_dimension,
-        )
-        safe_observation[..., command_slice] *= safe_scale.unsqueeze(-1)
-        safe_action = self.backbone(safe_observation)
-        gain = torch.clamp(
-            self.safe_command_gain,
-            0.0,
-            self.safe_command_gain_limit,
-        )
-        return legacy_action + gain * (safe_action - legacy_action)
-
 
 def _checkpoint_actor(
     checkpoint_path: Path,
     agent_config_path: Path,
 ) -> tuple[torch.nn.Module, dict[str, Any]]:
+    """Reconstruct the current dense RSL-RL actor for export parity."""
     agent_config = yaml.safe_load(agent_config_path.read_text(encoding="utf-8"))
     policy_config = agent_config["policy"]
     if policy_config.get("actor_obs_normalization", False):
-        raise ValueError("Checkpoint reconstruction does not support actor observation normalization")
+        raise ValueError(
+            "Checkpoint reconstruction does not support actor observation normalization"
+        )
 
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     state = checkpoint["model_state_dict"]
     activation_type = _activation(policy_config["activation"])
     if "actor.backbone.0.weight" in state:
-        backbone, backbone_dimensions = _checkpoint_mlp(
-            state, "actor.backbone.", activation_type
+        raise ValueError(
+            "retired frozen-backbone confidence checkpoints are not supported"
         )
-        output_dimension = backbone_dimensions[-1][1]
-        confidence_offset = int(policy_config["confidence_offset"])
-        if "actor.gait_head.0.weight" in state and "actor.intent_head.0.weight" in state:
-            from anymal_locomotion.policies.slam_confidence_residual import (
-                FrozenBackboneAuxIntentGaitActor,
-            )
-
-            input_dimension = int(policy_config.get("confidence_offset", 48)) + 3
-            actor = FrozenBackboneAuxIntentGaitActor(
-                observation_dim=input_dimension,
-                num_actions=output_dimension,
-                backbone_hidden_dims=policy_config["actor_hidden_dims"],
-                gait_hidden_dims=policy_config["gait_hidden_dims"],
-                activation=policy_config["activation"],
-                legacy_observation_dim=int(
-                    policy_config.get("legacy_observation_dim", 48)
-                ),
-                confidence_offset=confidence_offset,
-                previous_action_offset=int(
-                    policy_config.get("previous_action_offset", 36)
-                ),
-                command_offset=int(policy_config.get("command_offset", 9)),
-                command_dimension=int(
-                    policy_config.get("command_dimension", 3)
-                ),
-                gait_parameter_limits=policy_config["gait_parameter_limits"],
-                nonnegative_stride_smoothing=bool(
-                    policy_config.get("nonnegative_stride_smoothing", False)
-                ),
-                smoothing_logit_gain=float(
-                    policy_config.get("smoothing_logit_gain", 1.0)
-                ),
-                degraded_stride_min_scale=float(
-                    policy_config.get("degraded_stride_min_scale", 1.0)
-                ),
-                degraded_stride_confidence_low=float(
-                    policy_config.get("degraded_stride_confidence_low", 0.2)
-                ),
-                degraded_stride_confidence_high=float(
-                    policy_config.get("degraded_stride_confidence_high", 1.0)
-                ),
-                degraded_stride_age_ratio_max=float(
-                    policy_config.get("degraded_stride_age_ratio_max", 0.45)
-                ),
-                degraded_stride_envelope_power=float(
-                    policy_config.get("degraded_stride_envelope_power", 1.0)
-                ),
-                suppress_gait_when_tracking_invalid=bool(
-                    policy_config.get("suppress_gait_when_tracking_invalid", False)
-                ),
-                gait_delta_safe_scale_power=float(
-                    policy_config.get("gait_delta_safe_scale_power", 0.0)
-                ),
-                intent_blend_max=float(
-                    policy_config.get("intent_blend_max", 1.0)
-                ),
-            ).eval()
-            actor.load_state_dict(
-                {
-                    key.removeprefix("actor."): value
-                    for key, value in state.items()
-                    if key.startswith("actor.")
-                },
-                strict=True,
-            )
-            gait_dimensions = [
-                [int(state[f"actor.gait_head.{index}.weight"].shape[1]),
-                 int(state[f"actor.gait_head.{index}.weight"].shape[0])]
-                for index in _linear_indices(state, "actor.gait_head.")
-            ]
-            details = {
-                "architecture": "frozen_model1450_aux_intent_structured_gait",
-                "checkpoint_iteration": checkpoint.get("iter"),
-                "activation": policy_config["activation"],
-                "input_dimension": input_dimension,
-                "output_dimension": output_dimension,
-                "backbone_layer_dimensions": backbone_dimensions,
-                "gait_head_layer_dimensions": gait_dimensions,
-                "gait_parameter_limits": policy_config["gait_parameter_limits"],
-                "confidence_offset": confidence_offset,
-                "degraded_stride_envelope": {
-                    "minimum_scale": float(
-                        policy_config.get("degraded_stride_min_scale", 1.0)
-                    ),
-                    "confidence_low": float(
-                        policy_config.get("degraded_stride_confidence_low", 0.2)
-                    ),
-                    "confidence_high": float(
-                        policy_config.get("degraded_stride_confidence_high", 1.0)
-                    ),
-                    "age_to_confidence_loss_ratio_max": float(
-                        policy_config.get("degraded_stride_age_ratio_max", 0.45)
-                    ),
-                    "power": float(
-                        policy_config.get("degraded_stride_envelope_power", 1.0)
-                    ),
-                },
-                "suppress_gait_when_tracking_invalid": bool(
-                    policy_config.get("suppress_gait_when_tracking_invalid", False)
-                ),
-                "gait_delta_safe_scale_power": float(
-                    policy_config.get("gait_delta_safe_scale_power", 0.0)
-                ),
-                "intent_blend_max": float(
-                    policy_config.get("intent_blend_max", 1.0)
-                ),
-                "actor_observation_normalization": False,
-            }
-        elif "actor.safe_command_gain" in state:
-            input_dimension = 51
-            actor = _SafeCommandCheckpointActor(
-                backbone,
-                state["actor.safe_command_gain"],
-                confidence_offset,
-                int(policy_config["command_offset"]),
-                int(policy_config["command_dimension"]),
-                float(policy_config.get("safe_command_gain_limit", 1.0)),
-            ).eval()
-            details = {
-                "architecture": "frozen_backbone_exact_safe_command",
-                "checkpoint_iteration": checkpoint.get("iter"),
-                "activation": policy_config["activation"],
-                "input_dimension": input_dimension,
-                "output_dimension": output_dimension,
-                "backbone_layer_dimensions": backbone_dimensions,
-                "confidence_offset": confidence_offset,
-                "command_offset": int(policy_config["command_offset"]),
-                "command_dimension": int(policy_config["command_dimension"]),
-                "safe_command_gain": state["actor.safe_command_gain"].tolist(),
-                "safe_command_gain_limit": float(
-                    policy_config.get("safe_command_gain_limit", 1.0)
-                ),
-                "actor_observation_normalization": False,
-            }
-        else:
-            residual, residual_dimensions = _checkpoint_mlp(
-                state, "actor.residual.", activation_type
-            )
-            if "actor.action_skip.weight" in state:
-                action_skip = torch.nn.Linear(output_dimension, output_dimension)
-                action_skip.weight.data.copy_(state["actor.action_skip.weight"])
-                action_skip.bias.data.copy_(state["actor.action_skip.bias"])
-                action_skip_kind = "learned_linear"
-            else:
-                action_skip = torch.nn.Identity()
-                action_skip_kind = "identity"
-            input_dimension = residual_dimensions[0][0] - output_dimension
-            actor = _ResidualCheckpointActor(
-                backbone,
-                residual,
-                action_skip,
-                float(policy_config["residual_action_limit"]),
-                confidence_offset,
-            ).eval()
-            details = {
-                "architecture": "frozen_backbone_confidence_residual",
-                "checkpoint_iteration": checkpoint.get("iter"),
-                "activation": policy_config["activation"],
-                "input_dimension": input_dimension,
-                "output_dimension": output_dimension,
-                "backbone_layer_dimensions": backbone_dimensions,
-                "residual_layer_dimensions": residual_dimensions,
-                "residual_action_limit": float(policy_config["residual_action_limit"]),
-                "confidence_offset": confidence_offset,
-                "action_skip": action_skip_kind,
-                "actor_observation_normalization": False,
-            }
-    else:
-        actor, layer_dimensions = _checkpoint_mlp(
-            state, "actor.", activation_type
-        )
-        details = {
-            "architecture": "dense_mlp",
-            "checkpoint_iteration": checkpoint.get("iter"),
-            "activation": policy_config["activation"],
-            "input_dimension": layer_dimensions[0][0],
-            "output_dimension": layer_dimensions[-1][1],
-            "layer_dimensions": layer_dimensions,
-            "actor_observation_normalization": False,
-        }
+    actor, layer_dimensions = _checkpoint_mlp(
+        state, "actor.", activation_type
+    )
+    details = {
+        "architecture": "dense_mlp",
+        "checkpoint_iteration": checkpoint.get("iter"),
+        "activation": policy_config["activation"],
+        "input_dimension": layer_dimensions[0][0],
+        "output_dimension": layer_dimensions[-1][1],
+        "layer_dimensions": layer_dimensions,
+        "actor_observation_normalization": False,
+    }
     return actor, details
-
-
 def _comparison(reference: np.ndarray, candidate: np.ndarray, *, atol: float, rtol: float) -> dict[str, Any]:
     difference = np.abs(reference - candidate)
     relative = difference / np.maximum(np.abs(reference), atol)

@@ -15,7 +15,6 @@ TASKS = ROOT / "source/anymal_locomotion/anymal_locomotion/tasks/manager_based/l
 TRAIN = ROOT / "scripts/rsl_rl/train.py"
 PREFLIGHT = ROOT / "scripts/validation/preflight_slam_confidence_joint_training.py"
 PROTOCOL = ROOT / "configs/slam_confidence_joint_training_v1.yaml"
-V4_PROTOCOL = ROOT / "configs/slam_confidence_constrained_barrier_v4.yaml"
 REWARDS = ROOT / "source/anymal_locomotion/anymal_locomotion/tasks/manager_based/locomotion/velocity/config/anymal_d/mdp/rewards.py"
 
 
@@ -110,7 +109,6 @@ def test_tasks_registered_but_execution_protocol_remains_closed() -> None:
     assert "JointTraining-J1-v0" in tasks
     assert "JointTraining-J2-v0" in tasks
     assert "bootstrap_dense_actor_state" in train
-    assert "forbidden for 1068-D full-policy joint training" in train
     gates = protocol["execution_gates"]
     assert gates["ppo_training_authorized"] is False
     assert gates["live_ros_wiring_authorized"] is False
@@ -146,44 +144,3 @@ def test_joint_training_resume_restores_iteration_and_curriculum_state() -> None
     assert "base_env.common_step_counter = restored_common_steps" in source
     assert "base_env.curriculum_manager.compute(env_ids=all_env_ids)" in source
     assert 'run_manifest["joint_training_continuation"]' in source
-
-
-def test_v4_barriers_are_fixed_hinge_penalties_without_command_scaling() -> None:
-    rewards = REWARDS.read_text(encoding="utf-8")
-    lateral = next(
-        node
-        for node in ast.parse(rewards).body
-        if isinstance(node, ast.FunctionDef) and node.name == "lateral_stance_slip_barrier"
-    )
-    mixed = next(
-        node
-        for node in ast.parse(rewards).body
-        if isinstance(node, ast.FunctionDef) and node.name == "mixed_yaw_tracking_barrier"
-    )
-    source = (ast.get_source_segment(rewards, lateral) or "") + (
-        ast.get_source_segment(rewards, mixed) or ""
-    )
-    assert "torch.clamp_min" in source
-    assert "torch.square" in source
-    assert "root_ang_vel_b[:, 2]" in source
-    assert "command *" not in source
-    assert "safe_scale" not in source
-
-    protocol = yaml.safe_load(V4_PROTOCOL.read_text(encoding="utf-8"))
-    assert protocol["barrier_contract"]["frozen_before_training"] is True
-    assert protocol["barrier_contract"]["audit_thresholds_changed_from_v3"] is False
-    assert protocol["policy_constraint"]["command_scaling"] is False
-    assert protocol["policy_constraint"]["old_iteration50_checkpoints_allowed_as_initialization"] is False
-
-
-def test_v4_uses_distinct_tasks_and_fail_closed_training_protocol() -> None:
-    tasks = TASKS.read_text(encoding="utf-8")
-    train = TRAIN.read_text(encoding="utf-8")
-    flat = FLAT_ENV.read_text(encoding="utf-8")
-    agents = AGENT_CFG.read_text(encoding="utf-8")
-    assert "ConstrainedBarrier-J1-v0" in tasks + train
-    assert "ConstrainedBarrier-J2-v0" in tasks + train
-    assert "AnymalDLocomotionConstrainedBarrierRewardsCfg" in flat
-    assert "lateral_stance_slip_barrier" in flat
-    assert "mixed_yaw_tracking_barrier" in flat
-    assert "anymal_d_locomotion_constrained_barrier_v4" in agents

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from enum import IntEnum
 from pathlib import Path
 from typing import Protocol, Sequence
 
@@ -17,122 +16,6 @@ class PolicyBackend(Protocol):
 
     def __call__(self, observations: np.ndarray) -> np.ndarray:
         """Return one batch of raw policy actions."""
-
-
-class GaitMode(IntEnum):
-    TRACK = 0
-    DECELERATE = 1
-    HOLD = 2
-    RECOVER = 3
-
-
-@dataclass(frozen=True)
-class GaitModeGovernorConfig:
-    """Deployment mirror of the frozen gait-mode v1 contract."""
-
-    degrade_below: float = 0.45
-    degrade_dwell_s: float = 0.10
-    recover_at_or_above: float = 0.55
-    recover_dwell_s: float = 0.50
-    hold_minimum_dwell_s: float = 0.50
-    command_scale_rate_down_per_s: float = 0.8
-    command_scale_rate_up_per_s: float = 2.0
-
-    def validate(self) -> None:
-        if not 0.0 <= self.degrade_below < self.recover_at_or_above <= 1.0:
-            raise ValueError("gait-mode confidence thresholds are invalid")
-        values = (
-            self.degrade_dwell_s,
-            self.recover_dwell_s,
-            self.hold_minimum_dwell_s,
-            self.command_scale_rate_down_per_s,
-            self.command_scale_rate_up_per_s,
-        )
-        if any(value <= 0.0 for value in values):
-            raise ValueError("gait-mode dwell times and rates must be positive")
-
-
-class GaitModeGovernor:
-    """Scalar state machine used by the external 50 Hz policy runtime."""
-
-    def __init__(self, config: GaitModeGovernorConfig | None = None) -> None:
-        self.config = config or GaitModeGovernorConfig()
-        self.config.validate()
-        self.mode = GaitMode.HOLD
-        self.command_scale = 0.0
-        self.degrade_elapsed_s = 0.0
-        self.hold_elapsed_s = 0.0
-        self.recover_elapsed_s = 0.0
-        self.initialized = False
-
-    def reset(self) -> None:
-        self.mode = GaitMode.HOLD
-        self.command_scale = 0.0
-        self.degrade_elapsed_s = 0.0
-        self.hold_elapsed_s = 0.0
-        self.recover_elapsed_s = 0.0
-        self.initialized = False
-
-    def update(self, confidence: float, valid: bool, dt_s: float) -> float:
-        if not np.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
-            raise ValueError("confidence must be finite and in [0, 1]")
-        if dt_s <= 0.0:
-            raise ValueError("dt_s must be positive")
-        cfg = self.config
-        desired_scale = (
-            float(np.clip((confidence - 0.2) / 0.8, 0.0, 1.0))
-            if valid
-            else 0.0
-        )
-        if not self.initialized:
-            healthy = bool(valid) and confidence >= cfg.recover_at_or_above
-            self.mode = GaitMode.TRACK if healthy else GaitMode.HOLD
-            self.command_scale = 1.0 if healthy else 0.0
-            self.initialized = True
-            return self.command_scale
-
-        if self.mode == GaitMode.TRACK:
-            unhealthy = desired_scale < 1.0 - 1.0e-6
-            self.degrade_elapsed_s = self.degrade_elapsed_s + dt_s if unhealthy else 0.0
-            if (not valid) or self.degrade_elapsed_s + 1.0e-6 >= cfg.degrade_dwell_s:
-                self.mode = GaitMode.DECELERATE
-
-        if self.mode == GaitMode.DECELERATE:
-            self.command_scale = max(
-                desired_scale,
-                self.command_scale - cfg.command_scale_rate_down_per_s * dt_s,
-            )
-            if self.command_scale <= 0.0:
-                self.mode = GaitMode.HOLD
-                self.hold_elapsed_s = 0.0
-                self.recover_elapsed_s = 0.0
-
-        if self.mode == GaitMode.HOLD:
-            self.command_scale = 0.0
-            self.hold_elapsed_s += dt_s
-            recover_ready = bool(valid) and confidence >= cfg.recover_at_or_above
-            self.recover_elapsed_s = (
-                self.recover_elapsed_s + dt_s if recover_ready else 0.0
-            )
-            if (
-                self.hold_elapsed_s + 1.0e-6 >= cfg.hold_minimum_dwell_s
-                and self.recover_elapsed_s + 1.0e-6 >= cfg.recover_dwell_s
-            ):
-                self.mode = GaitMode.RECOVER
-
-        if self.mode == GaitMode.RECOVER:
-            if (not valid) or desired_scale + 1.0e-6 < self.command_scale:
-                self.mode = GaitMode.DECELERATE
-            else:
-                self.command_scale = min(
-                    desired_scale,
-                    self.command_scale + cfg.command_scale_rate_up_per_s * dt_s,
-                )
-                if self.command_scale >= 1.0:
-                    self.mode = GaitMode.TRACK
-                    self.command_scale = 1.0
-                    self.degrade_elapsed_s = 0.0
-        return self.command_scale
 
 
 @dataclass(frozen=True)
@@ -363,20 +246,16 @@ class PolicyRuntime:
         backend: PolicyBackend,
         *,
         max_abs_policy_action: float = 10.0,
-        gait_mode_governor: GaitModeGovernor | None = None,
     ) -> None:
         if max_abs_policy_action <= 0.0:
             raise ValueError("max_abs_policy_action must be positive")
         self.contract = contract
         self.backend = backend
         self.max_abs_policy_action = max_abs_policy_action
-        self.gait_mode_governor = gait_mode_governor
         self.previous_action = np.zeros(contract.action_dimension, dtype=np.float32)
 
     def reset(self) -> None:
         self.previous_action.fill(0.0)
-        if self.gait_mode_governor is not None:
-            self.gait_mode_governor.reset()
 
     def seed_previous_action(
         self,
@@ -396,20 +275,9 @@ class PolicyRuntime:
         command: Sequence[float] | np.ndarray,
         slam_confidence: Sequence[float] | np.ndarray | None = None,
     ) -> InferenceResult:
-        effective_command = command
-        if self.gait_mode_governor is not None:
-            if self.contract.observation_dimension != 51 or slam_confidence is None:
-                raise ValueError("gait-mode governor requires the 51-D confidence contract")
-            confidence = _vector(slam_confidence, 3, "slam_confidence")
-            scale = self.gait_mode_governor.update(
-                float(confidence[0]),
-                bool(confidence[1] >= 0.5),
-                self.contract.control_period_s,
-            )
-            effective_command = _vector(command, 3, "velocity_command") * scale
         observation = build_observation(
             state,
-            effective_command,
+            command,
             self.previous_action,
             self.contract,
             slam_confidence,

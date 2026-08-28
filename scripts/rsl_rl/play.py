@@ -859,16 +859,6 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                                 values["policy_gait_coordinates"], coordinate_sums
                             )
                         ]
-                    governor = getattr(
-                        env.unwrapped,
-                        "_slam_confidence_gait_mode_governor",
-                        None,
-                    )
-                    if governor is not None:
-                        for mode_index in range(4):
-                            values["gait_mode_counts"][mode_index] += int(
-                                torch.sum(governor.mode[mask] == mode_index)
-                            )
                 previous_evaluation_actions.copy_(actions)
                 previous_evaluation_actions[dones] = 0.0
             hard_reset = env.unwrapped.reset_terminated

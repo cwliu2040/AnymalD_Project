@@ -30,14 +30,6 @@ parser.add_argument("--task", type=str, default=None, help="Name of the task.")
 parser.add_argument(
     "--agent", type=str, default="rsl_rl_cfg_entry_point", help="Name of the RL agent configuration entry point."
 )
-parser.add_argument(
-    "--adapt-confidence-input-only",
-    action="store_true",
-    help=(
-        "Train the fresh critic plus actor.0 bias and columns 48..50 only; "
-        "freeze the legacy actor mapping for the initial adaptation stage."
-    ),
-)
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
 parser.add_argument("--max_iterations", type=int, default=None, help="RL Policy training iterations.")
 parser.add_argument(
@@ -101,20 +93,11 @@ if args_cli.actor_only_warm_start is not None and args_cli.resume:
     parser.error("--actor-only-warm-start and --resume are mutually exclusive")
 if args_cli.resume_checkpoint_path is not None and not args_cli.resume:
     parser.error("--resume-checkpoint-path requires --resume")
-if args_cli.adapt_confidence_input_only and args_cli.actor_only_warm_start is None:
-    parser.error("--adapt-confidence-input-only requires --actor-only-warm-start")
 
 _joint_training_tasks = {
     "Isaac-Velocity-Flat-Anymal-D-Locomotion-JointTraining-J1-v0",
     "Isaac-Velocity-Flat-Anymal-D-Locomotion-JointTraining-J2-v0",
 }
-_causal_joint_training_tasks = {
-    "Isaac-Velocity-Flat-Anymal-D-Locomotion-CausalJointTraining-J1-v0",
-    "Isaac-Velocity-Flat-Anymal-D-Locomotion-CausalJointTraining-J2-v0",
-    "Isaac-Velocity-Flat-Anymal-D-Locomotion-ConstrainedBarrier-J1-v0",
-    "Isaac-Velocity-Flat-Anymal-D-Locomotion-ConstrainedBarrier-J2-v0",
-}
-_joint_training_tasks.update(_causal_joint_training_tasks)
 _joint_training_protocol = None
 if args_cli.task in _joint_training_tasks:
     if args_cli.joint_training_protocol is None or not args_cli.authorized_joint_training:
@@ -154,8 +137,6 @@ if args_cli.task in _joint_training_tasks:
         1 <= args_cli.max_iterations <= _authorized_total_iterations
     ):
         parser.error("J1/J2 iteration count exceeds the currently authorized total")
-    if args_cli.adapt_confidence_input_only:
-        parser.error("retired confidence-input-only training is forbidden for J1/J2")
     if not args_cli.resume:
         _source = Path(_protocol["initialization_and_anchoring"]["source_checkpoint"])
         _source = (_protocol_path.parents[1] / _source).resolve()
@@ -264,15 +245,6 @@ def actor_only_warm_start(policy, optimizer, source_path: Path) -> dict[str, obj
     checkpoint = torch.load(source_path, map_location="cpu", weights_only=False)
     source = checkpoint["model_state_dict"]
     target = policy.state_dict()
-    if "actor.backbone.0.weight" in target:
-        return _residual_actor_warm_start(
-            policy,
-            optimizer,
-            source_path,
-            checkpoint,
-            source,
-            target,
-        )
     actor_keys = [name for name in target if name == "std" or name.startswith("actor.")]
     critic_keys = [name for name in target if name.startswith("critic.")]
     if tuple(source["actor.0.weight"].shape) != (128, 48):
@@ -316,231 +288,6 @@ def actor_only_warm_start(policy, optimizer, source_path: Path) -> dict[str, obj
         "new_input_columns": bootstrap_report["new_input_columns"],
         "new_input_columns_initialization": "exact_zero",
     }
-
-
-def _residual_actor_warm_start(
-    policy,
-    optimizer,
-    source_path: Path,
-    checkpoint: dict,
-    source: dict[str, torch.Tensor],
-    target: dict[str, torch.Tensor],
-) -> dict[str, object]:
-    """Copy model1450 into a frozen backbone without touching adapter or critic."""
-    source_actor_keys = sorted(
-        name for name in source if name == "std" or name.startswith("actor.")
-    )
-    target_backbone_keys = sorted(
-        name for name in target if name.startswith("actor.backbone.")
-    )
-    residual_keys = sorted(
-        name
-        for name in target
-        if name.startswith("actor.residual.")
-        or name.startswith("actor.action_skip.")
-        or name.startswith("actor.gait_head.")
-        or name.startswith("actor.intent_head.")
-        or name == "actor.safe_command_gain"
-    )
-    critic_keys = sorted(name for name in target if name.startswith("critic."))
-    expected_backbone_keys = sorted(
-        f"actor.backbone.{name.removeprefix('actor.')}"
-        for name in source_actor_keys
-        if name.startswith("actor.")
-    )
-    if target_backbone_keys != expected_backbone_keys or "std" not in source_actor_keys:
-        raise ValueError("source actor and residual target backbone parameter names differ")
-    if tuple(source["actor.0.weight"].shape) != (128, 48):
-        raise ValueError("source is not the expected 48-D model1450 actor")
-    if tuple(target["actor.backbone.0.weight"].shape) != (128, 48):
-        raise ValueError("residual target is not the expected frozen 48-D backbone")
-    is_gait_mode = bool(
-        getattr(policy.actor, "external_gait_mode_governor", False)
-    )
-    is_structured_gait = any(
-        name.startswith("actor.gait_head.") for name in residual_keys
-    )
-    is_intent_gait = bool(
-        getattr(policy.actor, "policy_intent_blend", False)
-    )
-    if not residual_keys and not is_gait_mode:
-        raise ValueError("residual target has no adapter parameters")
-
-    critic_before = _state_sha256(target, critic_keys)
-    residual_before = _state_sha256(target, residual_keys)
-    copied_parameters = []
-    with torch.no_grad():
-        for source_name in source_actor_keys:
-            target_name = (
-                source_name
-                if source_name == "std"
-                else f"actor.backbone.{source_name.removeprefix('actor.')}"
-            )
-            source_tensor = source[source_name].to(
-                device=target[target_name].device,
-                dtype=target[target_name].dtype,
-            )
-            if tuple(source_tensor.shape) != tuple(target[target_name].shape):
-                raise ValueError(f"actor parameter shape mismatch for {source_name}")
-            target[target_name].copy_(source_tensor)
-            copied_parameters.append({"source": source_name, "target": target_name})
-
-    final_state = policy.state_dict()
-    critic_after = _state_sha256(final_state, critic_keys)
-    residual_after = _state_sha256(final_state, residual_keys)
-    if critic_after != critic_before:
-        raise RuntimeError("residual warm-start modified critic parameters")
-    if residual_after != residual_before:
-        raise RuntimeError("residual warm-start modified adapter parameters")
-    if optimizer.state:
-        raise RuntimeError("residual warm-start requires a fresh optimizer")
-    is_safe_command = "actor.safe_command_gain" in residual_keys
-    for prefix in ("actor.residual.", "actor.gait_head.", "actor.intent_head."):
-        final_weight_keys = [
-            name
-            for name in residual_keys
-            if name.startswith(prefix) and name.endswith(".weight")
-        ]
-        if final_weight_keys:
-            final_weight_key = max(
-                final_weight_keys,
-                key=lambda name: int(name.split(".")[-2]),
-            )
-            final_bias_key = final_weight_key.removesuffix("weight") + "bias"
-            if torch.count_nonzero(final_state[final_weight_key]).item() != 0:
-                raise RuntimeError(f"{prefix} final weight is not exactly zero")
-            if torch.count_nonzero(final_state[final_bias_key]).item() != 0:
-                raise RuntimeError(f"{prefix} final bias is not exactly zero")
-    action_skip_keys = [
-        name for name in residual_keys if name.startswith("actor.action_skip.")
-    ]
-    if any(torch.count_nonzero(final_state[name]).item() != 0 for name in action_skip_keys):
-        raise RuntimeError("residual action shortcut is not exactly zero")
-    if is_safe_command and torch.count_nonzero(
-        final_state["actor.safe_command_gain"]
-    ).item() != 0:
-        raise RuntimeError("safe-command blend gain is not exactly zero")
-
-    trainable = sorted(name for name, value in policy.named_parameters() if value.requires_grad)
-    frozen = sorted(name for name, value in policy.named_parameters() if not value.requires_grad)
-    if not all(
-        name.startswith("critic.")
-        or name.startswith("actor.residual.")
-        or name.startswith("actor.action_skip.")
-        or name.startswith("actor.gait_head.")
-        or name.startswith("actor.intent_head.")
-        or name == "actor.safe_command_gain"
-        for name in trainable
-    ):
-        raise RuntimeError("residual policy exposes an unexpected trainable parameter")
-    if "std" not in frozen or not all(name in frozen for name in target_backbone_keys):
-        raise RuntimeError("formal actor backbone or action noise is not frozen")
-
-    report = {
-        "schema_version": 1,
-        "kind": (
-            "frozen_backbone_gait_mode_warm_start"
-            if is_gait_mode
-            else (
-                "frozen_backbone_intent_gait_warm_start"
-                if is_intent_gait
-                else (
-                    "frozen_backbone_structured_gait_warm_start"
-                    if is_structured_gait
-                    else (
-                        "frozen_backbone_safe_command_warm_start"
-                        if is_safe_command
-                        else "frozen_backbone_bounded_residual_warm_start"
-                    )
-                )
-            )
-        ),
-        "source": str(source_path),
-        "source_sha256": _sha256(source_path),
-        "source_iteration_ignored": int(checkpoint.get("iter", -1)),
-        "target_iteration": 0,
-        "copied_parameters": copied_parameters,
-        "backbone_state_sha256": _state_sha256(final_state, target_backbone_keys),
-        "residual_state_sha256": residual_after,
-        "critic_state_sha256": critic_after,
-        "critic_initialization": "fresh_runner_seeded_initialization",
-        "optimizer_initialization": "fresh_empty_adam_state",
-        "healthy_path": "exact_frozen_model1450_backbone",
-        "trainable_parameters": trainable,
-        "frozen_parameters": frozen,
-    }
-    if is_gait_mode:
-        report["command_governor"] = "external_stateful_gait_mode_v1"
-        report["actor_adapter_parameters"] = []
-    elif is_structured_gait:
-        report["gait_head_output_dimension"] = int(
-            policy.actor.gait_parameter_dim
-        )
-        report["gait_head_final_layer_initialization"] = "exact_zero"
-        if is_intent_gait and hasattr(policy.actor, "intent_head"):
-            report["intent_head_output_dimension"] = 1
-            report["intent_head_final_layer_initialization"] = "exact_zero"
-        report["gait_coordinates"] = (
-            ["ppo_locomotion_intent_blend"]
-            if is_intent_gait
-            else []
-        ) + [
-                "stride_modulation_positive_attenuates",
-                "crouch",
-                "stance_width",
-                "action_smoothing",
-            ]
-    elif is_safe_command:
-        safe_command_gain_limit = float(policy.actor.safe_command_gain_limit)
-        report["safe_command_gain_initialization"] = "exact_zero"
-        report["safe_command_gain_limit"] = safe_command_gain_limit
-        report["trained_target"] = {
-            "kind": "frozen_model1450_safe_command_blend",
-            "maximum_blend_fraction": safe_command_gain_limit,
-        }
-    else:
-        report["residual_final_layer_initialization"] = "exact_zero"
-    return report
-
-
-def configure_confidence_input_adaptation(policy) -> dict[str, object]:
-    """Freeze the legacy actor while adapting its new inputs and first bias."""
-    if hasattr(policy.actor, "backbone"):
-        raise ValueError(
-            "--adapt-confidence-input-only is for the dense 51-D actor, not "
-            "the bounded residual policy"
-        )
-    if int(policy.actor[0].in_features) != 51:
-        raise ValueError(
-            "--adapt-confidence-input-only is the retired 51-D warm-up mode; "
-            "it is forbidden for 1068-D full-policy joint training"
-        )
-    trainable = []
-    frozen = []
-    for name, parameter in policy.named_parameters():
-        if name.startswith("critic.") or name == "actor.0.bias":
-            parameter.requires_grad_(True)
-            trainable.append(name)
-        elif name == "actor.0.weight":
-            parameter.requires_grad_(True)
-            mask = torch.zeros_like(parameter)
-            mask[:, 48:] = 1.0
-            parameter.register_hook(lambda gradient, mask=mask: gradient * mask)
-            trainable.append("actor.0.weight[:,48:51]")
-            frozen.append("actor.0.weight[:,0:48]")
-        else:
-            parameter.requires_grad_(False)
-            frozen.append(name)
-    return {
-        "mode": "confidence_input_adaptation",
-        "trainable": trainable,
-        "frozen": frozen,
-    }
-
-torch.backends.cuda.matmul.allow_tf32 = True
-torch.backends.cudnn.allow_tf32 = True
-torch.backends.cudnn.deterministic = False
-torch.backends.cudnn.benchmark = False
 
 
 @hydra_task_config(args_cli.task, args_cli.agent)
@@ -670,10 +417,6 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             args_cli.actor_only_warm_start,
         )
         runner.current_learning_iteration = 0
-        if args_cli.adapt_confidence_input_only:
-            warm_start_report["actor_training_scope"] = (
-                configure_confidence_input_adaptation(runner.alg.policy)
-            )
     # write git state to logs
     runner.add_git_repo_to_log(__file__)
     # load the checkpoint

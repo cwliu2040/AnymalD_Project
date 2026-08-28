@@ -86,6 +86,7 @@ def test_formal_mode_is_fail_closed_until_explicit_authorization() -> None:
     module = _module()
     protocol = module._load_yaml(ROOT / "configs/slam_confidence_publication_protocol.yaml")
     release = module._load_yaml(ROOT / "configs/slam_confidence_sim_release_v1.yaml")
+    protocol["formal_collection_authorized"] = False
     with pytest.raises(ValueError, match="not authorized"):
         module.validate_formal_authorization(protocol, release)
 

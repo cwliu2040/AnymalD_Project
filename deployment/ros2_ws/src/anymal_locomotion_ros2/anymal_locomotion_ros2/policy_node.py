@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import hashlib
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -21,7 +20,6 @@ from std_msgs.msg import UInt64
 from anymal_locomotion_interfaces.msg import FootContactState, SlamConfidence
 
 from anymal_locomotion_ros2.policy_core import (
-    GaitModeGovernor,
     PolicyContract,
     PolicyRuntime,
     RobotState,
@@ -43,12 +41,6 @@ from anymal_locomotion_ros2.slam_confidence_observation_core import (
     ppo_confidence_observation,
 )
 from anymal_locomotion_ros2.torchscript_backend import TorchScriptBackend
-from anymal_locomotion_ros2.touchdown_phase_tracker_core import (
-    initial_touchdown_phase_tracker_state,
-)
-from anymal_locomotion_ros2.touchdown_residual_pipeline_core import (
-    apply_touchdown_residual_pipeline,
-)
 
 
 def create_inference_backend(backend_name: str, policy_path: str) -> Any:
@@ -92,7 +84,6 @@ class AnymalPolicyNode(Node):
         self.declare_parameter("slam_confidence_receipt_timeout_s", 0.15)
         self.declare_parameter("expected_slam_confidence_backend", "")
         self.declare_parameter("expected_slam_confidence_calibration_id", "")
-        self.declare_parameter("enable_gait_mode_governor", False)
         self.declare_parameter("joint_command_topic", "/joint_command")
         self.declare_parameter(
             "episode_reset_topic", "/simulation/episode_reset"
@@ -114,10 +105,6 @@ class AnymalPolicyNode(Node):
         self.declare_parameter("max_abs_policy_action", 10.0)
         self.declare_parameter("diagnostics_path", "")
         self.declare_parameter("state_transplant_manifest_path", "")
-        self.declare_parameter("enable_touchdown_residual_experiment", False)
-        self.declare_parameter("touchdown_residual_arm", "zero")
-        self.declare_parameter("touchdown_phase_artifact_path", "")
-        self.declare_parameter("touchdown_phase_artifact_sha256", "")
 
         policy_path = str(self.get_parameter("policy_path").value)
         metadata_path = str(self.get_parameter("metadata_path").value)
@@ -132,60 +119,11 @@ class AnymalPolicyNode(Node):
         else:
             backend = backend_factory(policy_path)
         self._contract = PolicyContract.from_metadata(metadata_path)
-        enable_gait_mode_governor = bool(
-            self.get_parameter("enable_gait_mode_governor").value
-        )
-        if enable_gait_mode_governor and self._contract.observation_dimension != 51:
-            raise ValueError("gait-mode governor requires a 51-D policy")
         self._runtime = PolicyRuntime(
             self._contract,
             backend,
             max_abs_policy_action=float(self.get_parameter("max_abs_policy_action").value),
-            gait_mode_governor=(
-                GaitModeGovernor() if enable_gait_mode_governor else None
-            ),
         )
-        self._touchdown_experiment_enabled = bool(
-            self.get_parameter("enable_touchdown_residual_experiment").value
-        )
-        self._touchdown_arm = str(
-            self.get_parameter("touchdown_residual_arm").value
-        ).strip()
-        attenuation_by_arm = {
-            "zero": 0.0,
-            "touchdown_soft_low": 0.25,
-            "touchdown_soft": 0.50,
-        }
-        if self._touchdown_arm not in attenuation_by_arm:
-            raise ValueError("unsupported touchdown residual experiment arm")
-        self._touchdown_attenuation = attenuation_by_arm[self._touchdown_arm]
-        self._touchdown_phase_artifact: dict[str, Any] | None = None
-        self._touchdown_phase_state = initial_touchdown_phase_tracker_state()
-        self._touchdown_joint_position_history: list[np.ndarray] = []
-        self._touchdown_joint_velocity_history: list[np.ndarray] = []
-        self._touchdown_previous_action_history: list[np.ndarray] = []
-        self._touchdown_history_length = 0
-        if self._touchdown_experiment_enabled:
-            if self._contract.observation_dimension != 48:
-                raise ValueError("touchdown experiment requires frozen 48-D model1450")
-            artifact_path = Path(str(
-                self.get_parameter("touchdown_phase_artifact_path").value
-            )).expanduser().resolve()
-            expected_sha256 = str(
-                self.get_parameter("touchdown_phase_artifact_sha256").value
-            ).strip()
-            if not artifact_path.is_file() or len(expected_sha256) != 64:
-                raise ValueError("touchdown experiment requires hash-locked phase artifact")
-            actual_sha256 = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
-            if actual_sha256 != expected_sha256:
-                raise ValueError("touchdown phase artifact SHA-256 mismatch")
-            artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
-            if artifact.get("frozen") is not True or artifact.get("passed") is not True:
-                raise ValueError("touchdown experiment requires frozen PASS phase artifact")
-            self._touchdown_phase_artifact = artifact
-            self._touchdown_history_length = max(
-                int(value) for value in artifact["history_offsets_samples"]
-            ) + 1
         self._velocity_estimator_enabled = bool(
             self.get_parameter("enable_velocity_estimator").value
         )
@@ -818,10 +756,6 @@ class AnymalPolicyNode(Node):
             return
         if sequence > self._last_reset_sequence:
             self._runtime.reset()
-            self._touchdown_phase_state = initial_touchdown_phase_tracker_state()
-            self._touchdown_joint_position_history.clear()
-            self._touchdown_joint_velocity_history.clear()
-            self._touchdown_previous_action_history.clear()
             if self._velocity_estimator is not None:
                 self._velocity_estimator.reset()
                 self._velocity_estimator_synchronizer.reset()
@@ -930,63 +864,6 @@ class AnymalPolicyNode(Node):
             return
         adapted_action = result.raw_action
         adapted_joint_targets = result.joint_targets
-        touchdown_diagnostic: dict[str, Any] | None = None
-        if self._touchdown_experiment_enabled:
-            assert self._touchdown_phase_artifact is not None
-            self._touchdown_joint_position_history.append(self._joint_positions.copy())
-            self._touchdown_joint_velocity_history.append(self._joint_velocities.copy())
-            self._touchdown_previous_action_history.append(
-                result.observation[36:48].copy()
-            )
-            for history in (
-                self._touchdown_joint_position_history,
-                self._touchdown_joint_velocity_history,
-                self._touchdown_previous_action_history,
-            ):
-                del history[:-self._touchdown_history_length]
-            pipeline = apply_touchdown_residual_pipeline(
-                requested_command=effective_command,
-                backbone_action=result.raw_action,
-                joint_position_history=self._touchdown_joint_position_history,
-                joint_velocity_history=self._touchdown_joint_velocity_history,
-                previous_action_history=self._touchdown_previous_action_history,
-                current_joint_position_rad=self._joint_positions,
-                current_joint_velocity_radps=self._joint_velocities,
-                phase_artifact=self._touchdown_phase_artifact,
-                phase_state=self._touchdown_phase_state,
-                attenuation_fraction=self._touchdown_attenuation,
-                tracking_valid=True,
-            )
-            self._touchdown_phase_state = pipeline.phase.state
-            adapted_action = pipeline.intervention.applied_action
-            defaults = np.asarray(
-                self._contract.default_joint_positions, dtype=np.float32
-            )
-            adapted_joint_targets = (
-                defaults + self._contract.action_scale * adapted_action
-            )
-            self._runtime.seed_previous_action(adapted_action)
-            touchdown_diagnostic = {
-                "arm": self._touchdown_arm,
-                "attenuation_fraction": self._touchdown_attenuation,
-                "mode": pipeline.mode,
-                "wiring_valid": pipeline.wiring_valid,
-                "tracking_valid": pipeline.phase.tracking_valid,
-                "eligible_feet": pipeline.intervention.active_feet.astype(bool).tolist(),
-                "phase_progress": pipeline.phase.swing_progress.astype(float).tolist(),
-                "phase_confidence": pipeline.phase.confidence.astype(float).tolist(),
-                "action_residual": pipeline.intervention.action_residual.astype(float).tolist(),
-                "adapted_action": adapted_action.astype(float).tolist(),
-                "horizontal_first_order_correction_m": (
-                    np.einsum(
-                        "fij,j->fi",
-                        pipeline.kinematics.foot_jacobian_per_policy_action,
-                        pipeline.intervention.action_residual,
-                    )[:, :2].astype(float).tolist()
-                    if pipeline.kinematics is not None
-                    else [[0.0, 0.0]] * 4
-                ),
-            }
         if (
             self._transplant_expected_observation is not None
             and not self._transplant_observation_checked
@@ -1040,10 +917,6 @@ class AnymalPolicyNode(Node):
                     ),
                     "observation": result.observation.astype(float).tolist(),
                     "raw_action": result.raw_action.astype(float).tolist(),
-                    **(
-                        {"touchdown_residual": touchdown_diagnostic}
-                        if touchdown_diagnostic is not None else {}
-                    ),
                 }
             )
 

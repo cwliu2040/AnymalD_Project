@@ -213,27 +213,6 @@ def generate_launch_description() -> LaunchDescription:
     point_density_ramp_down_s = LaunchConfiguration("point_density_ramp_down_s")
     point_density_hold_s = LaunchConfiguration("point_density_hold_s")
     point_density_ramp_up_s = LaunchConfiguration("point_density_ramp_up_s")
-    command_scale_pulse_enabled = LaunchConfiguration(
-        "command_scale_pulse_enabled"
-    )
-    command_scale_pulse_start_s = LaunchConfiguration(
-        "command_scale_pulse_start_s"
-    )
-    command_scale_pulse_duration_s = LaunchConfiguration(
-        "command_scale_pulse_duration_s"
-    )
-    command_scale_pulse_scale = LaunchConfiguration(
-        "command_scale_pulse_scale"
-    )
-    command_scale_pulse_scale_x = LaunchConfiguration(
-        "command_scale_pulse_scale_x"
-    )
-    command_scale_pulse_scale_y = LaunchConfiguration(
-        "command_scale_pulse_scale_y"
-    )
-    command_scale_pulse_scale_z = LaunchConfiguration(
-        "command_scale_pulse_scale_z"
-    )
     enable_confidence = LaunchConfiguration("enable_confidence")
     slam_odom_topic = LaunchConfiguration("slam_odom_topic")
     policy_odometry_topic = LaunchConfiguration("policy_odometry_topic")
@@ -269,16 +248,6 @@ def generate_launch_description() -> LaunchDescription:
     interactive = LaunchConfiguration("interactive")
     use_rviz = LaunchConfiguration("use_rviz")
     open_teleop_terminal = LaunchConfiguration("open_teleop_terminal")
-    enable_touchdown_residual_experiment = LaunchConfiguration(
-        "enable_touchdown_residual_experiment"
-    )
-    touchdown_residual_arm = LaunchConfiguration("touchdown_residual_arm")
-    touchdown_phase_artifact_path = LaunchConfiguration(
-        "touchdown_phase_artifact_path"
-    )
-    touchdown_phase_artifact_sha256 = LaunchConfiguration(
-        "touchdown_phase_artifact_sha256"
-    )
 
     project_python_path = [
         PathJoinSubstitution([project_root, "deployment", "python_vendor"]),
@@ -325,12 +294,6 @@ def generate_launch_description() -> LaunchDescription:
                 "diagnostics_path": PathJoinSubstitution(
                     [output_dir, "policy_diagnostics.json"]
                 ),
-                "enable_touchdown_residual_experiment": ParameterValue(
-                    enable_touchdown_residual_experiment, value_type=bool,
-                ),
-                "touchdown_residual_arm": touchdown_residual_arm,
-                "touchdown_phase_artifact_path": touchdown_phase_artifact_path,
-                "touchdown_phase_artifact_sha256": touchdown_phase_artifact_sha256,
             }
         ],
         output="screen",
@@ -354,27 +317,6 @@ def generate_launch_description() -> LaunchDescription:
                 ),
                 "expected_confidence_backend": expected_confidence_backend,
                 "expected_calibration_id": expected_calibration_id,
-                "command_scale_pulse_enabled": ParameterValue(
-                    command_scale_pulse_enabled, value_type=bool,
-                ),
-                "command_scale_pulse_start_s": ParameterValue(
-                    command_scale_pulse_start_s, value_type=float,
-                ),
-                "command_scale_pulse_duration_s": ParameterValue(
-                    command_scale_pulse_duration_s, value_type=float,
-                ),
-                "command_scale_pulse_scale": ParameterValue(
-                    command_scale_pulse_scale, value_type=float,
-                ),
-                "command_scale_pulse_scale_x": ParameterValue(
-                    command_scale_pulse_scale_x, value_type=float,
-                ),
-                "command_scale_pulse_scale_y": ParameterValue(
-                    command_scale_pulse_scale_y, value_type=float,
-                ),
-                "command_scale_pulse_scale_z": ParameterValue(
-                    command_scale_pulse_scale_z, value_type=float,
-                ),
                 "output_path": PathJoinSubstitution(
                     [output_dir, "driver.json"]
                 ),
@@ -581,18 +523,6 @@ def generate_launch_description() -> LaunchDescription:
                 "open_teleop_terminal", default_value="false"
             ),
             DeclareLaunchArgument(
-                "enable_touchdown_residual_experiment",
-                default_value="false",
-                description="Opt-in block597-only touchdown residual experiment",
-            ),
-            DeclareLaunchArgument(
-                "touchdown_residual_arm",
-                default_value="zero",
-                choices=["zero", "touchdown_soft_low", "touchdown_soft"],
-            ),
-            DeclareLaunchArgument("touchdown_phase_artifact_path", default_value=""),
-            DeclareLaunchArgument("touchdown_phase_artifact_sha256", default_value=""),
-            DeclareLaunchArgument(
                 "ros_domain_id",
                 default_value=EnvironmentVariable(
                     "ROS_DOMAIN_ID",
@@ -792,17 +722,6 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("point_density_ramp_down_s", default_value="1.5"),
             DeclareLaunchArgument("point_density_hold_s", default_value="4.5"),
             DeclareLaunchArgument("point_density_ramp_up_s", default_value="3.0"),
-            DeclareLaunchArgument(
-                "command_scale_pulse_enabled",
-                default_value="false",
-                description="Apply one deterministic command-scale pulse",
-            ),
-            DeclareLaunchArgument("command_scale_pulse_start_s", default_value="7.25"),
-            DeclareLaunchArgument("command_scale_pulse_duration_s", default_value="0.75"),
-            DeclareLaunchArgument("command_scale_pulse_scale", default_value="1.0"),
-            DeclareLaunchArgument("command_scale_pulse_scale_x", default_value="-1.0"),
-            DeclareLaunchArgument("command_scale_pulse_scale_y", default_value="-1.0"),
-            DeclareLaunchArgument("command_scale_pulse_scale_z", default_value="-1.0"),
             DeclareLaunchArgument(
                 "enable_confidence",
                 default_value="false",
