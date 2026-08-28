@@ -1,7 +1,7 @@
 # SLAM confidence full-policy joint training v1
 
 Date: 2026-08-26
-Status: static training stack and non-learning simulation preflight passed; PPO execution closed
+Status: fixed-budget PPO complete; post-training motion audit FAIL; stopped before SLAM evaluation
 
 ## Question and attribution
 
@@ -85,7 +85,7 @@ the start, enables angular/scan distortion objectives at step 600, and enables l
 simulation preflight verified their numerical scale. These weights remain frozen and must not be
 changed after observing future J1/J2 training outcome data.
 
-The execution-closed budget is also frozen: J1 and J2 each use independent seeds 1450/1451/1452,
+The fixed budget is frozen: J1 and J2 each use independent seeds 1450/1451/1452,
 4096 environments, 24-step rollouts and at most 300 iterations. Iteration 50 is a common safety and
 collapse futility audit, not an efficacy or seed-selection point. Formal evaluation may not
 cherry-pick one successful seed and J1/J2 must consume equal environment steps.
@@ -113,7 +113,65 @@ fields used by the go/no-go reducer. It requires:
 The synthetic evaluator test passes only when command/speed are matched and body, LiDAR and SLAM
 all improve; an exact-command mutation fails integrity and matched-motion attribution.
 
-## Current gates and next authorized boundary
+## Fixed-budget PPO execution
+
+The user separately authorized the frozen PPO feasibility run. J1 and J2 each completed seeds
+1450, 1451 and 1452 with 4096 environments, 24 rollout steps and 300 updates. The common
+iteration-50 futility audit found no fall, termination, non-finite value or hard stop collapse; all
+audited J0/J1/J2 fixed-command runs had survival fraction 1.0. J1 seed1450 forward progress was near
+but below the formal 0.98 ratio and remained a warning, not a reason to cherry-pick or stop one arm.
+
+Training resumed from each `model_49.pt` for updates 50 through 299. The runner now restores Isaac
+Lab's global curriculum counter from completed updates before learning, advances past the last saved
+iteration, rejects a continuation exceeding 300 updates and records this lineage in the run
+manifest. This prevents a resumed job from silently restarting the motion-reward curriculum or
+repeating update 49.
+
+All six `model_299.pt` files are present inside the repository's ignored training-log tree, report
+checkpoint iteration 299 and contain only finite model tensors. Each arm/seed consumed 29,491,200
+transitions; total J1/J2 execution was 176,947,200 transitions with equal budgets. Final on-policy
+mean rewards were J1 `[9.76828, 12.4662, 11.4508]` and J2
+`[10.8065, 11.0249, 11.5415]` for seeds 1450/1451/1452. These values show finite completed
+optimization only: they are not command-matched SLAM evidence and cannot select an arm or seed.
+
+Both one-shot PPO authorization flags were closed after completion. Live ROS wiring, default
+switch, physical robot operation and blocks581..584/602..605 remained closed and unexecuted.
+
+## Post-training fixed-command motion audit
+
+Before spending FAST-LIO2/LIO-SAM budget, a frozen 36-run rejection matrix evaluated J0/J1/J2 for
+three seeds and forward, lateral, pure-yaw and mixed commands. Every run used 128 environments, 750
+steps and a 100-step warmup. The runner collected survival and termination, matched speed/progress,
+stopped fraction, cadence/contact/duty factor, body height, stance width, joint margin, clearance,
+torque, energy, slip, roll/pitch rate, tracking error, acceleration/jerk and LiDAR scan-motion
+proxies. It did not modify policy, command, reward or training state.
+
+The matrix failed the prespecified pre-SLAM gate. J1-J0 passing-seed counts for
+forward/lateral/yaw/mixed were `0/0/1/0`, with two required. J2-J1 was `0/0/0/0`. The ignored
+machine-readable summary is
+`outputs/slam_confidence_joint_training_v1/post_training_motion_audit/summary.json`, SHA-256
+`8222347c67ee6c0da8394eac21ce0a2bcf3036d3ccdf35f168a542d52e2f9176`.
+
+The failure is informative rather than a null training result. Relative to J0, J1 reduced mean
+roll/pitch-rate RMS by 11.4--24.9%, angular-acceleration RMS by 21.9--32.8% and LiDAR rotation proxy
+by 21.5--31.9% across the four profiles. It therefore learned a generic smoothing mechanism.
+However, forward/lateral/mixed tracking errors regressed materially, stance width increased by about
+9--17% in those profiles, energy or slip gates failed repeatedly, and J1 seed1452 forward had one
+termination among 128 environments. The frozen attribution and safety gates correctly reject this
+tradeoff.
+
+J2 did not add repeatable localization-aware value over J1. It sometimes recovered tracking, but
+mean roll/pitch, angular acceleration and LiDAR rotation proxy generally regressed relative to J1;
+all three mixed-command seeds retained less than 98% of J1 linear progress. All J2 fixed-command
+runs survived, but body/LiDAR and paired gait gates still failed. This is not limiter collapse—the
+main J1 behavior was often faster than J0—but it is an unacceptable smoothing/tracking/posture
+tradeoff and no repeatable J2-J1 mechanism.
+
+One Isaac Sim child process crashed during startup before J2 seed1452 lateral was loaded. The
+resumable runner preserved the first 29 reports and reran the missing cell successfully; this was
+not counted as a policy safety event.
+
+## Current gates and next boundary
 
 Static contract, actual-checkpoint bootstrap, behavior anchoring, offline evaluator tests and the
 fixed non-learning runtime preflight are complete. The runner checks both authorization flags before
@@ -130,8 +188,9 @@ per step in both arms, below the frozen limits `1.0` and `5.0`. The merged ignor
 `6c3ab914d91d57365ba78397c13b36828a5b413041fcdb848e5d11d20306b81c`, and records
 `ppo_constructed_or_run: false`.
 
-The one-shot preflight authorization flags were closed immediately afterward. No PPO iteration,
-live ROS wiring, default switch or physical robot operation was executed. The next boundary is a
-separate explicit authorization for the already-frozen fixed-budget J1/J2 training; a preflight PASS
-only proves that training inputs, bootstrap behavior and reward scales are wired as specified, not
-that the learned policy will improve SLAM.
+The preflight PASS established wiring, not efficacy. Fixed-budget PPO and the post-training motion
+audit are complete, and all one-shot gates are closed. Because the cheaper motion gate failed,
+FAST-LIO2/LIO-SAM evaluation was not run. The current J1/J2 checkpoints must not proceed to SLAM,
+teacher/adaptation, ROS wiring or deployment. Any further attempt is a new architecture/training
+design decision; it may not post-hoc relax these frozen gates or describe J1's generic smoothing
+tradeoff as localization-aware success.

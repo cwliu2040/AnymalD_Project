@@ -74,6 +74,18 @@ JOINT_TRAINING_J1_TASK_ID = (
 JOINT_TRAINING_J2_TASK_ID = (
     "Isaac-Velocity-Flat-Anymal-D-Locomotion-JointTraining-J2-v0"
 )
+CAUSAL_JOINT_TRAINING_J1_TASK_ID = (
+    "Isaac-Velocity-Flat-Anymal-D-Locomotion-CausalJointTraining-J1-v0"
+)
+CAUSAL_JOINT_TRAINING_J2_TASK_ID = (
+    "Isaac-Velocity-Flat-Anymal-D-Locomotion-CausalJointTraining-J2-v0"
+)
+CONSTRAINED_BARRIER_J1_TASK_ID = (
+    "Isaac-Velocity-Flat-Anymal-D-Locomotion-ConstrainedBarrier-J1-v0"
+)
+CONSTRAINED_BARRIER_J2_TASK_ID = (
+    "Isaac-Velocity-Flat-Anymal-D-Locomotion-ConstrainedBarrier-J2-v0"
+)
 
 gym.register(
     id=TASK_ID,
@@ -163,6 +175,70 @@ gym.register(
         "rsl_rl_cfg_entry_point": (
             f"{agents.__name__}.rsl_rl_ppo_cfg:"
             "AnymalDLocomotionJointTrainingJ2RunnerCfg"
+        ),
+    },
+)
+
+gym.register(
+    id=CAUSAL_JOINT_TRAINING_J1_TASK_ID,
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": (
+            f"{__name__}.flat_env_cfg:"
+            "AnymalDLocomotionCausalJointTrainingJ1EnvCfg"
+        ),
+        "rsl_rl_cfg_entry_point": (
+            f"{agents.__name__}.rsl_rl_ppo_cfg:"
+            "AnymalDLocomotionCausalJointTrainingJ1RunnerCfg"
+        ),
+    },
+)
+
+gym.register(
+    id=CAUSAL_JOINT_TRAINING_J2_TASK_ID,
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": (
+            f"{__name__}.flat_env_cfg:"
+            "AnymalDLocomotionCausalJointTrainingJ2EnvCfg"
+        ),
+        "rsl_rl_cfg_entry_point": (
+            f"{agents.__name__}.rsl_rl_ppo_cfg:"
+            "AnymalDLocomotionCausalJointTrainingJ2RunnerCfg"
+        ),
+    },
+)
+
+gym.register(
+    id=CONSTRAINED_BARRIER_J1_TASK_ID,
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": (
+            f"{__name__}.flat_env_cfg:"
+            "AnymalDLocomotionConstrainedBarrierJ1EnvCfg"
+        ),
+        "rsl_rl_cfg_entry_point": (
+            f"{agents.__name__}.rsl_rl_ppo_cfg:"
+            "AnymalDLocomotionConstrainedBarrierJ1RunnerCfg"
+        ),
+    },
+)
+
+gym.register(
+    id=CONSTRAINED_BARRIER_J2_TASK_ID,
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": (
+            f"{__name__}.flat_env_cfg:"
+            "AnymalDLocomotionConstrainedBarrierJ2EnvCfg"
+        ),
+        "rsl_rl_cfg_entry_point": (
+            f"{agents.__name__}.rsl_rl_ppo_cfg:"
+            "AnymalDLocomotionConstrainedBarrierJ2RunnerCfg"
         ),
     },
 )

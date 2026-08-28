@@ -82,6 +82,49 @@ def high_combined_feet_slide(
     )
 
 
+def lateral_stance_slip_barrier(
+    env,
+    command_name: str,
+    min_lateral_speed: float,
+    free_slip_speed: float,
+    sensor_cfg: SceneEntityCfg,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize only stance-foot slip above a fixed lateral-command allowance."""
+    command = env.command_manager.get_command(command_name)
+    lateral_active = torch.abs(command[:, 1]) >= min_lateral_speed
+    contact_sensor = env.scene.sensors[sensor_cfg.name]
+    contacts = (
+        contact_sensor.data.net_forces_w_history[:, :, sensor_cfg.body_ids, :]
+        .norm(dim=-1)
+        .max(dim=1)[0]
+        > 1.0
+    )
+    asset = env.scene[asset_cfg.name]
+    foot_speed = asset.data.body_lin_vel_w[:, asset_cfg.body_ids, :2].norm(dim=-1)
+    excess = torch.clamp_min(foot_speed - free_slip_speed, 0.0)
+    return torch.sum(torch.square(excess) * contacts, dim=1) * lateral_active
+
+
+def mixed_yaw_tracking_barrier(
+    env,
+    command_name: str,
+    min_planar_speed: float,
+    min_yaw_speed: float,
+    free_yaw_error: float,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize yaw tracking error beyond a fixed allowance during mixed motion."""
+    command = env.command_manager.get_command(command_name)
+    mixed_active = (
+        torch.linalg.vector_norm(command[:, :2], dim=1) >= min_planar_speed
+    ) & (torch.abs(command[:, 2]) >= min_yaw_speed)
+    asset = env.scene[asset_cfg.name]
+    error = torch.abs(command[:, 2] - asset.data.root_ang_vel_b[:, 2])
+    excess = torch.clamp_min(error - free_yaw_error, 0.0)
+    return torch.square(excess) * mixed_active
+
+
 def refinery_feet_slide(
     env,
     command_name: str,

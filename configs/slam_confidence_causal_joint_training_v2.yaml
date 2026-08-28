@@ -1,0 +1,266 @@
+schema_version: 1
+protocol_id: slam-confidence-causal-joint-training-v2
+status: exploratory_ppo_iteration50_safety_failed_continuation_closed
+date: 2026-08-27
+
+supersedes_for_future_work:
+  protocol: configs/slam_confidence_joint_training_v1.yaml
+  retained_v1_result: complete_failed_pre_slam_gate
+  reason: >-
+    v1 exposed confidence history and weighted motion penalties by localization vulnerability, but
+    its simulated confidence followed an action-independent clock. It therefore could not teach
+    action -> body/LiDAR motion -> future SLAM outcome -> new confidence.
+
+research_question: >-
+  Can a full locomotion policy use deployable confidence, validity and age history to select actions
+  that causally improve future localization state while retaining requested motion and physical
+  safety?
+
+runtime_actor_contract:
+  localization_inputs: [confidence, tracking_valid, normalized_age]
+  localization_history_length: 20
+  localization_history_rate_hz: 50
+  other_history:
+    - original_requested_xyz_yaw_command
+    - body_motion
+    - joint_motion
+    - previous_action
+  future_label_input_forbidden: true
+  ground_truth_input_forbidden: true
+  backend_id_input_forbidden: true
+  route_phase_or_clock_input_forbidden: true
+  requested_command_scaling_in_observation_forbidden: true
+
+causal_transition_contract:
+  required_graph:
+    - policy_action_to_joint_and_body_motion
+    - body_motion_to_lidar_scan_translation_and_rotation
+    - scan_motion_and_point_support_to_next_localization_state
+    - next_localization_state_to_delayed_ppo_return
+  old_action_independent_clock_forbidden: true
+  state: [confidence, tracking_valid, normalized_age]
+  scan_time_s: 0.10
+  delayed_reward_horizon_steps: 25
+  delayed_reward_horizon_s: 0.50
+  transition_proxy:
+    status: uncalibrated_wiring_only
+    translation_scale_m: 0.02
+    rotation_scale_rad: 0.10
+    degradation_rate_hz: 0.80
+    recovery_rate_hz: 0.40
+    invalid_enter_confidence: 0.20
+    valid_exit_confidence: 0.40
+    maximum_age_s: 1.0
+    point_support_range: [0.60, 1.00]
+    route_timer_used: false
+  delayed_potential:
+    confidence_weight: 1.0
+    validity_bonus: 0.50
+    normalized_age_penalty: 0.25
+  interpretation: >-
+    These values prove dataflow and PPO credit-assignment wiring only. They may not be described as
+    FAST-LIO2/LIO-SAM dynamics or used for research training until calibrated and held out.
+
+comparators:
+  J0: frozen_model1450
+  J1:
+    actor_localization_history: neutral_[1,1,0]
+    reward: same_action_dependent_delayed_localization_reward_as_J2
+  J2:
+    actor_localization_history: causal_confidence_validity_age
+    reward: same_action_dependent_delayed_localization_reward_as_J1
+  attribution: J2_minus_J1_is_localization_history_value
+
+training_design:
+  first_stage: direct_asymmetric_or_standard_ppo_without_teacher_student
+  actor_runtime_inputs_only: true
+  future_outcome_enters_reward_not_actor_observation: true
+  teacher_student_required_now: false
+  teacher_student_later_only_if:
+    - calibrated_privileged_scene_or_slam_latent_is_needed
+    - runtime_history_cannot_directly_infer_that_latent
+  locomotion_objective: original_model1450_command_tracking_and_safety_stack
+  duplicate_direct_vibration_objectives_in_v2_initial_stage: true
+  reason: >-
+    After motion-only backend calibration failed, the user explicitly authorized a direct PPO
+    experiment. J1 and J2 receive identical auxiliary motion objectives; only J2 observes causal
+    localization history, and final efficacy will be judged by fresh actual-backend evaluation.
+
+initialization_and_anchoring:
+  source_checkpoint: checkpoints/anymal_d_locomotion_v1/recovery_v0.4.0/model_1450.pt
+  source_actor_input_dimension: 48
+  target_actor_input_dimension: 1068
+  behavior_reference: frozen_model1450_actor
+  behavior_anchor_coefficient: 0.25
+  action_noise_after_bootstrap: frozen_exact_model1450
+
+training_budget:
+  execution_authorized: false
+  arms: [J1, J2]
+  independent_training_seeds: [1450]
+  num_environments_per_seed: 4096
+  rollout_steps_per_environment: 24
+  maximum_iterations_per_seed: 300
+  current_authorized_iterations_per_arm: 50
+  common_interim_safety_audit_iteration: 50
+  continuation_to_300_requires_interim_safety_pass: true
+  interim_efficacy_selection_forbidden: true
+
+training_execution:
+  completed: true
+  stage: iteration_50
+  checkpoint_root: logs/rsl_rl/anymal_d_locomotion_causal_joint_training_v2
+  checkpoint_name: model_49.pt
+  runs:
+    - arm: J1
+      seed: 1450
+      run: 2026-08-27_15-16-56_J1_causal_reward_neutral_localization
+      checkpoint_sha256: 09e164d82853945f96915bfc2eb2de6a4f5a4d214859c1f4e91072db2a94a1dd
+      finite: true
+    - arm: J2
+      seed: 1450
+      run: 2026-08-27_15-18-11_J2_causal_reward_localization_history
+      checkpoint_sha256: 69a264e1843fa172fde9d647c9c489214fbde038fdf97556962611b28d9fdb6e
+      finite: true
+
+future_evaluation:
+  matched_motion:
+    maximum_abs_moving_linear_speed_difference_mps: 0.05
+    maximum_abs_realized_yaw_rate_difference_radps: 0.05
+    minimum_linear_progress_ratio: 0.98
+    minimum_yaw_progress_ratio: 0.98
+    maximum_stopped_fraction_excess: 0.00
+    maximum_candidate_stopped_fraction: 0.10
+  directional_gate:
+    minimum_improvement_fraction: 0.05
+    maximum_regression_fraction: 0.10
+  paired_noninferiority_metrics:
+    cadence_hz: {mode: upper_relative, tolerance: 0.10}
+    contact_switch_rate_hz: {mode: upper_relative, tolerance: 0.10}
+    duty_factor: {mode: two_sided_difference, tolerance: 0.05, absolute_minimum: 0.35, absolute_maximum: 0.75}
+    body_height_m: {mode: lower_difference, tolerance: 0.03, absolute_minimum: 0.45}
+    stance_width_m: {mode: two_sided_difference, tolerance: 0.03, absolute_minimum: 0.30, absolute_maximum: 0.60}
+    minimum_joint_margin_rad: {mode: lower_difference, tolerance: 0.05, absolute_minimum: 0.00}
+    foot_clearance_m: {mode: lower_difference, tolerance: 0.01, absolute_minimum: 0.00}
+    torque_rms_nm: {mode: upper_relative, tolerance: 0.10}
+    energy_per_progress: {mode: upper_relative, tolerance: 0.10}
+    stance_foot_slip_rms_mps: {mode: upper_difference, tolerance: 0.05}
+    stopped_fraction: {mode: upper_difference, tolerance: 0.00}
+
+post_training_motion_audit:
+  status: complete_continuation_safety_failed
+  purpose: iteration50_collapse_safety_only_not_proxy_efficacy
+  seeds: [1450]
+  profiles:
+    forward: {vx_mps: 1.5, vy_mps: 0.0, wz_radps: 0.0}
+    lateral: {vx_mps: 0.0, vy_mps: 1.0, wz_radps: 0.0}
+    yaw: {vx_mps: 0.0, vy_mps: 0.0, wz_radps: 1.0}
+    mixed: {vx_mps: 1.0, vy_mps: 0.5, wz_radps: 0.7}
+  num_environments: 128
+  steps: 750
+  warmup_steps: 100
+  minimum_passing_seeds_per_profile: 1
+  continuation_requires_all_profiles_j1_and_j2_continuation_safety_passed: true
+  result:
+    runs_completed: 12
+    artifact: outputs/slam_confidence_causal_joint_training_v2/iteration50_motion_audit/summary.json
+    artifact_sha256: c262506351820fec61894b3d1089a6ff33cc2d5e092583a1fee39e0f572af590
+    all_fixed_command_runs_without_termination: true
+    J1_minus_J0:
+      forward: {continuation_safety_passed: false, failures: [stance_width_m, minimum_joint_margin_rad]}
+      lateral: {continuation_safety_passed: false, failures: [linear_progress, duty_factor, minimum_joint_margin_rad, foot_clearance_m, stance_foot_slip_rms_mps]}
+      yaw: {continuation_safety_passed: false, failures: [stance_width_m, stance_foot_slip_rms_mps]}
+      mixed: {continuation_safety_passed: false, failures: [stance_width_m, minimum_joint_margin_rad]}
+    J2_minus_J1:
+      forward: {continuation_safety_passed: false, linear_progress_ratio: 0.9668406894426107}
+      lateral: {continuation_safety_passed: true}
+      yaw: {continuation_safety_passed: true}
+      mixed: {continuation_safety_passed: false, linear_progress_ratio: 0.9631501024491661}
+    continuation_to_300_allowed: false
+
+constraints_required_before_ppo:
+  hard_or_lagrangian:
+    - linear_and_yaw_tracking
+    - progress
+    - stopped_fraction
+    - base_contact_and_fall
+    - stance_width
+    - joint_margin
+    - foot_clearance
+    - torque
+    - energy_per_progress
+    - stance_foot_slip
+  posthoc_reward_or_gate_relaxation_forbidden: true
+  slowdown_allowed_only_as_separately_reported_tradeoff: true
+  matched_speed_low_level_attribution_required: true
+
+calibration_gate:
+  required_before_ppo: false
+  exploratory_user_override_after_motion_only_calibration_fail: true
+  source_must_include_action_dependent_outcomes: true
+  accepted_targets:
+    - future_slam_usability
+    - ground_truth_drift
+    - point_support
+    - backend_internal_tracking_diagnostics
+  fast_lio2_and_lio_sam_reported_separately: true
+  training_and_held_out_routes_separate: true
+  same_state_different_motion_must_change_future_outcome: true
+  lower_proxy_distortion_must_not_be_assumed_to_improve_real_slam_without_validation: true
+
+nonlearning_preflight:
+  execution_authorized: false
+  seed: 1450
+  num_environments: 8
+  total_steps: 100
+  warmup_steps: 25
+  source_checkpoint: checkpoints/anymal_d_locomotion_v1/recovery_v0.4.0/model_1450.pt
+  expected_observation_dimension: 1068
+  expected_action_dimension: 12
+  perturbation:
+    role: causal_wiring_diagnostic_not_candidate_controller
+    alternating_joint_action_linf: 0.05
+    command_scaling: false
+  hard_requirements:
+    - exact_model1450_bootstrap_action_parity
+    - exact_original_command
+    - J1_neutral_localization_history
+    - J2_causal_localization_history_matches_environment_state
+    - perturbed_scan_distortion_exceeds_baseline
+    - perturbed_future_confidence_below_baseline
+    - perturbed_delayed_localization_reward_below_baseline
+    - no_nonfinite_or_termination
+    - no_ppo_optimizer_or_runner
+  result:
+    status: passed
+    artifact: outputs/slam_confidence_causal_joint_training_v2/nonlearning_preflight.json
+    artifact_sha256: 4cbffd1a2fe345df986de96697fef1b14b2c09b97b118d47da237b241a31bd3e
+    ppo_constructed_or_run: false
+    bootstrap_action_parity_max_abs: 0.0
+    terminated_count: 0
+    truncated_count: 0
+    samples_per_cell_after_warmup: 600
+    j2_baseline:
+      mean_normalized_distortion: 1.8991451660792034
+      mean_confidence: 0.3699022992451986
+      mean_delayed_localization_reward: -0.1259773955742518
+    j2_perturbed:
+      mean_normalized_distortion: 1.9884851519266764
+      mean_confidence: 0.36499958435694374
+      mean_delayed_localization_reward: -0.12992007821798324
+    interpretation: >-
+      The action-dependent causal dataflow and delayed credit signal are operational. This is not
+      calibration against FAST-LIO2/LIO-SAM and is not evidence that the proxy improves real SLAM.
+
+execution_gates:
+  pure_transition_unit_tests_authorized: true
+  nonlearning_isaac_wiring_preflight_authorized: false
+  calibration_data_collection_authorized: false
+  ppo_training_authorized: false
+  teacher_training_authorized: false
+  student_training_authorized: false
+  live_ros_wiring_authorized: false
+  default_switch_authorized: false
+  physical_robot_authorized: false
+  blocks_581_584_allowed: false
+  blocks_602_605_allowed: false

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import torch
+from torch.distributions import Normal
 from rsl_rl.modules import ActorCritic
 from rsl_rl.networks import MLP
 from tensordict import TensorDict
@@ -70,3 +71,43 @@ class AnchoredFullPolicyActorCritic(ActorCritic):
         if observations.shape[-1] != self.full_observation_dim:
             raise ValueError("behavior reference received a non-contract observation")
         return self.reference_actor(observations[..., : self.legacy_observation_dim])
+
+
+class ActionConstrainedFullPolicyActorCritic(AnchoredFullPolicyActorCritic):
+    """Full actor whose deterministic action stays near frozen model1450.
+
+    PPO still updates the complete actor, but both rollout distribution means and
+    deployment inference are projected through a smooth hard bound relative to
+    the matched-command model1450 action.
+    """
+
+    def __init__(self, *args, action_deviation_limit: float = 0.05, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        if action_deviation_limit <= 0.0:
+            raise ValueError("action deviation limit must be positive")
+        self.action_deviation_limit = float(action_deviation_limit)
+
+    def constrained_action(self, observations: torch.Tensor) -> torch.Tensor:
+        reference = self.reference_action(observations)
+        unconstrained = self.actor(observations)
+        deviation = self.action_deviation_limit * torch.tanh(
+            (unconstrained - reference) / self.action_deviation_limit
+        )
+        return reference + deviation
+
+    def _update_distribution(self, obs: torch.Tensor) -> None:
+        if self.state_dependent_std:
+            raise RuntimeError("constrained joint training requires state-independent noise")
+        mean = self.constrained_action(obs)
+        if self.noise_std_type == "scalar":
+            std = self.std.expand_as(mean)
+        elif self.noise_std_type == "log":
+            std = torch.exp(self.log_std).expand_as(mean)
+        else:
+            raise ValueError(f"unknown noise std type: {self.noise_std_type}")
+        self.distribution = Normal(mean, std)
+
+    def act_inference(self, obs: TensorDict) -> torch.Tensor:
+        actor_obs = self.get_actor_obs(obs)
+        actor_obs = self.actor_obs_normalizer(actor_obs)
+        return self.constrained_action(actor_obs)

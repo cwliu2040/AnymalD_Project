@@ -13,6 +13,8 @@ import json
 import sys
 from pathlib import Path
 
+import yaml
+
 from isaaclab.app import AppLauncher
 
 # local imports
@@ -53,6 +55,17 @@ parser.add_argument(
     help="Save bootstrap_model_0.pt after actor-only warm-start and exit before learning.",
 )
 parser.add_argument(
+    "--joint-training-protocol",
+    type=Path,
+    default=None,
+    help="Required fail-closed protocol for J1/J2 full-policy training.",
+)
+parser.add_argument(
+    "--authorized-joint-training",
+    action="store_true",
+    help="One-shot acknowledgment required in addition to both protocol PPO gates.",
+)
+parser.add_argument(
     "--velocity-estimator-metadata",
     type=Path,
     default=None,
@@ -90,6 +103,66 @@ if args_cli.resume_checkpoint_path is not None and not args_cli.resume:
     parser.error("--resume-checkpoint-path requires --resume")
 if args_cli.adapt_confidence_input_only and args_cli.actor_only_warm_start is None:
     parser.error("--adapt-confidence-input-only requires --actor-only-warm-start")
+
+_joint_training_tasks = {
+    "Isaac-Velocity-Flat-Anymal-D-Locomotion-JointTraining-J1-v0",
+    "Isaac-Velocity-Flat-Anymal-D-Locomotion-JointTraining-J2-v0",
+}
+_causal_joint_training_tasks = {
+    "Isaac-Velocity-Flat-Anymal-D-Locomotion-CausalJointTraining-J1-v0",
+    "Isaac-Velocity-Flat-Anymal-D-Locomotion-CausalJointTraining-J2-v0",
+    "Isaac-Velocity-Flat-Anymal-D-Locomotion-ConstrainedBarrier-J1-v0",
+    "Isaac-Velocity-Flat-Anymal-D-Locomotion-ConstrainedBarrier-J2-v0",
+}
+_joint_training_tasks.update(_causal_joint_training_tasks)
+_joint_training_protocol = None
+if args_cli.task in _joint_training_tasks:
+    if args_cli.joint_training_protocol is None or not args_cli.authorized_joint_training:
+        parser.error("J1/J2 training requires its protocol and one-shot authorization")
+    _protocol_path = args_cli.joint_training_protocol.expanduser().resolve()
+    _protocol = yaml.safe_load(_protocol_path.read_text(encoding="utf-8"))
+    _joint_training_protocol = _protocol
+    _budget = _protocol["training_budget"]
+    _gates = _protocol["execution_gates"]
+    _authorized_total_iterations = int(
+        _budget.get("current_authorized_iterations_per_arm", _budget["maximum_iterations_per_seed"])
+    )
+    if not (_budget["execution_authorized"] and _gates["ppo_training_authorized"]):
+        parser.error("J1/J2 PPO authorization gates are closed")
+    _preflight_passed = _gates.get("nonlearning_preflight_passed") is True or (
+        _protocol.get("nonlearning_preflight", {}).get("result", {}).get("status") == "passed"
+    )
+    if not _preflight_passed:
+        parser.error("J1/J2 training requires a passing non-learning preflight")
+    if any(
+        _gates.get(name, False)
+        for name in (
+            "live_ros_wiring_authorized",
+            "default_switch_authorized",
+            "physical_robot_authorized",
+            "blocks_581_584_allowed",
+            "touchdown_blocks_602_605_allowed",
+            "blocks_602_605_allowed",
+        )
+    ):
+        parser.error("J1/J2 training requires all unrelated execution gates to remain closed")
+    if args_cli.num_envs != int(_budget["num_environments_per_seed"]):
+        parser.error("J1/J2 training environment count differs from the frozen protocol")
+    if args_cli.seed not in [int(seed) for seed in _budget["independent_training_seeds"]]:
+        parser.error("J1/J2 training seed is outside the frozen protocol")
+    if args_cli.max_iterations is None or not (
+        1 <= args_cli.max_iterations <= _authorized_total_iterations
+    ):
+        parser.error("J1/J2 iteration count exceeds the currently authorized total")
+    if args_cli.adapt_confidence_input_only:
+        parser.error("retired confidence-input-only training is forbidden for J1/J2")
+    if not args_cli.resume:
+        _source = Path(_protocol["initialization_and_anchoring"]["source_checkpoint"])
+        _source = (_protocol_path.parents[1] / _source).resolve()
+        if args_cli.actor_only_warm_start is None:
+            parser.error("fresh J1/J2 training requires the frozen model1450 warm-start")
+        if args_cli.actor_only_warm_start.expanduser().resolve() != _source:
+            parser.error("J1/J2 warm-start checkpoint differs from the frozen protocol")
 
 # always enable cameras to record video
 if args_cli.video:
@@ -513,6 +586,12 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         log_dir += f"_{agent_cfg.run_name}"
     log_dir = os.path.join(log_root_path, log_dir)
     run_manifest = build_run_manifest(task_id=args_cli.task, seed=agent_cfg.seed, log_dir=log_dir)
+    if _joint_training_protocol is not None:
+        run_manifest["joint_training_protocol"] = {
+            "path": str(_protocol_path),
+            "sha256": _sha256(_protocol_path),
+            "protocol_id": _joint_training_protocol["protocol_id"],
+        }
     estimator_artifact = None
     if args_cli.velocity_estimator_metadata is not None:
         estimator_artifact = validate_velocity_estimator_artifact(
@@ -602,6 +681,49 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         print(f"[INFO]: Loading model checkpoint from: {resume_path}")
         # load previously trained model
         runner.load(resume_path)
+        if args_cli.task in _joint_training_tasks:
+            if not isinstance(runner, OnPolicyRunner):
+                raise TypeError("J1/J2 continuation requires OnPolicyRunner")
+            if _joint_training_protocol is None:
+                raise RuntimeError("J1/J2 continuation protocol was not loaded")
+
+            # RSL-RL checkpoints store the index of the last completed update.
+            # Advance to the next index so continuation neither repeats an update
+            # nor silently exceeds the protocol's fixed per-seed budget.
+            loaded_iteration = int(runner.current_learning_iteration)
+            completed_iterations = loaded_iteration + 1
+            maximum_iterations = int(
+                _joint_training_protocol["training_budget"].get(
+                    "current_authorized_iterations_per_arm",
+                    _joint_training_protocol["training_budget"]["maximum_iterations_per_seed"],
+                )
+            )
+            if completed_iterations + int(agent_cfg.max_iterations) > maximum_iterations:
+                raise ValueError(
+                    "J1/J2 continuation exceeds the frozen iteration budget: "
+                    f"{completed_iterations} completed + {agent_cfg.max_iterations} requested "
+                    f"> {maximum_iterations}"
+                )
+            runner.current_learning_iteration = completed_iterations
+
+            # A newly constructed Isaac Lab environment otherwise restarts its
+            # curriculum at step zero. Restore the global rollout-step counter
+            # and immediately re-apply every already-reached curriculum term.
+            rollout_steps = int(agent_cfg.num_steps_per_env)
+            restored_common_steps = completed_iterations * rollout_steps
+            base_env = env.unwrapped
+            base_env.common_step_counter = restored_common_steps
+            all_env_ids = torch.arange(base_env.num_envs, device=base_env.device)
+            base_env.curriculum_manager.compute(env_ids=all_env_ids)
+            run_manifest["joint_training_continuation"] = {
+                "checkpoint": str(resume_path),
+                "checkpoint_sha256": _sha256(Path(resume_path)),
+                "loaded_last_completed_iteration": loaded_iteration,
+                "next_learning_iteration": completed_iterations,
+                "restored_common_step_counter": restored_common_steps,
+                "requested_additional_iterations": int(agent_cfg.max_iterations),
+                "maximum_total_iterations": maximum_iterations,
+            }
 
     # dump the configuration into log-directory
     dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)

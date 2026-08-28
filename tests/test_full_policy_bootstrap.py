@@ -148,6 +148,38 @@ def test_frozen_behavior_reference_is_exact_model1450_copy() -> None:
     assert not any(parameter.requires_grad for parameter in target.reference_actor.parameters())
 
 
+def test_action_constrained_full_policy_is_exact_at_bootstrap_and_hard_bounded() -> None:
+    from tensordict import TensorDict
+    from anymal_locomotion.policies.joint_training import ActionConstrainedFullPolicyActorCritic
+
+    torch.manual_seed(1450)
+    observation = TensorDict(
+        {"policy": torch.randn(8, FULL_POLICY_OBSERVATION_DIM)}, batch_size=[8]
+    )
+    policy = ActionConstrainedFullPolicyActorCritic(
+        observation,
+        {"policy": ["policy"], "critic": ["policy"]},
+        12,
+        actor_hidden_dims=[128, 128, 128],
+        critic_hidden_dims=[128, 128, 128],
+        activation="elu",
+        actor_obs_normalization=False,
+        critic_obs_normalization=False,
+        action_deviation_limit=0.05,
+    )
+    source_state = torch.load(MODEL1450, map_location="cpu", weights_only=False)[
+        "model_state_dict"
+    ]
+    bootstrap_dense_actor_state(source_state, policy.state_dict())
+    bootstrap_frozen_reference_actor_state(source_state, policy.state_dict())
+    with torch.no_grad():
+        reference = policy.reference_action(observation["policy"])
+        assert torch.equal(policy.act_inference(observation), reference)
+        policy.actor[-1].bias.add_(10.0)
+        constrained = policy.act_inference(observation)
+    assert torch.max(torch.abs(constrained - reference)).item() <= 0.050001
+
+
 def test_behavior_anchor_update_pulls_full_actor_toward_frozen_reference() -> None:
     torch.manual_seed(31)
     source = _DensePolicy(48)

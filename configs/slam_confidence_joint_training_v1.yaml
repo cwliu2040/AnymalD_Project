@@ -1,6 +1,6 @@
 schema_version: 1
 protocol_id: slam-confidence-joint-training-v1
-status: static_training_stack_implemented_simulation_preflight_closed
+status: ppo_feasibility_training_complete_pending_formal_evaluation
 date: 2026-08-26
 
 research_question: >-
@@ -155,6 +155,92 @@ training_budget:
     - posture_collapse
     - limiter_collapse
   interim_efficacy_selection_forbidden: true
+
+training_execution:
+  completed: true
+  completed_at: 2026-08-26
+  continuation_semantics:
+    initial_updates: 50
+    resumed_updates: 250
+    final_checkpoint_iteration: 299
+    curriculum_common_step_counter_restored_on_resume: true
+  transitions_per_arm_per_seed: 29491200
+  total_transitions: 176947200
+  checkpoint_integrity:
+    all_six_model_299_present: true
+    all_checkpoint_iterations_equal_299: true
+    all_model_tensors_finite: true
+  iteration_50_futility_audit:
+    all_arms_survival_fraction: 1.0
+    termination_count: 0
+    conclusion: continue_fixed_budget_without_seed_selection
+    warning: J1_seed1450_forward_progress_ratio_near_but_below_formal_0.98_gate
+  runs:
+    - {arm: J1, seed: 1450, run: 2026-08-26_15-49-56_J1_generic_history_anchor, final_mean_reward: 9.76828, final_base_contact_fraction: 0.120605}
+    - {arm: J2, seed: 1450, run: 2026-08-26_15-54-51_J2_localization_history_anchor, final_mean_reward: 10.8065, final_base_contact_fraction: 0.104970}
+    - {arm: J1, seed: 1451, run: 2026-08-26_15-59-38_J1_generic_history_anchor, final_mean_reward: 12.4662, final_base_contact_fraction: 0.094554}
+    - {arm: J2, seed: 1451, run: 2026-08-26_16-04-18_J2_localization_history_anchor, final_mean_reward: 11.0249, final_base_contact_fraction: 0.107910}
+    - {arm: J1, seed: 1452, run: 2026-08-26_16-08-46_J1_generic_history_anchor, final_mean_reward: 11.4508, final_base_contact_fraction: 0.104889}
+    - {arm: J2, seed: 1452, run: 2026-08-26_16-13-15_J2_localization_history_anchor, final_mean_reward: 11.5415, final_base_contact_fraction: 0.127645}
+  interpretation: >-
+    Training loss and episode summaries are finite and the fixed budget completed, but these
+    on-policy aggregates are not matched-speed SLAM evidence and must not select an arm or seed.
+
+post_training_motion_audit:
+  status: complete_failed_pre_slam_gate
+  purpose: reject_safety_or_low_level_motion_failures_before_fast_lio2_or_lio_sam
+  arms: [J0, J1, J2]
+  seeds: [1450, 1451, 1452]
+  num_environments: 128
+  steps: 750
+  warmup_steps: 100
+  policy_rate_hz: 50.0
+  contact_force_threshold_n: 1.0
+  lidar_scan_time_s: 0.10
+  profiles:
+    forward: {vx_mps: 1.5, vy_mps: 0.0, wz_radps: 0.0}
+    lateral: {vx_mps: 0.0, vy_mps: 0.8, wz_radps: 0.0}
+    yaw: {vx_mps: 0.0, vy_mps: 0.0, wz_radps: 1.5}
+    mixed: {vx_mps: 1.0, vy_mps: 0.5, wz_radps: 1.0}
+  matched_motion_uses_frozen_future_evaluation_limits: true
+  paired_gait_safety_uses_frozen_future_evaluation_limits: true
+  whole_window_body_lidar_gate_uses_frozen_directional_limits: true
+  minimum_passing_seeds_per_profile: 2
+  hard_requirements:
+    - finite_metrics
+    - no_candidate_termination
+    - no_candidate_survival_loss
+    - exact_command_profile
+    - no_seed_selection_or_dropping
+  interpretation: >-
+    This fixed-command simulation audit is a pre-SLAM rejection gate. Passing establishes only
+    locomotion safety, matched motion and low-level mechanism plausibility; it is not held-out SLAM
+    efficacy and cannot establish the J2 localization-aware contribution by itself.
+  result:
+    completed_runs: 36
+    summary: outputs/slam_confidence_joint_training_v1/post_training_motion_audit/summary.json
+    summary_sha256: 8222347c67ee6c0da8394eac21ce0a2bcf3036d3ccdf35f168a542d52e2f9176
+    profile_support:
+      J1_minus_J0: {forward: 0, lateral: 0, yaw: 1, mixed: 0}
+      J2_minus_J1: {forward: 0, lateral: 0, yaw: 0, mixed: 0}
+    required_passing_seeds_per_profile: 2
+    j1_generic_smoothing_signal:
+      roll_pitch_rate_mean_change_range: [-0.249, -0.114]
+      angular_acceleration_mean_change_range: [-0.328, -0.219]
+      lidar_scan_rotation_mean_change_range: [-0.319, -0.215]
+      rejected_for:
+        - tracking_regression
+        - stance_width_regression
+        - energy_or_slip_regression
+        - one_forward_termination
+    j2_localization_aware_signal:
+      conclusion: not_repeatable_over_j1
+      rejected_for:
+        - body_or_lidar_mechanism_not_improved
+        - mixed_linear_progress_below_0.98_in_all_three_seeds
+        - paired_gait_safety_failures
+    held_out_fast_lio2_or_lio_sam_executed: false
+    decision: STOP_BEFORE_SLAM_EVALUATION
 
 nonlearning_preflight:
   execution_authorized: false

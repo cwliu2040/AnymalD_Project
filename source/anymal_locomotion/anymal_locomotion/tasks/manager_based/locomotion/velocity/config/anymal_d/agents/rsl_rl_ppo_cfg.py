@@ -26,6 +26,17 @@ class AnchoredFullPolicyActorCriticCfg(RslRlPpoActorCriticCfg):
 
 
 @configclass
+class ActionConstrainedFullPolicyActorCriticCfg(AnchoredFullPolicyActorCriticCfg):
+    """Complete actor with a hard deterministic deviation bound from model1450."""
+
+    class_name: str = (
+        "anymal_locomotion.policies.joint_training:"
+        "ActionConstrainedFullPolicyActorCritic"
+    )
+    action_deviation_limit: float = 0.05
+
+
+@configclass
 class SlamConfidenceResidualActorCriticCfg(RslRlPpoActorCriticCfg):
     """Frozen 48-D backbone plus confidence-gated residual adapter."""
 
@@ -311,6 +322,74 @@ class AnymalDLocomotionJointTrainingJ2RunnerCfg(
     def __post_init__(self) -> None:
         super().__post_init__()
         self.run_name = "J2_localization_history_anchor"
+
+
+@configclass
+class AnymalDLocomotionCausalJointTrainingRunnerCfg(
+    AnymalDLocomotionJointTrainingRunnerCfg
+):
+    """Action-constrained full-policy runner for causal PPO."""
+
+    policy = ActionConstrainedFullPolicyActorCriticCfg(
+        init_noise_std=1.0,
+        actor_obs_normalization=False,
+        critic_obs_normalization=False,
+        actor_hidden_dims=[128, 128, 128],
+        critic_hidden_dims=[128, 128, 128],
+        activation="elu",
+        action_deviation_limit=0.05,
+    )
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.experiment_name = "anymal_d_locomotion_constrained_joint_training_v3"
+
+
+@configclass
+class AnymalDLocomotionCausalJointTrainingJ1RunnerCfg(
+    AnymalDLocomotionCausalJointTrainingRunnerCfg
+):
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.run_name = "J1_constrained_neutral_localization"
+
+
+@configclass
+class AnymalDLocomotionCausalJointTrainingJ2RunnerCfg(
+    AnymalDLocomotionCausalJointTrainingRunnerCfg
+):
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.run_name = "J2_constrained_localization_history"
+
+
+@configclass
+class AnymalDLocomotionConstrainedBarrierRunnerCfg(
+    AnymalDLocomotionCausalJointTrainingRunnerCfg
+):
+    """v4 action-constrained runner with prospectively frozen barriers."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.experiment_name = "anymal_d_locomotion_constrained_barrier_v4"
+
+
+@configclass
+class AnymalDLocomotionConstrainedBarrierJ1RunnerCfg(
+    AnymalDLocomotionConstrainedBarrierRunnerCfg
+):
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.run_name = "J1_barrier_neutral_localization"
+
+
+@configclass
+class AnymalDLocomotionConstrainedBarrierJ2RunnerCfg(
+    AnymalDLocomotionConstrainedBarrierRunnerCfg
+):
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.run_name = "J2_barrier_localization_history"
 
 
 @configclass

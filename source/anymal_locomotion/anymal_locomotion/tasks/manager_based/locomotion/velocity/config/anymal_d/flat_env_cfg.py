@@ -9,7 +9,7 @@ from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils import configclass
-from isaaclab.utils.noise import UniformNoiseCfg as Unoise
+from isaaclab.utils.noise import NoiseCfg
 
 from isaaclab_tasks.manager_based.locomotion.velocity.config.anymal_d.flat_env_cfg import AnymalDFlatEnvCfg
 from isaaclab_tasks.manager_based.locomotion.velocity.velocity_env_cfg import (
@@ -289,9 +289,25 @@ class AnymalDLocomotionRecoveryV05EnvCfg(
         )
 
 
-def _joint_training_history_noise() -> Unoise:
+def _vector_uniform_noise(data: torch.Tensor, cfg) -> torch.Tensor:
+    """Apply Hydra-serializable per-coordinate additive uniform noise."""
+    if cfg.operation != "add":
+        raise ValueError("joint-training vector noise supports additive operation only")
+    n_min = torch.as_tensor(list(cfg.n_min), dtype=data.dtype, device=data.device)
+    n_max = torch.as_tensor(list(cfg.n_max), dtype=data.dtype, device=data.device)
+    return data + torch.rand_like(data) * (n_max - n_min) + n_min
+
+
+@configclass
+class _VectorUniformNoiseCfg(NoiseCfg):
+    func = _vector_uniform_noise
+    n_min: list[float] = []
+    n_max: list[float] = []
+
+
+def _joint_training_history_noise() -> _VectorUniformNoiseCfg:
     """Match the legacy per-component observation corruption ranges."""
-    limits = torch.tensor(
+    limits = (
         [0.1] * 3
         + [0.2] * 3
         + [0.05] * 3
@@ -299,12 +315,14 @@ def _joint_training_history_noise() -> Unoise:
         + [0.01] * 12
         + [1.5] * 12
         + [0.0] * 12
-        + [0.0] * 3,
-        dtype=torch.float32,
+        + [0.0] * 3
     )
-    if limits.numel() != 51:
+    if len(limits) != 51:
         raise RuntimeError("joint-training history noise contract must remain 51-D")
-    return Unoise(n_min=-limits, n_max=limits)
+    return _VectorUniformNoiseCfg(
+        n_min=[-float(value) for value in limits],
+        n_max=[float(value) for value in limits],
+    )
 
 
 @configclass
@@ -455,6 +473,154 @@ class AnymalDLocomotionJointTrainingJ2EnvCfg(AnymalDLocomotionJointTrainingEnvCf
     def __post_init__(self) -> None:
         super().__post_init__()
         self.observations.policy.history_frame.params["localization_mode"] = "actual"
+
+
+@configclass
+class AnymalDLocomotionCausalJointTrainingRewardsCfg(
+    AnymalDLocomotionJointTrainingRewardsCfg
+):
+    """Original locomotion, auxiliary motion terms and delayed SLAM change."""
+
+    causal_slam_delayed_advantage = RewTerm(
+        func=mdp.causal_slam_delayed_advantage,
+        weight=1.0,
+        params={
+            "horizon_steps": 25,
+            "validity_bonus": 0.50,
+            "normalized_age_penalty": 0.25,
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
+    )
+
+
+@configclass
+class AnymalDLocomotionCausalJointTrainingEnvCfg(
+    AnymalDLocomotionRecoveryV05EnvCfg
+):
+    """Exploratory causal v2 PPO with exact original commands."""
+
+    observations: AnymalDLocomotionJointTrainingObservationsCfg = (
+        AnymalDLocomotionJointTrainingObservationsCfg()
+    )
+    rewards: AnymalDLocomotionCausalJointTrainingRewardsCfg = (
+        AnymalDLocomotionCausalJointTrainingRewardsCfg()
+    )
+    curriculum: AnymalDLocomotionJointTrainingCurriculumCfg = (
+        AnymalDLocomotionJointTrainingCurriculumCfg()
+    )
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.commands.base_velocity = mdp.EdgeBiasedVelocityCommandCfg(
+            asset_name="robot",
+            resampling_time_range=(4.0, 8.0),
+            rel_standing_envs=0.10,
+            rel_heading_envs=0.0,
+            heading_command=False,
+            debug_vis=True,
+            edge_probability=0.55,
+            ranges=mdp.EdgeBiasedVelocityCommandCfg.Ranges(
+                lin_vel_x=(-2.0, 3.0),
+                lin_vel_y=(-1.5, 1.5),
+                ang_vel_z=(-2.0, 2.0),
+                heading=None,
+            ),
+        )
+        self.observations.policy.history_frame.params["asset_cfg"] = SceneEntityCfg(
+            "robot", joint_names=list(CANONICAL_JOINT_ORDER), preserve_order=True
+        )
+        for term_name in (
+            "angular_acceleration_l2",
+            "linear_jerk_l2",
+            "lidar_scan_translation_distortion_l2",
+            "lidar_scan_rotation_distortion_l2",
+        ):
+            getattr(self.rewards, term_name).params["localization_mode"] = "causal"
+
+
+@configclass
+class AnymalDLocomotionCausalJointTrainingJ1EnvCfg(
+    AnymalDLocomotionCausalJointTrainingEnvCfg
+):
+    """Causal reward comparator without localization state in actor history."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.observations.policy.history_frame.params["localization_mode"] = "neutral"
+
+
+@configclass
+class AnymalDLocomotionCausalJointTrainingJ2EnvCfg(
+    AnymalDLocomotionCausalJointTrainingEnvCfg
+):
+    """Actor observes action-dependent confidence/validity/age history."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.observations.policy.history_frame.params["localization_mode"] = "causal"
+
+
+@configclass
+class AnymalDLocomotionConstrainedBarrierRewardsCfg(
+    AnymalDLocomotionCausalJointTrainingRewardsCfg
+):
+    """Causal v3 rewards plus prospectively frozen slip and yaw barriers."""
+
+    lateral_stance_slip_barrier = RewTerm(
+        func=mdp.lateral_stance_slip_barrier,
+        weight=-1.0,
+        params={
+            "command_name": "base_velocity",
+            "min_lateral_speed": 0.5,
+            "free_slip_speed": 0.5,
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*FOOT"),
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*FOOT"),
+        },
+    )
+    mixed_yaw_tracking_barrier = RewTerm(
+        func=mdp.mixed_yaw_tracking_barrier,
+        weight=-2.0,
+        params={
+            "command_name": "base_velocity",
+            "min_planar_speed": 0.25,
+            "min_yaw_speed": 0.25,
+            "free_yaw_error": 0.10,
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
+    )
+
+
+@configclass
+class AnymalDLocomotionConstrainedBarrierEnvCfg(
+    AnymalDLocomotionCausalJointTrainingEnvCfg
+):
+    """v4 environment retaining causal history and adding physical barriers."""
+
+    rewards: AnymalDLocomotionConstrainedBarrierRewardsCfg = (
+        AnymalDLocomotionConstrainedBarrierRewardsCfg()
+    )
+
+
+@configclass
+class AnymalDLocomotionConstrainedBarrierJ1EnvCfg(
+    AnymalDLocomotionConstrainedBarrierEnvCfg
+):
+    """v4 neutral-localization comparator."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.observations.policy.history_frame.params["localization_mode"] = "neutral"
+
+
+@configclass
+class AnymalDLocomotionConstrainedBarrierJ2EnvCfg(
+    AnymalDLocomotionConstrainedBarrierEnvCfg
+):
+    """v4 causal localization-history arm."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.observations.policy.history_frame.params["localization_mode"] = "causal"
 
 
 @configclass

@@ -71,6 +71,11 @@ parser.add_argument(
 )
 parser.add_argument("--output", type=str, default=None, help="Optional JSON result path.")
 parser.add_argument(
+    "--motion-audit",
+    action="store_true",
+    help="Collect fixed-command gait, safety, body-motion and LiDAR scan-motion metrics.",
+)
+parser.add_argument(
     "--inference-backend",
     choices=("checkpoint", "torchscript", "onnx"),
     default="checkpoint",
@@ -160,7 +165,7 @@ from rsl_rl.runners import OnPolicyRunner
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils.assets import retrieve_file_path
-from isaaclab.utils.math import euler_xyz_from_quat
+from isaaclab.utils.math import euler_xyz_from_quat, quat_apply_inverse
 from isaaclab_rl.rsl_rl import RslRlBaseRunnerCfg, RslRlVecEnvWrapper
 from isaaclab_tasks.utils.hydra import hydra_task_config
 
@@ -414,6 +419,66 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
 
         obs = env.get_observations()
         robot = env.unwrapped.scene["robot"]
+        motion_audit = None
+        if args_cli.motion_audit:
+            contact_sensor = env.unwrapped.scene["contact_forces"]
+            contact_foot_ids, contact_foot_names = contact_sensor.find_bodies(
+                ["LF_FOOT", "LH_FOOT", "RF_FOOT", "RH_FOOT"],
+                preserve_order=True,
+            )
+            robot_foot_ids, robot_foot_names = robot.find_bodies(
+                ["LF_FOOT", "LH_FOOT", "RF_FOOT", "RH_FOOT"],
+                preserve_order=True,
+            )
+            expected_feet = ("LF_FOOT", "LH_FOOT", "RF_FOOT", "RH_FOOT")
+            if tuple(contact_foot_names) != expected_feet or tuple(robot_foot_names) != expected_feet:
+                raise RuntimeError(
+                    "motion-audit foot mapping changed: "
+                    f"contact={contact_foot_names}, robot={robot_foot_names}"
+                )
+            previous_contact = (
+                torch.linalg.vector_norm(
+                    contact_sensor.data.net_forces_w[:, contact_foot_ids], dim=-1
+                )
+                > 1.0
+            )
+            previous_linear_velocity = robot.data.root_lin_vel_b.clone()
+            previous_angular_velocity = robot.data.root_ang_vel_b.clone()
+            previous_linear_acceleration = torch.zeros_like(previous_linear_velocity)
+            previous_joint_velocity = robot.data.joint_vel.clone()
+            previous_actions = torch.zeros(
+                (env.num_envs, env.num_actions), device=device
+            )
+            motion_audit = {
+                "valid_samples": torch.tensor(0, dtype=torch.long, device=device),
+                "roll_pitch_rate_sq": torch.tensor(0.0, device=device),
+                "yaw_error_sq": torch.tensor(0.0, device=device),
+                "linear_error_sq": torch.tensor(0.0, device=device),
+                "linear_acceleration_sq": torch.tensor(0.0, device=device),
+                "angular_acceleration_sq": torch.tensor(0.0, device=device),
+                "linear_jerk_sq": torch.tensor(0.0, device=device),
+                "lidar_translation_sq": torch.tensor(0.0, device=device),
+                "lidar_rotation_sq": torch.tensor(0.0, device=device),
+                "action_rate_sq": torch.tensor(0.0, device=device),
+                "joint_acceleration_sq": torch.tensor(0.0, device=device),
+                "torque_sq": torch.tensor(0.0, device=device),
+                "mechanical_energy_j": torch.tensor(0.0, device=device),
+                "positive_progress": torch.tensor(0.0, device=device),
+                "positive_linear_progress": torch.tensor(0.0, device=device),
+                "positive_yaw_progress": torch.tensor(0.0, device=device),
+                "planar_speed_sum": torch.tensor(0.0, device=device),
+                "absolute_yaw_rate_sum": torch.tensor(0.0, device=device),
+                "stopped_samples": torch.tensor(0, dtype=torch.long, device=device),
+                "contact_samples": torch.tensor(0, dtype=torch.long, device=device),
+                "contact_switches": torch.tensor(0, dtype=torch.long, device=device),
+                "touchdowns": torch.tensor(0, dtype=torch.long, device=device),
+                "stance_slip_speed_sq": torch.tensor(0.0, device=device),
+                "stance_width_sum": torch.tensor(0.0, device=device),
+                "body_height_sum": torch.tensor(0.0, device=device),
+                "swing_clearance_sum": torch.tensor(0.0, device=device),
+                "swing_samples": torch.tensor(0, dtype=torch.long, device=device),
+                "minimum_joint_margin": torch.tensor(float("inf"), device=device),
+            }
         for step in range(horizon_steps):
             scheduled_command = command_at(step * float(env.unwrapped.step_dt))
             command_tensor.copy_(
@@ -459,6 +524,38 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
             termination_events += terminated.sum()
             timeout_events += timed_out.sum()
 
+            if motion_audit is not None:
+                dt = float(env.unwrapped.step_dt)
+                linear_velocity = robot.data.root_lin_vel_b
+                angular_velocity = robot.data.root_ang_vel_b
+                linear_acceleration = (
+                    linear_velocity - previous_linear_velocity
+                ) / dt
+                angular_acceleration = (
+                    angular_velocity - previous_angular_velocity
+                ) / dt
+                linear_jerk = (
+                    linear_acceleration - previous_linear_acceleration
+                ) / dt
+                joint_acceleration = (
+                    robot.data.joint_vel - previous_joint_velocity
+                ) / dt
+                action_rate = (actions - previous_actions) / dt
+                linear_error = linear_velocity[:, :2] - scheduled_command[:2]
+                yaw_error = angular_velocity[:, 2] - scheduled_command[2]
+                lidar_translation = 0.5 * linear_acceleration * 0.10**2
+                lidar_rotation = 0.5 * angular_acceleration * 0.10**2
+                lidar_rotation = lidar_rotation.clone()
+                lidar_rotation[:, :2] += angular_velocity[:, :2] * 0.10
+                contact = (
+                    torch.linalg.vector_norm(
+                        contact_sensor.data.net_forces_w[:, contact_foot_ids], dim=-1
+                    )
+                    > 1.0
+                )
+                switches = contact != previous_contact
+                touchdowns = contact & ~previous_contact
+
             if step >= args_cli.warmup_steps:
                 valid = ~dones_bool & ~ever_failed
                 if torch.any(valid):
@@ -476,6 +573,155 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
                     squared_error_sum += error[valid].square().sum(dim=0)
                     reward_sum += rewards[valid].sum()
                     valid_sample_count += valid.sum()
+
+                    if motion_audit is not None:
+                        foot_planar_speed = torch.linalg.vector_norm(
+                            robot.data.body_lin_vel_w[:, robot_foot_ids, :2], dim=-1
+                        )
+                        valid_feet = valid[:, None].expand_as(contact)
+                        stance = valid_feet & contact
+                        swing = valid_feet & ~contact
+
+                        foot_relative_w = (
+                            robot.data.body_pos_w[:, robot_foot_ids]
+                            - robot.data.root_pos_w[:, None, :]
+                        )
+                        root_quaternion = robot.data.root_quat_w[:, None, :].expand(
+                            -1, len(robot_foot_ids), -1
+                        )
+                        foot_relative_b = quat_apply_inverse(
+                            root_quaternion.reshape(-1, 4),
+                            foot_relative_w.reshape(-1, 3),
+                        ).reshape(env.num_envs, len(robot_foot_ids), 3)
+                        stance_width = torch.abs(
+                            foot_relative_b[:, :2, 1].mean(dim=1)
+                            - foot_relative_b[:, 2:, 1].mean(dim=1)
+                        )
+                        terrain_height = env.unwrapped.scene.env_origins[:, 2]
+                        foot_clearance = (
+                            robot.data.body_pos_w[:, robot_foot_ids, 2]
+                            - terrain_height[:, None]
+                        ).clamp_min(0.0)
+                        body_height = robot.data.root_pos_w[:, 2] - terrain_height
+                        lower = robot.data.soft_joint_pos_limits[..., 0]
+                        upper = robot.data.soft_joint_pos_limits[..., 1]
+                        joint_margin = torch.minimum(
+                            robot.data.joint_pos - lower,
+                            upper - robot.data.joint_pos,
+                        )
+                        torque = robot.data.applied_torque
+                        power = torch.abs(torque * robot.data.joint_vel).sum(dim=1)
+                        command_xy = scheduled_command[:2]
+                        command_speed = torch.linalg.vector_norm(command_xy)
+                        if float(command_speed.item()) >= 0.25:
+                            command_direction = command_xy / command_speed
+                            progress_rate = torch.sum(
+                                linear_velocity[:, :2] * command_direction, dim=1
+                            )
+                        elif abs(float(scheduled_command[2].item())) >= 0.25:
+                            progress_rate = (
+                                angular_velocity[:, 2]
+                                * torch.sign(scheduled_command[2])
+                            )
+                        else:
+                            progress_rate = torch.zeros(env.num_envs, device=device)
+                        linear_progress_rate = torch.zeros(env.num_envs, device=device)
+                        if float(command_speed.item()) >= 0.25:
+                            linear_progress_rate = torch.sum(
+                                linear_velocity[:, :2] * (command_xy / command_speed),
+                                dim=1,
+                            )
+                        yaw_progress_rate = torch.zeros(env.num_envs, device=device)
+                        if abs(float(scheduled_command[2].item())) >= 0.25:
+                            yaw_progress_rate = (
+                                angular_velocity[:, 2] * torch.sign(scheduled_command[2])
+                            )
+                        stopped = (
+                            torch.linalg.vector_norm(linear_velocity[:, :2], dim=1)
+                            < 0.10
+                        ) & (torch.abs(angular_velocity[:, 2]) < 0.10)
+
+                        motion_audit["valid_samples"] += valid.sum()
+                        motion_audit["roll_pitch_rate_sq"] += torch.sum(
+                            torch.square(angular_velocity[valid, :2])
+                        )
+                        motion_audit["yaw_error_sq"] += torch.sum(
+                            torch.square(yaw_error[valid])
+                        )
+                        motion_audit["linear_error_sq"] += torch.sum(
+                            torch.sum(torch.square(linear_error[valid]), dim=1)
+                        )
+                        for name, value in (
+                            ("linear_acceleration_sq", linear_acceleration),
+                            ("angular_acceleration_sq", angular_acceleration),
+                            ("linear_jerk_sq", linear_jerk),
+                            ("lidar_translation_sq", lidar_translation),
+                            ("lidar_rotation_sq", lidar_rotation),
+                        ):
+                            motion_audit[name] += torch.sum(
+                                torch.sum(torch.square(value[valid]), dim=1)
+                            )
+                        motion_audit["action_rate_sq"] += torch.sum(
+                            torch.square(action_rate[valid])
+                        )
+                        motion_audit["joint_acceleration_sq"] += torch.sum(
+                            torch.square(joint_acceleration[valid])
+                        )
+                        motion_audit["torque_sq"] += torch.sum(
+                            torch.square(torque[valid])
+                        )
+                        motion_audit["mechanical_energy_j"] += (
+                            torch.sum(power[valid]) * dt
+                        )
+                        motion_audit["positive_progress"] += (
+                            torch.sum(torch.clamp_min(progress_rate[valid], 0.0)) * dt
+                        )
+                        motion_audit["positive_linear_progress"] += (
+                            torch.sum(torch.clamp_min(linear_progress_rate[valid], 0.0)) * dt
+                        )
+                        motion_audit["positive_yaw_progress"] += (
+                            torch.sum(torch.clamp_min(yaw_progress_rate[valid], 0.0)) * dt
+                        )
+                        motion_audit["planar_speed_sum"] += torch.sum(
+                            torch.linalg.vector_norm(linear_velocity[valid, :2], dim=1)
+                        )
+                        motion_audit["absolute_yaw_rate_sum"] += torch.sum(
+                            torch.abs(angular_velocity[valid, 2])
+                        )
+                        motion_audit["stopped_samples"] += torch.sum(stopped & valid)
+                        motion_audit["contact_samples"] += torch.sum(stance)
+                        motion_audit["contact_switches"] += torch.sum(
+                            switches & valid_feet
+                        )
+                        motion_audit["touchdowns"] += torch.sum(
+                            touchdowns & valid_feet
+                        )
+                        motion_audit["stance_slip_speed_sq"] += torch.sum(
+                            torch.square(foot_planar_speed[stance])
+                        )
+                        motion_audit["stance_width_sum"] += torch.sum(
+                            stance_width[valid]
+                        )
+                        motion_audit["body_height_sum"] += torch.sum(body_height[valid])
+                        motion_audit["swing_clearance_sum"] += torch.sum(
+                            foot_clearance[swing]
+                        )
+                        motion_audit["swing_samples"] += torch.sum(swing)
+                        motion_audit["minimum_joint_margin"] = torch.minimum(
+                            motion_audit["minimum_joint_margin"],
+                            torch.min(joint_margin[valid]),
+                        )
+
+            if motion_audit is not None:
+                previous_contact.copy_(contact)
+                previous_linear_velocity.copy_(robot.data.root_lin_vel_b)
+                previous_angular_velocity.copy_(robot.data.root_ang_vel_b)
+                previous_linear_acceleration.copy_(linear_acceleration)
+                previous_joint_velocity.copy_(robot.data.joint_vel)
+                previous_actions.copy_(actions)
+                reset_rows = dones_bool
+                previous_linear_acceleration[reset_rows] = 0.0
+                previous_actions[reset_rows] = 0.0
 
             policy_nn.reset(dones)
 
@@ -593,6 +839,52 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
                 "first_failure_states": failure_states,
             },
         }
+        if motion_audit is not None:
+            audit_count = int(motion_audit["valid_samples"].item())
+            joint_count = audit_count * int(robot.data.joint_pos.shape[1])
+            foot_count = audit_count * 4
+            contact_count = int(motion_audit["contact_samples"].item())
+            swing_count = int(motion_audit["swing_samples"].item())
+            progress = float(motion_audit["positive_progress"].item())
+
+            def rms_sum(name: str, denominator: int) -> float:
+                return math.sqrt(float(motion_audit[name].item()) / max(denominator, 1))
+
+            result["motion_audit"] = {
+                "valid_sample_count": audit_count,
+                "body_lidar_metrics": {
+                    "roll_pitch_rate_rms_radps": rms_sum("roll_pitch_rate_sq", audit_count),
+                    "yaw_tracking_error_rms_radps": rms_sum("yaw_error_sq", audit_count),
+                    "linear_tracking_error_rms_mps": rms_sum("linear_error_sq", audit_count),
+                    "linear_acceleration_rms_mps2": rms_sum("linear_acceleration_sq", audit_count),
+                    "angular_acceleration_rms_radps2": rms_sum("angular_acceleration_sq", audit_count),
+                    "linear_jerk_rms_mps3": rms_sum("linear_jerk_sq", audit_count),
+                    "lidar_scan_translation_error_rms_m": rms_sum("lidar_translation_sq", audit_count),
+                    "lidar_scan_rotation_error_rms_rad": rms_sum("lidar_rotation_sq", audit_count),
+                },
+                "gait_safety_metrics": {
+                    "cadence_hz": float(motion_audit["touchdowns"].item()) / max(audit_count * step_dt * 4, 1.0e-9),
+                    "contact_switch_rate_hz": float(motion_audit["contact_switches"].item()) / max(audit_count * step_dt * 4, 1.0e-9),
+                    "duty_factor": contact_count / max(foot_count, 1),
+                    "body_height_m": float(motion_audit["body_height_sum"].item()) / max(audit_count, 1),
+                    "stance_width_m": float(motion_audit["stance_width_sum"].item()) / max(audit_count, 1),
+                    "minimum_joint_margin_rad": float(motion_audit["minimum_joint_margin"].item()),
+                    "foot_clearance_m": float(motion_audit["swing_clearance_sum"].item()) / max(swing_count, 1),
+                    "torque_rms_nm": rms_sum("torque_sq", joint_count),
+                    "energy_per_progress": float(motion_audit["mechanical_energy_j"].item()) / max(progress, 1.0e-9),
+                    "stance_foot_slip_rms_mps": rms_sum("stance_slip_speed_sq", contact_count),
+                    "stopped_fraction": int(motion_audit["stopped_samples"].item()) / max(audit_count, 1),
+                },
+                "additional_metrics": {
+                    "mean_planar_speed_mps": float(motion_audit["planar_speed_sum"].item()) / max(audit_count, 1),
+                    "mean_absolute_yaw_rate_radps": float(motion_audit["absolute_yaw_rate_sum"].item()) / max(audit_count, 1),
+                    "action_rate_rms_per_s": rms_sum("action_rate_sq", joint_count),
+                    "joint_acceleration_rms_radps2": rms_sum("joint_acceleration_sq", joint_count),
+                    "positive_command_aligned_progress": progress,
+                    "positive_linear_progress_m": float(motion_audit["positive_linear_progress"].item()),
+                    "positive_yaw_progress_rad": float(motion_audit["positive_yaw_progress"].item()),
+                },
+            }
 
         output_path = Path(args_cli.output).resolve() if args_cli.output else _default_output_path(checkpoint)
         output_path.parent.mkdir(parents=True, exist_ok=True)
